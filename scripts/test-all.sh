@@ -11,13 +11,14 @@ if [ "${VIRTUAL_ENV:-}" != "$expected_environment" ]; then
 fi
 
 .venv/bin/python -m pytest
+./scripts/test-c-vectors.sh
 
 docker build --platform linux/arm64 \
     -f deploy/Dockerfile.core \
-    -t tuss4470-acquisition-core:m0-arm64 .
-docker run --rm --platform linux/arm64 tuss4470-acquisition-core:m0-arm64
+    -t tuss4470-acquisition-core:m1-arm64 .
+docker run --rm --platform linux/arm64 tuss4470-acquisition-core:m1-arm64
 
 mkdir -p .tools/buildx
 docker buildx build --platform linux/amd64 \
-    --output type=oci,dest=.tools/buildx/tuss4470-acquisition-core-m0-amd64.tar \
+    --output type=oci,dest=.tools/buildx/tuss4470-acquisition-core-m1-amd64.tar \
     -f deploy/Dockerfile.core .

@@ -15,12 +15,20 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["packages/usac_runtime/src/usac_runtime"]
+packages = [
+  "packages/usac_protocol/src/usac_protocol",
+  "packages/usac_runtime/src/usac_runtime",
+]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = [
+  "packages/usac_protocol/tests",
   "packages/usac_runtime/tests",
   "tests",
 ]
-pythonpath = ["packages/usac_runtime/src", "."]
+pythonpath = [
+  "packages/usac_protocol/src",
+  "packages/usac_runtime/src",
+  ".",
+]

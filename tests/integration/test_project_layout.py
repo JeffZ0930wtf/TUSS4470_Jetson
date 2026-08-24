@@ -69,6 +69,8 @@ class ProjectLayoutTests(unittest.TestCase):
 
         self.assertIn("public.ecr.aws/docker/library/python:3.12-slim@sha256:", dockerfile)
         self.assertNotIn("RUN python -m pip install", dockerfile)
+        self.assertIn("packages/usac_protocol/src", dockerfile)
+        self.assertIn("import usac_protocol", dockerfile)
         self.assertIn(".venv", dockerignore)
         self.assertIn(".tools", dockerignore)
 
@@ -82,6 +84,7 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn(".venv", jetson_test)
         self.assertIn("linux/arm64", jetson_test)
         self.assertIn("linux/amd64", jetson_test)
+        self.assertIn("m1-arm64", jetson_test)
         self.assertNotIn("make -C firmware", jetson_test)
 
     def test_m0_firmware_never_configures_a_burst(self) -> None:
@@ -113,6 +116,24 @@ class ProjectLayoutTests(unittest.TestCase):
             if b"\r\n" in path.read_bytes()
         ]
         self.assertEqual(files_with_crlf, [])
+
+    def test_m1_c_vector_checker_is_part_of_jetson_test_entrypoint(self) -> None:
+        jetson_test = (ROOT / "scripts/test-all.sh").read_text(encoding="utf-8")
+
+        self.assertTrue((ROOT / "tests/c/test_protocol_vectors.c").is_file())
+        self.assertTrue((ROOT / "scripts/test-c-vectors.sh").is_file())
+        self.assertIn("test-c-vectors.sh", jetson_test)
+
+    def test_compose_uses_the_m1_image_tag(self) -> None:
+        compose = (ROOT / "deploy/compose.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("tuss4470-acquisition-core:m1", compose)
+        self.assertNotIn("tuss4470-acquisition-core:m0", compose)
+
+    def test_protocol_hex_vectors_are_not_treated_as_firmware_outputs(self) -> None:
+        ignore_rules = (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+        self.assertIn("!protocol/vectors/*.hex", ignore_rules)
 
 
 if __name__ == "__main__":

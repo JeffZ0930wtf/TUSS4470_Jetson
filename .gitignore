@@ -30,6 +30,7 @@ firmware/Debug/
 firmware/Release/
 *.out
 *.hex
+!protocol/vectors/*.hex
 *.map
 *.obj
 *.d
