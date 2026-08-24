@@ -98,6 +98,7 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn("Version", windows_check)
         self.assertIn("Required", windows_check)
         self.assertIn(".tools", windows_check)
+        self.assertIn("usb-cdc-device", windows_check)
         self.assertIn("docker compose version", jetson_check)
         self.assertIn("docker buildx version", jetson_check)
         self.assertIn("uv --version", jetson_check)

@@ -30,6 +30,10 @@ Validated in PowerShell from `D:\Desktop\TUSS4470_software` using the repository
 - Docker Desktop: not installed; optional for the approved Windows M0 role.
 - MSP430 flashing utility: not installed; optional in M0, and no flashing
   command is present in the M0 test path.
+- Connected TI/LaunchPad USB CDC device: not present during the final PnP
+  probe, so no active-device driver version could be recorded. The environment
+  checker reports this explicitly as an optional M0 item; USB enumeration and
+  driver acceptance remain part of the later real-hardware gate.
 
 The official tool archives were checksum-verified before local extraction.
 They remain under ignored `.tools` and are not repository content:
