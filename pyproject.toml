@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tuss4470-acquisition"
+version = "0.0.0"
+description = "Cross-platform host skeleton for the TUSS4470 ultrasonic acquisition module"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["packages/usac_runtime/src/usac_runtime"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = [
+  "packages/usac_runtime/tests",
+  "tests",
+]
+pythonpath = ["packages/usac_runtime/src", "."]

@@ -1,0 +1,9 @@
+[serial]
+port = "COM7"
+baudrate = 115200
+timeout_ms = 2000
+
+[storage]
+data_dir = "../var/windows/data"
+spool_dir = "../var/windows/spool"
+sqlite_path = "../var/windows/core/captures.sqlite3"

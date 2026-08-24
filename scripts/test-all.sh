@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+set -eu
+
+repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repository_root"
+
+expected_environment="$repository_root/.venv"
+if [ "${VIRTUAL_ENV:-}" != "$expected_environment" ]; then
+    printf '%s\n' 'activate the repository .venv first: . .venv/bin/activate' >&2
+    exit 1
+fi
+
+.venv/bin/python -m pytest
+
+docker build --platform linux/arm64 \
+    -f deploy/Dockerfile.core \
+    -t tuss4470-acquisition-core:m0-arm64 .
+docker run --rm --platform linux/arm64 tuss4470-acquisition-core:m0-arm64
+
+mkdir -p .tools/buildx
+docker buildx build --platform linux/amd64 \
+    --output type=oci,dest=.tools/buildx/tuss4470-acquisition-core-m0-amd64.tar \
+    -f deploy/Dockerfile.core .

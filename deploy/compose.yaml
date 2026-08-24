@@ -1,0 +1,7 @@
+services:
+  core:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.core
+    image: tuss4470-acquisition-core:m0
+    command: ["python", "-c", "import usac_runtime; print('usac-core-skeleton:ready')"]

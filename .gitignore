@@ -1,0 +1,48 @@
+# Python
+.venv/
+.tools/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Runtime data and secrets
+.env
+.env.*
+!.env.example
+data/
+spool/
+*.sqlite
+*.sqlite3
+*.db
+*.wal
+*.shm
+*.key
+*.pem
+*.p12
+
+# Firmware and IDE outputs
+firmware/build/
+firmware/Debug/
+firmware/Release/
+*.out
+*.hex
+*.map
+*.obj
+*.d
+
+# Instrument and acquisition artifacts
+captures/
+instrument-exports/
+*.logicdata
+*.sal
+*.wfm
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

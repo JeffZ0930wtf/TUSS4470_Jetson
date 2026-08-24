@@ -1,0 +1,9 @@
+[serial]
+port = "loop://"
+baudrate = 115200
+timeout_ms = 100
+
+[storage]
+data_dir = "../var/test/data"
+spool_dir = "../var/test/spool"
+sqlite_path = "../var/test/core/captures.sqlite3"

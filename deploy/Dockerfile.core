@@ -1,0 +1,9 @@
+FROM public.ecr.aws/docker/library/python:3.12-slim@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a
+
+WORKDIR /opt/usac
+ENV PYTHONPATH=/opt/usac/packages/usac_runtime/src \
+    PYTHONUNBUFFERED=1
+
+COPY packages/usac_runtime/src packages/usac_runtime/src
+
+CMD ["python", "-c", "import usac_runtime; print('usac-core-skeleton:ready')"]

@@ -1,0 +1,12 @@
+.git
+.venv
+.tools
+.pytest_cache
+**/__pycache__
+firmware/build
+captures
+data
+spool
+*.sqlite
+*.sqlite3
+*.db
