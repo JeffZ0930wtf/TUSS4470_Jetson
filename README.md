@@ -15,7 +15,7 @@ features and does not predict SOC or SOH.
 - Never commit captures, spool files, SQLite databases, credentials, firmware
   binaries, or large instrument exports.
 
-## Implemented through M1
+## Implemented through M1; M2 candidate under hardware verification
 
 - Cross-platform runtime configuration and serial transport boundary.
 - USAC v1 little-endian frame codec, CRC-32/ISO-HDLC, bounded host stream
@@ -32,6 +32,67 @@ features and does not predict SOC or SOH.
 
 M1 needs no connected LaunchPad or TUSS4470. The simulator never enumerates
 USB, opens SPI, flashes firmware, or emits a Burst.
+
+The M2 candidate adds reset-safe IO, USB CDC, bounded MCU parsing, stable
+identity, TUSS4470 SPI configuration/readback, VDRV status checks, and explicit
+Standby/Sleep transitions. Its public `CAPTURE_ONCE` path always returns
+`INVALID_STATE`; no M2 source path can drive IO2 low or start the Burst timer.
+Every session-end and configuration-failure path clears trigger state, puts
+VDRV in Hi-Z, and leaves the TUSS4470 in Standby so an idle IO_MODE 3 profile
+is not armed across an MCU reset.
+The last verified configuration snapshot remains reportable across a clean
+DTR close, but the hardware profile is marked inactive until it is explicitly
+reapplied and read back; these are separate safety states.
+The verified bring-up SPI rate is 1 MHz (24 MHz SMCLK divided by 24). This is
+inside TI's allowed range and is intentionally below the 8 MHz maximum; the
+SPI link is a control path and is not the ADC sample clock.
+
+## M2 no-Burst hardware checks
+
+Build first; this does not flash the LaunchPad:
+
+```powershell
+. ./.venv/Scripts/Activate.ps1
+./scripts/build-firmware-m2.ps1
+./scripts/test-m2-safety.ps1
+```
+
+Flashing is a separate controlled action. Turn external VPWR off while keeping
+the LaunchPad USB/debug connection present, close the TI GUI and any process
+holding its ports, then run:
+
+```powershell
+./scripts/flash-firmware-m2.ps1 -ExternalVpwrOffConfirmed
+```
+
+The script targets only the fixed M2 no-Burst ELF and uses TI DSLite with
+erase, flash, and verify. It refuses to run without the physical-power
+confirmation flag. Re-enumeration after flashing is expected, so the old COM
+number must not be assumed.
+
+After the controlled flashing step, use the same Python command on Windows
+(`COMx`) or Jetson (`/dev/ttyACM*`). With external VPWR off, only verify USB,
+the DTR session gate, and identity:
+
+```powershell
+usac-m2-smoke --port COM8 --hello-only
+```
+
+`--hello-only` sends HELLO only. It does not access TUSS4470 configuration and
+never sends CAPTURE. Before configuration verification, apply the approved
+Standard topology: J6 only 3-4 fitted, J8 fitted, external VPWR 7.0 V with
+correct polarity and current limit, J2=TX, J3=RX, R12 removed, J1=8 nF, and
+J4=6.8 nF. Reset/re-enumerate the LaunchPad after VPWR is stable, then run:
+
+```powershell
+usac-m2-smoke --port COM8
+usac-m2-smoke --port COM8 --apply-same-config
+```
+
+The first command reads the configuration. The second reapplies exactly the
+verified bytes and requires an ACK after SPI readback; it is not a general raw
+register writer. All three modes emit JSON with `burst_command_sent: false`.
+The port name is an example and must be replaced by the enumerated device.
 
 ## Development checks
 

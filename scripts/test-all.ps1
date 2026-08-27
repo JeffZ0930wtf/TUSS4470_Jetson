@@ -10,3 +10,15 @@ if (-not $env:VIRTUAL_ENV -or $env:VIRTUAL_ENV -ne $expectedEnvironment) {
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & (Join-Path $PSScriptRoot 'build-firmware.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& (Join-Path $PSScriptRoot 'test-firmware-unit.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& (Join-Path $PSScriptRoot 'test-ti-usb-stack-build.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& (Join-Path $PSScriptRoot 'build-firmware-m2.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& (Join-Path $PSScriptRoot 'test-m2-safety.ps1')

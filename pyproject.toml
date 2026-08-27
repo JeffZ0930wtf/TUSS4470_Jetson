@@ -7,7 +7,12 @@ name = "tuss4470-acquisition"
 version = "0.0.0"
 description = "Cross-platform host skeleton for the TUSS4470 ultrasonic acquisition module"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+  "pyserial>=3.5,<4",
+]
+
+[project.scripts]
+usac-m2-smoke = "usac_runtime.m2_cli:main"
 
 [project.optional-dependencies]
 dev = [
