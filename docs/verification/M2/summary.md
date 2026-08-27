@@ -1,8 +1,16 @@
 # M2 verification summary
 
-Status: Hardware verification in progress
+Status: Accepted as completed no-Burst M2 baseline; M3 not started
 
 Date: 2026-08-27
+
+## Document overview
+
+This record preserves the automated and real-hardware evidence for the M2
+no-Burst firmware. It covers USB CDC, bounded protocol handling, TUSS4470
+configuration/readback, supply checks, and safe idle/reset behavior. It does
+not claim dynamic IO2 timing, absolute SCLK calibration, CAPTURE, or Burst;
+those items are outside the accepted M2 scope.
 
 ## Scope
 
@@ -153,22 +161,15 @@ short it for discharge while USB is connected.
    session end preserves the former and clears the latter; SET_CONFIG success
    sets both; any failed apply or failed safe transition clears both.
 
-## Remaining physical evidence before M2 milestone commit
+## Accepted limitations and closure decision
 
-The controlled procedure and exact official-board references are recorded in
-`hardware-gate.md`.
+The project accepts M2 as the completed no-Burst baseline using the static
+safety audit, simulator tests, real SPI/configuration closure, measured supply
+rails, idle IO2/SCLK levels, and corrected S3 reset behavior recorded above.
+Dynamic IO2 transients, absolute SCLK measurement, WDT/PUC physical traces,
+and first-Burst timing remain unmeasured and are not represented as passed.
 
-- Observe IO2 with a logic analyzer or oscilloscope during power-up, S3 reset,
-  successful configuration, and a forced configuration failure; it must never
-  go low in M2.
-- Record the analyzer trace showing SCLK idle-low and the 1 MHz SPI transfer;
-  no IO2 Burst edges may occur.
-- Ordinary S3 reset and new boot-session behavior have passed functionally.
-  Inject WDT/PUC reset and confirm reset-safe IO2 when a logic analyzer or
-  oscilloscope is available.
-- Rerun the complete Windows suite after the final evidence/document update.
-- Commit with `milestone(M2): complete safe firmware configuration`, push to
-  `origin/main`, verify local/remote SHA equality, and require a clean tree.
-
-Until these items are complete, M2 is not declared complete and M3 Burst is
-not authorized.
+The former instrument-dependent M2 procedure is retained only as historical
+material under `docs/archive/M2/`. M2 closure does not authorize CAPTURE or
+Burst and does not start M3. Any later transmission milestone must define its
+own proportionate safety checks before enabling a hardware path.

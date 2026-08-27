@@ -1,5 +1,13 @@
 # TUSS4470 Ultrasonic Acquisition Module
 
+## Document overview
+
+This README is the entry point for developers and operators of the standalone
+ultrasonic acquisition submodule. It identifies the repository boundary,
+current milestone, hardware-safety rules, and supported development commands.
+Detailed technical requirements live in the controlled design and roadmap;
+protocol and verification details live under `docs/`.
+
 This repository contains the acquisition-only submodule for the
 MSP-EXP430F5529LP and BOOSTXL-TUSS4470. It does not calculate ultrasonic
 features and does not predict SOC or SOH.
@@ -9,13 +17,14 @@ features and does not predict SOC or SOH.
 - M0 builds tools and a non-flashed firmware skeleton only. It must not trigger
   TUSS4470 transmission.
 - USB-only operation is limited to development and no-Burst diagnostics.
-- Later transmission requires the approved Standard power profile, external
+- Future transmission requires the approved Standard power profile, external
   VPWR 7.0 V, internal VDRV 5 V, SPI readback, VDRV_READY, fault checks, and the
-  explicit hardware gate defined by the controlled design.
+  explicit safety gate defined for that later milestone. M2 authorizes no
+  transmission, and this repository has not started M3 development.
 - Never commit captures, spool files, SQLite databases, credentials, firmware
   binaries, or large instrument exports.
 
-## Implemented through M1; M2 candidate under hardware verification
+## Implemented through M2; M3 not started
 
 - Cross-platform runtime configuration and serial transport boundary.
 - USAC v1 little-endian frame codec, CRC-32/ISO-HDLC, bounded host stream
@@ -33,7 +42,7 @@ features and does not predict SOC or SOH.
 M1 needs no connected LaunchPad or TUSS4470. The simulator never enumerates
 USB, opens SPI, flashes firmware, or emits a Burst.
 
-The M2 candidate adds reset-safe IO, USB CDC, bounded MCU parsing, stable
+M2 adds reset-safe IO, USB CDC, bounded MCU parsing, stable
 identity, TUSS4470 SPI configuration/readback, VDRV status checks, and explicit
 Standby/Sleep transitions. Its public `CAPTURE_ONCE` path always returns
 `INVALID_STATE`; no M2 source path can drive IO2 low or start the Burst timer.
@@ -48,6 +57,11 @@ inside TI's allowed range and is intentionally below the 8 MHz maximum; the
 SPI link is a control path and is not the ADC sample clock.
 
 ## M2 no-Burst hardware checks
+
+M2 is accepted as the completed no-Burst configuration milestone. Dynamic IO2
+edge and external timing measurements are deferred; they are not claimed by
+the M2 evidence. The commands below reproduce the completed M2 checks and do
+not authorize CAPTURE or Burst.
 
 Build first; this does not flash the LaunchPad:
 
