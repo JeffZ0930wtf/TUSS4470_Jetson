@@ -1,3 +1,6 @@
+/* Applies a validated TUSS4470 profile through an injected SPI bus and closes
+ * every error path by attempting Standby/Hi-Z. Register ordering is a safety
+ * property: transient trigger fields are cleared before operational values. */
 #include "tuss4470_configurator.h"
 
 #define TUSS4470_REG_DEV_CTRL_3 0x14u

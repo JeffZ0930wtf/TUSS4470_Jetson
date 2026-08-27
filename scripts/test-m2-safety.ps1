@@ -1,3 +1,5 @@
+# Static M2 safety gate. It rejects any source path that can drive IO2 low,
+# select its timer output, start TA2, or accept CAPTURE_ONCE in the M2 image.
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot

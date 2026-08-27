@@ -1,3 +1,6 @@
+/* M0 compile-only entry point. It establishes the original reset-safe IO2
+ * invariant without initializing the ultrasonic front end, timers, USB, or
+ * acquisition. */
 #include <msp430.h>
 
 int main(void)

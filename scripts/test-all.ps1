@@ -1,3 +1,5 @@
+# Windows aggregate gate: host tests, M0 compile, MCU simulator, official USB
+# stack compile, M2 link, and static no-Burst audit. It never opens a COM port.
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot

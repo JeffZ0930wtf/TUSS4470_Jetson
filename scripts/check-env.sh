@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# Reports Jetson/Linux compiler, container, Python, and USB CDC prerequisites;
+# it is a read-only environment gate and does not start acquisition services.
 set -eu
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)

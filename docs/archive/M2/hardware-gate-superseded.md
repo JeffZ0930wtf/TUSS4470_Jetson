@@ -1,5 +1,13 @@
 # M2 physical hardware gate (no Burst)
 
+## Archive notice
+
+This is a superseded M2 validation procedure retained for hardware-reference
+and decision traceability. The project later accepted M2 as a no-Burst
+baseline without making these instrument-dependent traces a blocking gate.
+This file is non-normative, does not authorize M3 work, and must not be cited
+as proof that the listed dynamic measurements were completed.
+
 This procedure is limited to the M2 no-Burst image. It must not be used with
 an image whose identity and SHA-256 have not been checked against the M2 build
 evidence. Do not send `CAPTURE_ONCE`, start a periodic task, or manually drive

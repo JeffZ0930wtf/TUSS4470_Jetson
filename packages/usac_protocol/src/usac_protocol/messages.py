@@ -1,3 +1,9 @@
+"""Typed codecs for bounded USAC command and response payloads.
+
+Field order and sizes mirror the machine-readable schema; these functions do
+not perform transport IO or device state transitions.
+"""
+
 from __future__ import annotations
 
 import struct

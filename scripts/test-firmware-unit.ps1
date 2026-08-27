@@ -1,3 +1,5 @@
+# Compiles pure first-party firmware logic for the MSP430 simulator and uses a
+# scripted GDB completion breakpoint; it does not connect to physical hardware.
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot

@@ -1,3 +1,9 @@
+"""Canonical acquisition/profile configuration shared with MSP430 firmware.
+
+SHA-256 identifies semantic profile content, while CRC-32 detects accidental
+wire corruption. Both cover the same explicitly ordered canonical bytes.
+"""
+
 from __future__ import annotations
 
 import hashlib

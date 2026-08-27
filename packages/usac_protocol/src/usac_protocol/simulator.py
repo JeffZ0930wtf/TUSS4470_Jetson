@@ -1,3 +1,9 @@
+"""Deterministic software-only USAC device used for protocol verification.
+
+It generates reproducible sample values but never opens USB/SPI, touches a
+board, or represents its samples as physical ultrasonic measurements.
+"""
+
 from __future__ import annotations
 
 import hashlib

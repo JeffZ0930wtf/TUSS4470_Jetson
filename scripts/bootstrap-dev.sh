@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# Creates the checkout-local Jetson/Linux environment from uv.lock. The script
+# deliberately avoids the host-wide base environment used for generic tools.
 set -eu
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)

@@ -1,3 +1,6 @@
+/* M2 hardware entry point. It owns reset-safe ordering, the TI USB CDC stack,
+ * clock bring-up, bounded command processing, and TUSS4470 configuration.
+ * This image deliberately contains no acquisition or Burst execution path. */
 #include <msp430.h>
 #include <stdint.h>
 

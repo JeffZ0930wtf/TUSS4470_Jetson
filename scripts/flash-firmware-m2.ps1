@@ -1,3 +1,5 @@
+# Programs only the fixed M2 no-Burst ELF through TI DSLite. The explicit VPWR
+# confirmation prevents programming while the TUSS4470 external rail is active.
 param(
     [switch]$ExternalVpwrOffConfirmed
 )

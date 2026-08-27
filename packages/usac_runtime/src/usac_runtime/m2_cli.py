@@ -1,3 +1,9 @@
+"""Operator CLI for the bounded M2 HELLO/configuration smoke workflow.
+
+The command controls DTR session establishment and JSON reporting; it exposes
+no CAPTURE or Burst option.
+"""
+
 from __future__ import annotations
 
 import argparse

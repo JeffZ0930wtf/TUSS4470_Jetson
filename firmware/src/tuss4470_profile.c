@@ -1,3 +1,6 @@
+/* Defines the verified D10x4 M2 register profile and validates its immutable
+ * address/mask/value relationships. It is a bring-up baseline, not a public
+ * raw-register interface or the only future transducer configuration. */
 #include "tuss4470_profile.h"
 
 static const uint8_t register_addresses[TUSS4470_PROFILE_REGISTER_COUNT] = {

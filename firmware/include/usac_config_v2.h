@@ -1,3 +1,5 @@
+/* Fixed MCU-side configuration contract. Encoding and decoding validate the
+ * canonical hash/CRC; they do not apply registers or start hardware. */
 #ifndef USAC_CONFIG_V2_H
 #define USAC_CONFIG_V2_H
 
@@ -29,6 +31,7 @@ typedef enum {
 } usac_config_v2_result_t;
 
 void usac_config_v2_init_d10x4(usac_config_v2_t *config);
+/* Recomputes both identifiers after an intentional semantic field change. */
 usac_config_v2_result_t usac_config_v2_rehash(usac_config_v2_t *config);
 usac_config_v2_result_t usac_config_v2_encode(
     const usac_config_v2_t *config,

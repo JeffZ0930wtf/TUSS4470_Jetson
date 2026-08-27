@@ -1,3 +1,6 @@
+/* Minimal side-effect gate used to prevent overlapping command encoding. M2
+ * never starts a transmitter; the type preserves the one-in-flight invariant
+ * required by later protocol state without providing a Burst implementation. */
 #include "usac_tx_gate.h"
 
 void usac_tx_gate_reset(usac_tx_gate_t *gate)

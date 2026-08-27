@@ -1,3 +1,5 @@
+/* Holds hardware-independent M2 safety primitives: protocol state, timing
+ * range checks, clock-fault interpretation, and TUSS4470 SPI word parity. */
 #include "usac_m2_core.h"
 
 static uint16_t tuss4470_spi_word(uint8_t is_read, uint8_t address, uint8_t value)

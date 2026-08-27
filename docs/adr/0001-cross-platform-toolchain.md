@@ -2,6 +2,13 @@
 
 Status: Accepted for M0
 
+## Document overview
+
+This ADR records the cross-platform toolchain and environment decision that
+made the M0 repository reproducible on Windows and Jetson. It applies to all
+later milestones unless replaced by another accepted ADR and complements the
+repository bootstrap scripts and development standards.
+
 ## Decision
 
 - Host code targets CPython 3.12 and uses only the standard library at runtime

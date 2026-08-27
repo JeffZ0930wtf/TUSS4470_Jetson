@@ -1,3 +1,9 @@
+"""Bounded incremental host parser with deterministic byte-stream recovery.
+
+The parser owns a finite buffer, times out incomplete candidates, and discards
+one candidate byte after structural or CRC failure so later magic can be found.
+"""
+
 from __future__ import annotations
 
 import struct

@@ -1,3 +1,4 @@
+/* Allocation-free one-shot SHA-256 used for bounded identity/config material. */
 #ifndef USAC_SHA256_H
 #define USAC_SHA256_H
 

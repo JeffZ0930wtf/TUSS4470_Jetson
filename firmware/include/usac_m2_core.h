@@ -1,3 +1,5 @@
+/* Hardware-independent M2 state, timing, clock, and SPI safety primitives.
+ * This API can validate readiness but contains no transmission routine. */
 #ifndef USAC_M2_CORE_H
 #define USAC_M2_CORE_H
 

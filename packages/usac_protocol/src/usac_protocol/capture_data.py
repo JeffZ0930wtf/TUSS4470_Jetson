@@ -1,3 +1,9 @@
+"""Exact CAPTURE_DATA metadata, event, register, and raw-sample codec.
+
+Samples are serialized exactly as supplied; this module never interpolates,
+normalizes, smooths, or replaces acquisition values.
+"""
+
 from __future__ import annotations
 
 import struct

@@ -1,3 +1,6 @@
+/* M2 application state and command dispatcher. Hardware actions are injected
+ * as callbacks so simulator tests can verify state transitions and failure
+ * closure without accessing the real board. */
 #ifndef USAC_M2_APP_H
 #define USAC_M2_APP_H
 
@@ -42,7 +45,9 @@ void usac_m2_app_init(
     const uint8_t boot_id[16],
     uint8_t reset_reason,
     usac_m2_state_t initial_state);
+/* Ends host ownership and forces safe hardware before clearing session state. */
 void usac_m2_app_end_session(usac_m2_app_t *app);
+/* Encodes one response into caller storage; returns false if it cannot do so. */
 uint8_t usac_m2_app_handle(
     usac_m2_app_t *app,
     const usac_mcu_frame_view_t *request,

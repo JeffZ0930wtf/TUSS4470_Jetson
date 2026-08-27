@@ -4,6 +4,14 @@ Status: frozen for M1
 Wire protocol version: 1
 Parameter schema: `tuss4470-parameters-v1`
 
+## Document overview
+
+This document freezes the M1 wire-protocol and parameter contract shared by
+the MSP430 firmware, host libraries, simulator, and future bridge/core. It
+solves byte-level interoperability and configuration-traceability problems for
+the acquisition module. The machine-readable schemas and fixed vectors are
+authoritative when prose and encoded bytes must be compared.
+
 ## Scope
 
 This contract connects future MSP430 firmware, bridge, core, and the M1

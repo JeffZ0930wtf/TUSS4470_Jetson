@@ -1,3 +1,9 @@
+"""Project safety policy layered on top of data-sheet-valid configuration.
+
+A value can be representable yet unsafe for the currently assembled BOOSTXL
+direct-drive hardware; this module enforces that narrower application boundary.
+"""
+
 from __future__ import annotations
 
 from .config_v2 import AcquisitionConfigV2

@@ -1,3 +1,6 @@
+/* Contains the only first-party direct MSP430 register access used by M2.
+ * It establishes IO2 high before output direction, keeps acquisition timers
+ * stopped, and maps the TUSS4470 mode-1 16-bit SPI transactions to USCI. */
 #include <msp430.h>
 
 #include "usac_m2_core.h"

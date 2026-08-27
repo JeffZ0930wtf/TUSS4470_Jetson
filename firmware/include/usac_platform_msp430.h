@@ -1,3 +1,5 @@
+/* MSP430F5529 hardware adapter for M2. Functions have direct GPIO, timer, and
+ * SPI side effects; only reset-safe/timing staging and TUSS control are exposed. */
 #ifndef USAC_PLATFORM_MSP430_H
 #define USAC_PLATFORM_MSP430_H
 
@@ -7,6 +9,7 @@
 
 void usac_platform_enter_reset_safe(void);
 void usac_platform_spi_init(void);
+/* Loads and reads back timer divisors while leaving both timers stopped. */
 uint8_t usac_platform_stage_timing(
     const usac_m2_timing_stage_t *requested,
     usac_m2_timing_stage_t *readback);

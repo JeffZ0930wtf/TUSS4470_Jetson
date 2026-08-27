@@ -1,3 +1,5 @@
+# M1 container-import smoke service. Persistent bridge/core services are future
+# milestones and must not be inferred from this placeholder command.
 services:
   core:
     build:

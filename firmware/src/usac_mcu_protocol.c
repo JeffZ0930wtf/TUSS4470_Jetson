@@ -1,3 +1,6 @@
+/* Bounded USAC v1 parser/encoder for the 8 KB MSP430. It validates header,
+ * message-specific length, and CRC without allocating a host-sized frame;
+ * malformed candidates are discarded deterministically for resynchronization. */
 #include "usac_mcu_protocol.h"
 
 #define USAC_PROTOCOL_VERSION 1u

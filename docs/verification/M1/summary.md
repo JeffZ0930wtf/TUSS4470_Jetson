@@ -3,6 +3,13 @@
 Date: 2026-08-24
 Milestone: `milestone(M1): complete protocol and simulator`
 
+## Document overview
+
+This record summarizes the evidence used to close the software-only M1 wire
+protocol, parameter schema, fixed vectors, and simulator. It complements
+`docs/protocol.md` and makes no claim about real ultrasonic transmission or
+waveform acquisition.
+
 ## Scope and hardware state
 
 M1 freezes the minimum USAC wire contract, complete first-version parameter

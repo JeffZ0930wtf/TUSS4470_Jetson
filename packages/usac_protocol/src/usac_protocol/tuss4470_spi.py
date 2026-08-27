@@ -1,3 +1,9 @@
+"""Pure TUSS4470 16-bit SPI command encoder with odd-parity generation.
+
+It produces fixed test vectors only and does not open a bus or repair returned
+device bytes in software.
+"""
+
 from __future__ import annotations
 
 

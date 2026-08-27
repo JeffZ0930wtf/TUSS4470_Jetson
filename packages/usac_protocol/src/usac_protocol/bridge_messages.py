@@ -1,3 +1,9 @@
+"""Bridge/core delivery payloads for durable capture handoff.
+
+These codecs bind an outer delivery identity to the unchanged inner device
+frame. They do not persist data or acknowledge a SQLite transaction themselves.
+"""
+
 from __future__ import annotations
 
 import struct

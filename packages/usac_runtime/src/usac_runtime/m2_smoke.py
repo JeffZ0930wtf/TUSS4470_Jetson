@@ -1,3 +1,9 @@
+"""Transport-independent M2 HELLO/GET_CONFIG verification sequence.
+
+The optional write reapplies only the exact configuration that was just read
+and requires matching ACK identity/CRC. No code path constructs CAPTURE_ONCE.
+"""
+
 from __future__ import annotations
 
 import hashlib

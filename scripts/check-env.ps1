@@ -1,3 +1,5 @@
+# Reports Windows development prerequisites without installing or modifying
+# them. USB CDC detection is informational and does not open the COM device.
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot

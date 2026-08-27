@@ -3,6 +3,13 @@
 Date: 2026-08-24
 Milestone: `milestone(M0): complete cross-platform skeleton`
 
+## Document overview
+
+This record summarizes the evidence used to close M0. It applies only to the
+cross-platform skeleton and safe non-flashed firmware build; later milestone
+summaries supersede it for implemented functionality but not for historical
+toolchain evidence.
+
 ## Scope and safety result
 
 M0 establishes the cross-platform repository, reproducible Python environment,

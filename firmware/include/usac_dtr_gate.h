@@ -1,3 +1,5 @@
+/* Pure state machine requiring an observed DTR low before accepting a rising
+ * edge as the start of a host protocol session. */
 #ifndef USAC_DTR_GATE_H
 #define USAC_DTR_GATE_H
 

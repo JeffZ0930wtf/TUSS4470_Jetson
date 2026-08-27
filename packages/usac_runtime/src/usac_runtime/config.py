@@ -1,3 +1,9 @@
+"""Cross-platform runtime configuration loaded from TOML and USAC_* overrides.
+
+Serial names and storage paths remain opaque so business code does not branch
+on Windows drive letters or Linux device spellings.
+"""
+
 from __future__ import annotations
 
 import os

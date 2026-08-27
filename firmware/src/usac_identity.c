@@ -1,3 +1,5 @@
+/* Converts the MSP430 TLV die record into stable device identity material and
+ * derives boot-session identifiers from that device ID plus the host nonce. */
 #include "usac_identity.h"
 
 #include "usac_sha256.h"

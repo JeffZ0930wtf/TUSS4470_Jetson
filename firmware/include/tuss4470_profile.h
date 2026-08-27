@@ -1,3 +1,6 @@
+/* Verified D10x4 profile model shared by configuration, readback, and wire
+ * serialization. Masks prevent reserved or transient bits from leaking into
+ * ordinary profile application. */
 #ifndef TUSS4470_PROFILE_H
 #define TUSS4470_PROFILE_H
 

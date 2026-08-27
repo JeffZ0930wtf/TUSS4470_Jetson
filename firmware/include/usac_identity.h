@@ -1,3 +1,5 @@
+/* Stable device and per-HELLO boot identity derivation from MSP430 TLV data.
+ * Byte order and lengths are part of the USB/protocol interoperability rule. */
 #ifndef USAC_IDENTITY_H
 #define USAC_IDENTITY_H
 

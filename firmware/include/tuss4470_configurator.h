@@ -1,3 +1,6 @@
+/* Public contract for safe, bus-injected TUSS4470 configuration. Callers
+ * receive explicit identity/readback/fault results; failure paths may perform
+ * additional writes to return the device to Standby/Hi-Z. */
 #ifndef TUSS4470_CONFIGURATOR_H
 #define TUSS4470_CONFIGURATOR_H
 
@@ -53,6 +56,7 @@ tuss4470_config_result_t tuss4470_configure_m2(
     const tuss4470_profile_t *profile,
     uint16_t vdrv_ready_poll_limit,
     tuss4470_config_report_t *report);
+/* Best-effort safety transition used during boot, session end, and failures. */
 tuss4470_config_result_t tuss4470_force_safe(const tuss4470_bus_t *bus);
 tuss4470_config_result_t tuss4470_enter_low_power(
     const tuss4470_bus_t *bus,

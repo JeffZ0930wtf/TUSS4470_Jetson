@@ -1,3 +1,5 @@
+/* Tracks a real USB DTR low-to-high transition. Enumeration or an already-high
+ * line is insufficient because a new host session must be explicitly opened. */
 #include "usac_dtr_gate.h"
 
 void usac_dtr_gate_reset(usac_dtr_gate_t *gate)

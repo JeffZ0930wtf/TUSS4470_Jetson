@@ -1,3 +1,5 @@
+/* Memory-bounded MCU framing API for USAC v1. Frame views borrow parser
+ * storage and remain valid only until the parser consumes another byte. */
 #ifndef USAC_MCU_PROTOCOL_H
 #define USAC_MCU_PROTOCOL_H
 
@@ -34,6 +36,7 @@ typedef enum {
 } usac_mcu_parse_result_t;
 
 void usac_mcu_parser_init(usac_mcu_parser_t *parser);
+/* Converts an unfinished candidate into an explicit timeout and resets it. */
 usac_mcu_parse_result_t usac_mcu_parser_expire(usac_mcu_parser_t *parser);
 usac_mcu_parse_result_t usac_mcu_parser_feed(
     usac_mcu_parser_t *parser,

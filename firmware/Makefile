@@ -1,3 +1,5 @@
+# Portable M0 compile-only target. M2 uses the controlled PowerShell build
+# because its pinned TI USB stack and generated descriptors need explicit paths.
 CC ?= msp430-elf-gcc
 MCU := msp430f5529
 BUILD_DIR := build

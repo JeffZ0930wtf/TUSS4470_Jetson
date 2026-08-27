@@ -2,6 +2,13 @@
 
 Status: Accepted for M2 candidate re-verification
 
+## Document overview
+
+This ADR documents the reset fault that required TUSS4470 to finish every M2
+safe transition in Standby. It applies to session termination, configuration
+failure, and reset recovery in the no-Burst firmware and provides the rationale
+behind the corresponding safety code and verification record.
+
 ## Context
 
 The original M2 `force_safe` sequence cleared `CMD_TRIGGER`, disabled the

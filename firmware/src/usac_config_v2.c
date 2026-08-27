@@ -1,3 +1,6 @@
+/* Implements the MCU copy of AcquisitionConfigV2. The canonical 35-byte
+ * representation feeds both SHA-256 identity and CRC integrity checks so C
+ * and Python bind commands to exactly the same hardware/timing fields. */
 #include "usac_config_v2.h"
 
 #include "usac_mcu_protocol.h"

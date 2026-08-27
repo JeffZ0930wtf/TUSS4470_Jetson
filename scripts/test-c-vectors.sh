@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# Verifies that the host C implementation consumes the same committed protocol
+# vectors as Python, catching byte-order or CRC drift across platforms.
 set -eu
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)

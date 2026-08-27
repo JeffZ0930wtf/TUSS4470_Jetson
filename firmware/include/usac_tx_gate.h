@@ -1,3 +1,4 @@
+/* Pure one-in-flight bookkeeping; it does not control an IO pin or timer. */
 #ifndef USAC_TX_GATE_H
 #define USAC_TX_GATE_H
 

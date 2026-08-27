@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+# Jetson/Linux aggregate gate for host tests, protocol vectors, native ARM64
+# container execution, and AMD64 OCI cross-build; no MSP430 flashing occurs.
 set -eu
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)

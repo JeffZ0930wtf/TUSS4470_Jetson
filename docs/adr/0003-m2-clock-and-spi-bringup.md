@@ -2,6 +2,13 @@
 
 Status: Accepted for M2
 
+## Document overview
+
+This ADR records the verified MSP430 clock and TUSS4470 SPI bring-up choices,
+including the 24 MHz clock tree and conservative 1 MHz control link. It applies
+to the M2 firmware baseline and supplies hardware rationale used by later
+acquisition work; it does not authorize a Burst.
+
 ## Decision
 
 - Map MSP430F5529 P5.2/P5.3 to the XT2 peripheral before starting the 4 MHz

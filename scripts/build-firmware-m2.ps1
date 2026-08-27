@@ -1,3 +1,5 @@
+# Builds the fixed M2 no-Burst image from first-party sources plus TI's official
+# USB stack. Generated vendor copies live under ignored firmware/build.
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot

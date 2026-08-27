@@ -1,3 +1,9 @@
+"""USAC v1 frame header, CRC, and complete-frame validation primitives.
+
+This module handles complete byte strings. Incremental buffering and recovery
+from corrupt candidates belong to :mod:`usac_protocol.stream`.
+"""
+
 from __future__ import annotations
 
 import struct

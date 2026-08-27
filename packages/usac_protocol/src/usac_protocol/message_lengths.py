@@ -1,3 +1,9 @@
+"""Direction and exact payload-length policy for every USAC message type.
+
+Keeping these checks separate lets host and streaming parsers reject impossible
+frames before allocating or waiting for an attacker-controlled length.
+"""
+
 from __future__ import annotations
 
 from .frame import Flags, MessageType

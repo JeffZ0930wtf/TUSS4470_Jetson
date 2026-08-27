@@ -1,3 +1,5 @@
+# Creates the repository-local Windows Python environment from the locked
+# dependency set. Tool downloads stay under .tools and never modify host Python.
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot

@@ -1,3 +1,5 @@
+# Compiles the M0 reset-safe skeleton only. This script never invokes a flash
+# utility and resolves the official MSP430 toolchain from environment or .tools.
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot

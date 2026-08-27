@@ -2,6 +2,13 @@
 
 Status: Accepted for M2 final candidate
 
+## Document overview
+
+This ADR separates a reportable verified configuration from a register profile
+that is currently active in hardware. It solves an M2 cross-session state bug
+and defines an invariant that later milestones must preserve when they add
+acquisition states.
+
 ## Context
 
 M2 ends every clean DTR session by clearing trigger state, disabling the

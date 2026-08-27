@@ -190,3 +190,5 @@ int main(void)
     puts("C protocol vectors: PASS");
     return 0;
 }
+/* Cross-language fixed-vector check. This host test validates committed USAC
+ * bytes and CRC behavior; it is not compiled into MSP430 firmware. */

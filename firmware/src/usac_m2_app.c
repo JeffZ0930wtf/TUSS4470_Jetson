@@ -1,3 +1,6 @@
+/* Implements M2 request semantics above the bounded byte parser. It owns
+ * HELLO/configuration state, duplicate SET_CONFIG responses, and safe session
+ * shutdown. CAPTURE_ONCE is intentionally rejected in every M2 state. */
 #include "usac_m2_app.h"
 
 #include "usac_identity.h"

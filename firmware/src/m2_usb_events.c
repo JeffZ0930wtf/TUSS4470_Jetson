@@ -1,3 +1,6 @@
+/* Adapts TI's USB event callbacks to the M2 DTR/session state. Callbacks only
+ * signal the main loop or end a session; they never configure or trigger the
+ * ultrasonic transmitter from interrupt context. */
 #include <stdint.h>
 
 #include "driverlib.h"

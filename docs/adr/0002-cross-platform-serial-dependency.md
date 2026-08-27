@@ -2,6 +2,13 @@
 
 Status: Accepted for M2
 
+## Document overview
+
+This ADR explains why first-party runtime code accesses the LaunchPad USB CDC
+device through pyserial and a transport boundary. It applies to Windows and
+Jetson host integration from M2 onward and refines the M0 cross-platform
+toolchain decision without changing the wire protocol.
+
 ## Decision
 
 - Use pyserial 3.5 behind the existing `SerialConnection` structural boundary

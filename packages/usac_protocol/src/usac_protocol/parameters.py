@@ -1,3 +1,9 @@
+"""Loads and validates the first-party semantic TUSS4470 parameter registry.
+
+The registry is the shared source for field names, masks, units, and legal
+values; clients must not maintain independent GUI or API option tables.
+"""
+
 from __future__ import annotations
 
 import json
