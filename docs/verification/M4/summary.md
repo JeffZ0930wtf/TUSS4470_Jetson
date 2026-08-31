@@ -11,9 +11,9 @@ periodic acquisition.
 
 ## Status
 
-**In progress.** Host implementation and software regression are complete.
-Container validation and the final Windows real-hardware end-to-end capture
-are not yet recorded, so M4 and gate G3W are not closed.
+**In progress.** Host implementation, software regression, and ARM64 container
+validation are complete. The final Windows real-hardware end-to-end capture is
+not yet recorded, so M4 and gate G3W are not closed.
 
 ## Implemented scope
 
@@ -50,9 +50,10 @@ Result on 2026-08-31:
   PASS;
 - M3 no-Burst ADC/DMA diagnostic build and static audit: PASS.
 
-Targeted tests added after that aggregate run:
+Regression after the final host changes:
 
-- bridge/CLI SQLite-compatible source ID and safety-gate regression: `6 passed`;
+- complete Python suite: `109 passed`;
+- bridge/CLI SQLite-compatible source ID and safety-gate subset: `6 passed`;
 - core wrong-inner-message rejection: PASS as part of the existing validation
   path.
 
@@ -86,9 +87,38 @@ D:\Desktop\TUSS4470_data\
 The project layout test rejects configurations that place these runtime files
 inside `D:\Desktop\TUSS4470_software`.
 
+## ARM64 container evidence
+
+Jetson container validation used committed source `9781735181a087ceb2358f51430a4b3340c08dba`
+in the ordered verification directory
+`/home/yizhouzhao/workspace/TUSS4470_verification/m4-9781735-source`.
+The transferred source archive matched on both hosts:
+
+```text
+SHA-256 d487345a31557fcda9a2d3c0f44e293eb1c3f781f3671f996f2649e92cad48b4
+```
+
+`deploy/Dockerfile.core` built and started successfully on the real Jetson:
+
+```text
+image ID  sha256:cea13c4f5e94f83266881528d47f17227a7378abb535b3b827e8ff68b58fc5ef
+platform  linux/arm64
+size      43516394 bytes
+```
+
+One M1 protocol fixed vector was delivered through the running container to
+its external SQLite bind directory. The bridge reported `DELIVERED=1` and
+`PENDING=0`; the container exited normally after its one configured
+connection. Independent database inspection found exactly one row,
+`WIRE_MATCH=True`, `SAMPLES_MATCH=True`, and 8 exact sample bytes. This is a
+container/data-contract check only; it does not substitute for the pending
+2048-point Windows real-device G3W capture.
+
 ## Pending closure evidence
 
-- [ ] Build and start the M4 core container from the committed source.
+- [x] Build and start the M4 core container from committed source on the real
+      Jetson, then verify one fixed-vector spool/commit/download-equivalent
+      byte contract through an external SQLite bind directory.
 - [ ] Enumerate the real Windows device and confirm its stable identifier.
 - [ ] With the accepted M3 physical gates satisfied, perform exactly one real
       `Pulse=1`, 200 kS/s, 2048-point capture through `usac-bridge`.
