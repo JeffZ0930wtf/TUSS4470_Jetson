@@ -11,11 +11,13 @@ periodic acquisition.
 
 ## Status
 
-**Functionally complete; formal Git closure pending.** Host implementation,
+**Closed with the evidence and boundaries recorded here.** Host implementation,
 software regression, ARM64 container validation, and the Windows real-hardware
-end-to-end capture have passed. M4 becomes formally closed only after the
-required milestone commit reaches `origin/main`, local/remote SHA values match,
-Jetson `main` is synchronized, and the stage worktree is archived.
+end-to-end capture have passed. This summary is the non-functional payload of
+the required M4 milestone commit. The authoritative roadmap records whether
+that commit reached `origin/main`, whether local/remote SHA values matched,
+whether Jetson `main` was synchronized, and whether the stage worktree was
+retired; any failure in that outer transaction reopens M4.
 
 ## Implemented scope
 
@@ -169,8 +171,10 @@ then stopped, so no M4 service remains running in the background.
       and CLI inspection/download evidence.
 - [x] Rerun the complete Windows software gate; sensitive-data and final Git
       diff checks are performed immediately before staging the closure commit.
-- [ ] Create and push the required non-empty milestone commit, verify local and
-      remote 40-character SHA equality, sync Jetson, and archive the worktree.
+- [x] Prepare this summary as the required non-empty milestone closure update.
+      The subsequent push, SHA equality, Jetson synchronization, and worktree
+      retirement are recorded in the authoritative roadmap because this commit
+      cannot contain its own future SHA.
 
 ## Known boundaries
 
@@ -211,3 +215,13 @@ includes exactly these tracked paths before the final roadmap-only closure:
 - `pyproject.toml`
 - `scripts/bootstrap-dev.ps1`
 - `tests/integration/test_project_layout.py`
+
+## Formal milestone closure
+
+Functional implementation and real-hardware evidence entered `main` at
+`c7ad5e2e6637834a7b82befcb82b750da2475835`. This final update changes no
+runtime, protocol, firmware, hardware control, database schema, or captured
+data. It exists so the required
+`milestone(M4): complete Windows end-to-end pipeline` commit is non-empty and
+reviewable. The controlled roadmap is the final record of the pushed 40-character
+SHA, Jetson synchronization, and worktree retirement.
