@@ -13,6 +13,8 @@ dependencies = [
 
 [project.scripts]
 usac-m2-smoke = "usac_runtime.m2_cli:main"
+usac-m3-capture = "usac_runtime.m3_cli:main"
+usac-m3-loopback = "usac_runtime.m3_loopback_cli:main"
 
 [project.optional-dependencies]
 dev = [

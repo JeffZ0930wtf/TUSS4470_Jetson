@@ -1,21 +1,32 @@
 from __future__ import annotations
 
 from usac_protocol.config_v2 import D10X4_REGISTER_PAIRS, AcquisitionConfigV2
+from usac_protocol.frame import Flags, MessageType
+from usac_protocol.message_lengths import (
+    flags_are_valid_for_message,
+    payload_length_is_valid,
+)
 from usac_protocol.messages import (
     Ack,
     CaptureOnceRequest,
     ErrorResponse,
     HelloRequest,
+    Io2LoopbackRequest,
+    Io2LoopbackResult,
     SetConfigRequest,
     decode_ack,
     decode_capture_once_request,
     decode_error,
     decode_hello_request,
+    decode_io2_loopback_request,
+    decode_io2_loopback_result,
     decode_set_config_request,
     encode_ack,
     encode_capture_once_request,
     encode_error,
     encode_hello_request,
+    encode_io2_loopback_request,
+    encode_io2_loopback_result,
     encode_set_config_request,
 )
 
@@ -70,6 +81,82 @@ def test_capture_once_request_has_exact_60_byte_layout() -> None:
 
     assert len(encoded) == 60
     assert decode_capture_once_request(encoded) == request
+
+
+def test_io2_loopback_request_has_exact_56_byte_layout() -> None:
+    current = config()
+    request = Io2LoopbackRequest(
+        request_id=bytes(range(16)),
+        expected_profile_sha256=current.profile_sha256,
+        expected_device_config_crc32=current.device_config_crc32,
+        edge_count=8,
+    )
+
+    encoded = encode_io2_loopback_request(request)
+
+    assert len(encoded) == 56
+    assert encoded[-4:] == bytes.fromhex("08 00 00 00")
+    assert decode_io2_loopback_request(encoded) == request
+
+
+def test_io2_loopback_result_has_exact_86_byte_layout() -> None:
+    current = config()
+    result = Io2LoopbackResult(
+        request_id=bytes(range(16)),
+        profile_sha256=current.profile_sha256,
+        device_config_crc32=current.device_config_crc32,
+        burst_period_ticks=50,
+        captured_edges=8,
+        result_flags=1,
+        capture_ticks=(100, 150, 200, 250, 300, 350, 400, 450),
+        minimum_interval_ticks=50,
+        maximum_interval_ticks=50,
+        pre_spi_status=1,
+        pre_dev_stat=2,
+        pre_tof_config=3,
+        pre_vdrv_ctrl=4,
+        post_spi_status=5,
+        post_dev_stat=6,
+        post_tof_config=7,
+        post_vdrv_ctrl=8,
+        final_io2_level=1,
+    )
+
+    encoded = encode_io2_loopback_result(result)
+
+    assert len(encoded) == 86
+    assert encoded[-1] == 0
+    assert decode_io2_loopback_result(encoded) == result
+
+
+def test_io2_loopback_payloads_reject_nonzero_reserved_bytes() -> None:
+    current = config()
+    request = Io2LoopbackRequest(
+        request_id=bytes(16),
+        expected_profile_sha256=current.profile_sha256,
+        expected_device_config_crc32=current.device_config_crc32,
+        edge_count=8,
+    )
+    encoded = bytearray(encode_io2_loopback_request(request))
+    encoded[-1] = 1
+
+    try:
+        decode_io2_loopback_request(bytes(encoded))
+    except ValueError as error:
+        assert "reserved" in str(error)
+    else:
+        raise AssertionError("nonzero reserved request byte was accepted")
+
+
+def test_io2_loopback_frame_direction_and_lengths_are_exact() -> None:
+    message_type = MessageType.RUN_IO2_LOOPBACK_TEST
+
+    assert flags_are_valid_for_message(message_type, int(Flags.NONE))
+    assert flags_are_valid_for_message(message_type, int(Flags.RESPONSE))
+    assert payload_length_is_valid(message_type, int(Flags.NONE), 56)
+    assert payload_length_is_valid(message_type, int(Flags.RESPONSE), 86)
+    assert not payload_length_is_valid(message_type, int(Flags.NONE), 86)
+    assert not payload_length_is_valid(message_type, int(Flags.RESPONSE), 56)
 
 
 def test_ack_has_exact_24_byte_layout() -> None:

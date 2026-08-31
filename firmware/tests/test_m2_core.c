@@ -2,6 +2,10 @@
 #include <msp430.h>
 
 #include "usac_m2_core.h"
+#include "usac_m3_loopback.h"
+#include "usac_m3_capture.h"
+#include "usac_m3_capture_stream.h"
+#include "usac_m3_capture_tx.h"
 #include "tuss4470_profile.h"
 #include "tuss4470_configurator.h"
 #include "usac_platform_msp430.h"
@@ -507,6 +511,262 @@ static int test_mcu_parser_passes_unknown_bounded_command_to_app(void)
     return 0;
 }
 
+static usac_mcu_parse_result_t parse_complete_test_frame(
+    const uint8_t *encoded,
+    uint16_t encoded_length,
+    usac_mcu_frame_view_t *frame)
+{
+    usac_mcu_parser_t parser;
+    usac_mcu_parse_result_t result = USAC_MCU_PARSE_INCOMPLETE;
+    uint16_t index;
+
+    usac_mcu_parser_init(&parser);
+    for (index = 0u; index < encoded_length; ++index) {
+        result = usac_mcu_parser_feed(&parser, encoded[index], frame);
+        if (result != USAC_MCU_PARSE_INCOMPLETE) {
+            break;
+        }
+    }
+    return result;
+}
+
+static int test_m3_parser_validates_io2_loopback_command(void)
+{
+    uint8_t payload[56] = {0u};
+    uint8_t encoded[76];
+    uint16_t encoded_length;
+    usac_mcu_frame_view_t frame;
+
+    payload[52] = 8u;
+    CHECK(usac_mcu_encode_frame(
+              0x0Eu, 0u, 0x11223344ul, payload, sizeof(payload),
+              encoded, sizeof(encoded), &encoded_length) == 1u);
+    CHECK(parse_complete_test_frame(encoded, encoded_length, &frame) ==
+          USAC_MCU_PARSE_FRAME);
+    CHECK(frame.message_type == 0x0Eu);
+    CHECK(frame.sequence == 0x11223344ul);
+    CHECK(frame.payload_length == 56u);
+
+    payload[52] = 7u;
+    CHECK(usac_mcu_encode_frame(
+              0x0Eu, 0u, 1u, payload, sizeof(payload),
+              encoded, sizeof(encoded), &encoded_length) == 1u);
+    CHECK(parse_complete_test_frame(encoded, encoded_length, &frame) ==
+          USAC_MCU_PARSE_INVALID_PAYLOAD);
+
+    payload[52] = 8u;
+    payload[55] = 1u;
+    CHECK(usac_mcu_encode_frame(
+              0x0Eu, 0u, 2u, payload, sizeof(payload),
+              encoded, sizeof(encoded), &encoded_length) == 1u);
+    CHECK(parse_complete_test_frame(encoded, encoded_length, &frame) ==
+          USAC_MCU_PARSE_INVALID_PAYLOAD);
+
+    payload[55] = 0u;
+    CHECK(usac_mcu_encode_frame(
+              0x0Eu, 0u, 3u, payload, 55u,
+              encoded, sizeof(encoded), &encoded_length) == 1u);
+    CHECK(parse_complete_test_frame(encoded, encoded_length, &frame) ==
+          USAC_MCU_PARSE_INVALID_LENGTH);
+    return 0;
+}
+
+static int test_m3_loopback_evaluation_requires_exact_stable_edges(void)
+{
+    usac_m3_loopback_report_t report = {0u};
+    uint8_t index;
+
+    report.captured_edges = 8u;
+    report.final_io2_level = 1u;
+    for (index = 0u; index < 8u; ++index) {
+        report.capture_ticks[index] = (uint16_t)(100u + ((uint16_t)index * 50u));
+    }
+    usac_m3_loopback_evaluate(&report, 50u);
+    CHECK(report.result_flags == USAC_M3_LOOPBACK_PASS);
+    CHECK(report.minimum_interval_ticks == 50u);
+    CHECK(report.maximum_interval_ticks == 50u);
+
+    report.capture_ticks[4] = 302u;
+    usac_m3_loopback_evaluate(&report, 50u);
+    CHECK((report.result_flags & USAC_M3_LOOPBACK_INTERVAL_MISMATCH) != 0u);
+    CHECK((report.result_flags & USAC_M3_LOOPBACK_PASS) == 0u);
+
+    report.capture_ticks[4] = 300u;
+    report.result_flags = USAC_M3_LOOPBACK_COV_SEEN;
+    usac_m3_loopback_evaluate(&report, 50u);
+    CHECK((report.result_flags & USAC_M3_LOOPBACK_COV_SEEN) != 0u);
+    CHECK((report.result_flags & USAC_M3_LOOPBACK_PASS) == 0u);
+
+    report.result_flags = 0u;
+    report.captured_edges = 7u;
+    usac_m3_loopback_evaluate(&report, 50u);
+    CHECK((report.result_flags & USAC_M3_LOOPBACK_TIMEOUT) != 0u);
+
+    report.captured_edges = 8u;
+    report.final_io2_level = 0u;
+    usac_m3_loopback_evaluate(&report, 50u);
+    CHECK((report.result_flags & USAC_M3_LOOPBACK_FINAL_NOT_HIGH) != 0u);
+    return 0;
+}
+
+static int test_m3_capture_report_requires_exact_dma_evidence(void)
+{
+    usac_m3_capture_report_t report = {0u};
+
+    report.captured_samples = USAC_M3_SAMPLE_COUNT;
+    report.trigger_sample_index = USAC_M3_PRETRIGGER_COUNT;
+    report.burst_completed = 1u;
+
+    CHECK(usac_m3_capture_report_is_complete(&report) == 1u);
+    report.captured_samples = 2047u;
+    CHECK(usac_m3_capture_report_is_complete(&report) == 0u);
+    report.captured_samples = USAC_M3_SAMPLE_COUNT;
+    report.trigger_sample_index = 63u;
+    CHECK(usac_m3_capture_report_is_complete(&report) == 0u);
+    report.trigger_sample_index = USAC_M3_PRETRIGGER_COUNT;
+    report.timed_out = 1u;
+    CHECK(usac_m3_capture_report_is_complete(&report) == 0u);
+    return 0;
+}
+
+static int test_m3_segmented_crc_matches_iso_hdlc_vector(void)
+{
+    static const uint8_t vector[9] = {
+        '1','2','3','4','5','6','7','8','9'
+    };
+    uint32_t crc = usac_m3_crc32_begin();
+
+    crc = usac_m3_crc32_update(crc, vector, 4u);
+    crc = usac_m3_crc32_update(crc, &vector[4], 5u);
+    CHECK(usac_m3_crc32_finish(crc) == 0xCBF43926ul);
+    return 0;
+}
+
+static int test_m3_capture_stream_matches_python_fixed_vector(void)
+{
+    static const uint8_t expected_capture_id[16] = {
+        0xC5u,0xA1u,0x74u,0xA9u,0xA8u,0x24u,0xD9u,0xBEu,
+        0xE6u,0x5Cu,0x34u,0x1Du,0x2Cu,0x91u,0xA1u,0xE8u
+    };
+    static const uint8_t expected_crc[4] = {0x87u,0x57u,0xFFu,0xDCu};
+    usac_config_v2_t config;
+    usac_m3_capture_descriptor_t descriptor = {0u};
+    usac_m3_capture_stream_t stream;
+    const uint8_t *chunk;
+    const uint8_t *again;
+    const uint8_t *expected_segments[4];
+    static const uint16_t expected_lengths[4] = {
+        16u, USAC_M3_CAPTURE_METADATA_LENGTH,
+        USAC_M3_SAMPLE_COUNT * 2u, 4u
+    };
+    uint16_t chunk_length;
+    uint16_t again_length;
+    uint16_t index;
+
+    usac_config_v2_init_d10x4(&config);
+    for (index = 0u; index < 16u; ++index) {
+        descriptor.request_id[index] = (uint8_t)index;
+        descriptor.boot_id[index] = (uint8_t)(16u + index);
+        descriptor.device_id[index] = (uint8_t)(32u + index);
+    }
+    for (index = 0u; index < 32u; ++index) {
+        descriptor.profile_sha256[index] = config.profile_sha256[index];
+    }
+    descriptor.device_config_crc32 = config.device_config_crc32;
+    descriptor.frame_sequence = 5u;
+    descriptor.capture_sequence = 1u;
+    descriptor.sample_interval_ticks = 120u;
+    descriptor.burst_period_ticks = 50u;
+    descriptor.tuss_dev_stat = 0x08u;
+    for (index = 0u; index < TUSS4470_PROFILE_REGISTER_COUNT; ++index) {
+        descriptor.register_pairs[index] = config.profile.registers[index];
+    }
+    for (index = 0u; index < USAC_M3_SAMPLE_COUNT; ++index) {
+        g_usac_m3_waveform[index] = index;
+    }
+
+    usac_m3_capture_stream_init(&stream, &descriptor, g_usac_m3_waveform);
+    CHECK(stream.frame_header[12] == 0xD0u && stream.frame_header[13] == 0x10u);
+    for (index = 0u; index < 16u; ++index) {
+        CHECK(stream.metadata[36u + index] == expected_capture_id[index]);
+    }
+    for (index = 0u; index < 4u; ++index) {
+        CHECK(stream.frame_crc[index] == expected_crc[index]);
+    }
+    expected_segments[0] = stream.frame_header;
+    expected_segments[1] = stream.metadata;
+    expected_segments[2] = (const uint8_t *)g_usac_m3_waveform;
+    expected_segments[3] = stream.frame_crc;
+    for (index = 0u; index < 4u; ++index) {
+        CHECK(usac_m3_capture_stream_peek(
+            &stream, &chunk, &chunk_length) == 1u);
+        CHECK(chunk == expected_segments[index]);
+        CHECK(chunk_length == expected_lengths[index]);
+        CHECK(usac_m3_capture_stream_peek(
+            &stream, &again, &again_length) == 1u);
+        CHECK(again == chunk && again_length == chunk_length);
+        CHECK(usac_m3_capture_stream_commit(&stream) == 1u);
+    }
+    CHECK(usac_m3_capture_stream_peek(
+        &stream, &chunk, &chunk_length) == 0u);
+    CHECK(usac_m3_capture_stream_commit(&stream) == 0u);
+    return 0;
+}
+
+static int test_m3_capture_tx_commits_only_completed_segments(void)
+{
+    static const uint16_t expected_lengths[4] = {
+        16u, USAC_M3_CAPTURE_METADATA_LENGTH,
+        USAC_M3_SAMPLE_COUNT * 2u, 4u
+    };
+    usac_m3_capture_stream_t stream = {0u};
+    usac_m3_capture_tx_t tx;
+    const uint8_t *data;
+    const uint8_t *again;
+    uint16_t length;
+    uint16_t again_length;
+    uint8_t index;
+
+    stream.samples = g_usac_m3_waveform;
+    stream.active = 1u;
+    usac_m3_capture_tx_init(&tx, &stream);
+    CHECK(tx.state == USAC_M3_TX_READY);
+    CHECK(usac_m3_capture_tx_peek(&tx, &data, &length) == 1u);
+    CHECK(length == expected_lengths[0]);
+
+    usac_m3_capture_tx_on_start_result(&tx, USAC_M3_TX_START_BUSY);
+    CHECK(tx.state == USAC_M3_TX_READY);
+    CHECK(stream.phase == 0u);
+    CHECK(usac_m3_capture_tx_peek(&tx, &again, &again_length) == 1u);
+    CHECK(again == data && again_length == length);
+
+    for (index = 0u; index < 4u; ++index) {
+        CHECK(usac_m3_capture_tx_peek(&tx, &data, &length) == 1u);
+        CHECK(length == expected_lengths[index]);
+        usac_m3_capture_tx_on_start_result(&tx, USAC_M3_TX_START_STARTED);
+        CHECK(tx.state == USAC_M3_TX_IN_FLIGHT);
+        CHECK(usac_m3_capture_tx_peek(&tx, &again, &again_length) == 0u);
+        usac_m3_capture_tx_on_send_completed(&tx);
+        CHECK(stream.phase == (uint8_t)(index + 1u));
+    }
+    CHECK(tx.state == USAC_M3_TX_COMPLETE);
+    CHECK(stream.active == 0u);
+
+    stream.phase = 0u;
+    stream.active = 1u;
+    usac_m3_capture_tx_init(&tx, &stream);
+    usac_m3_capture_tx_on_start_result(&tx, USAC_M3_TX_START_FATAL);
+    CHECK(tx.state == USAC_M3_TX_FAILED);
+    CHECK(stream.phase == 0u && stream.active == 1u);
+
+    usac_m3_capture_tx_init(&tx, &stream);
+    usac_m3_capture_tx_on_start_result(
+        &tx, (usac_m3_capture_tx_start_result_t)0xFFu);
+    CHECK(tx.state == USAC_M3_TX_FAILED);
+    CHECK(stream.phase == 0u && stream.active == 1u);
+    return 0;
+}
+
 static int test_device_identity_and_usb_serial_are_stable(void)
 {
     static const uint8_t die_record[10] = {
@@ -649,6 +909,198 @@ static tuss4470_config_result_t fake_force_safe_failure(void *context)
     uint8_t *calls = (uint8_t *)context;
     ++(*calls);
     return TUSS4470_CONFIG_BUS;
+}
+
+static uint8_t fake_run_io2_loopback(
+    void *context,
+    uint16_t burst_period_ticks,
+    usac_m3_loopback_report_t *report)
+{
+    uint8_t *calls = (uint8_t *)context;
+    uint8_t index;
+
+    ++(*calls);
+    report->captured_edges = 8u;
+    report->final_io2_level = 1u;
+    report->pre_tof_config = 0x40u;
+    report->pre_vdrv_ctrl = 0x20u;
+    report->post_tof_config = 0x40u;
+    report->post_vdrv_ctrl = 0x20u;
+    for (index = 0u; index < 8u; ++index) {
+        report->capture_ticks[index] = (uint16_t)(
+            100u + ((uint16_t)index * burst_period_ticks));
+    }
+    usac_m3_loopback_evaluate(report, burst_period_ticks);
+    return 1u;
+}
+
+static uint8_t fake_capture_once(
+    void *context,
+    uint16_t sample_interval_ticks,
+    uint16_t burst_period_ticks,
+    usac_m3_capture_report_t *report)
+{
+    uint8_t *calls = (uint8_t *)context;
+    uint16_t index;
+
+    ++(*calls);
+    if ((sample_interval_ticks != 120u) || (burst_period_ticks != 50u)) {
+        return 0u;
+    }
+    for (index = 0u; index < USAC_M3_SAMPLE_COUNT; ++index) {
+        g_usac_m3_waveform[index] = index;
+    }
+    report->captured_samples = USAC_M3_SAMPLE_COUNT;
+    report->trigger_sample_index = USAC_M3_PRETRIGGER_COUNT;
+    report->dma_remaining = 0u;
+    report->burst_completed = 1u;
+    report->timed_out = 0u;
+    report->tuss_dev_stat = 0x08u;
+    return 1u;
+}
+
+static int test_m3_app_allows_one_bound_capture_and_returns_ack(void)
+{
+    uint8_t zero_id[16] = {0u};
+    uint8_t hello_payload[20] = {0u};
+    uint8_t capture_payload[60] = {0u};
+    uint8_t response[128];
+    uint8_t first_ack[44];
+    uint8_t apply_calls = 0u;
+    uint8_t capture_calls = 0u;
+    uint8_t safe_calls = 0u;
+    uint16_t response_length;
+    uint16_t index;
+    usac_mcu_frame_view_t request;
+    usac_m2_app_t app;
+
+    usac_m2_app_init(&app, zero_id, zero_id, 0u, USAC_M2_IDLE_SAFE);
+    app.apply_context = &apply_calls;
+    app.apply_profile = fake_apply_profile;
+    app.capture_context = &capture_calls;
+    app.capture_once = fake_capture_once;
+    app.safety_context = &safe_calls;
+    app.force_safe = fake_force_safe;
+    hello_payload[16] = 1u;
+    hello_payload[17] = 1u;
+    request.message_type = 0x01u;
+    request.flags = 0u;
+    request.sequence = 70u;
+    request.payload_length = 20u;
+    request.payload = hello_payload;
+    CHECK(usac_m2_app_handle(
+              &app, &request, response, sizeof(response), &response_length) == 1u);
+
+    app.loopback_authorized = 1u;
+    for (index = 0u; index < 16u; ++index) {
+        capture_payload[index] = (uint8_t)(0xC0u + index);
+    }
+    for (index = 0u; index < 32u; ++index) {
+        capture_payload[16u + index] = app.config.profile_sha256[index];
+    }
+    capture_payload[48] = (uint8_t)app.config.device_config_crc32;
+    capture_payload[49] = (uint8_t)(app.config.device_config_crc32 >> 8);
+    capture_payload[50] = (uint8_t)(app.config.device_config_crc32 >> 16);
+    capture_payload[51] = (uint8_t)(app.config.device_config_crc32 >> 24);
+    request.message_type = 0x05u;
+    request.sequence = 71u;
+    request.payload_length = 60u;
+    request.payload = capture_payload;
+
+    CHECK(usac_m2_app_handle(
+              &app, &request, response, sizeof(response), &response_length) == 1u);
+    CHECK(response[5] == 0x7Eu);
+    CHECK(response[32] == 0x05u);
+    CHECK(apply_calls == 1u);
+    CHECK(capture_calls == 1u);
+    CHECK(safe_calls == 1u);
+    CHECK(app.capture_pending == 1u);
+    CHECK(app.loopback_authorized == 0u);
+    CHECK(app.profile_active == 0u);
+    CHECK(app.capture_report.captured_samples == USAC_M3_SAMPLE_COUNT);
+    CHECK(g_usac_m3_waveform[0] == 0u);
+    CHECK(g_usac_m3_waveform[2047] == 2047u);
+    CHECK(response_length == sizeof(first_ack));
+    for (index = 0u; index < response_length; ++index) {
+        first_ack[index] = response[index];
+    }
+    app.capture_pending = 0u;
+    CHECK(usac_m2_app_handle(
+              &app, &request, response, sizeof(response), &response_length) == 1u);
+    CHECK(apply_calls == 1u);
+    CHECK(capture_calls == 1u);
+    CHECK(safe_calls == 1u);
+    CHECK(app.capture_pending == 1u);
+    for (index = 0u; index < response_length; ++index) {
+        CHECK(response[index] == first_ack[index]);
+    }
+    return 0;
+}
+
+static int test_m3_app_runs_and_caches_io2_loopback_evidence(void)
+{
+    uint8_t zero_id[16] = {0u};
+    uint8_t hello_payload[20] = {0u};
+    uint8_t loopback_payload[56] = {0u};
+    uint8_t first_response[128];
+    uint8_t retry_response[128];
+    uint8_t calls = 0u;
+    uint16_t first_length;
+    uint16_t retry_length;
+    uint16_t index;
+    usac_mcu_frame_view_t request;
+    usac_m2_app_t app;
+
+    usac_m2_app_init(&app, zero_id, zero_id, 0u, USAC_M2_IDLE_SAFE);
+    app.loopback_context = &calls;
+    app.run_io2_loopback = fake_run_io2_loopback;
+    hello_payload[16] = 1u;
+    hello_payload[17] = 1u;
+    request.message_type = 0x01u;
+    request.flags = 0u;
+    request.sequence = 60u;
+    request.payload_length = 20u;
+    request.payload = hello_payload;
+    CHECK(usac_m2_app_handle(
+              &app, &request, first_response, sizeof(first_response),
+              &first_length) == 1u);
+
+    for (index = 0u; index < 16u; ++index) {
+        loopback_payload[index] = (uint8_t)(0xA0u + index);
+    }
+    for (index = 0u; index < 32u; ++index) {
+        loopback_payload[16u + index] = app.config.profile_sha256[index];
+    }
+    loopback_payload[48] = (uint8_t)app.config.device_config_crc32;
+    loopback_payload[49] = (uint8_t)(app.config.device_config_crc32 >> 8);
+    loopback_payload[50] = (uint8_t)(app.config.device_config_crc32 >> 16);
+    loopback_payload[51] = (uint8_t)(app.config.device_config_crc32 >> 24);
+    loopback_payload[52] = 8u;
+    request.message_type = 0x0Eu;
+    request.sequence = 61u;
+    request.payload_length = 56u;
+    request.payload = loopback_payload;
+
+    CHECK(usac_m2_app_handle(
+              &app, &request, first_response, sizeof(first_response),
+              &first_length) == 1u);
+    CHECK(calls == 1u);
+    CHECK(first_length == 106u);
+    CHECK(first_response[5] == 0x0Eu);
+    CHECK(first_response[6] == 1u && first_response[7] == 0u);
+    CHECK(first_response[71] == USAC_M3_LOOPBACK_PASS);
+    CHECK(app.loopback_authorized == 1u);
+    CHECK(app.profile_active == 0u);
+
+    CHECK(usac_m2_app_handle(
+              &app, &request, retry_response, sizeof(retry_response),
+              &retry_length) == 1u);
+    CHECK(calls == 1u);
+    CHECK(retry_length == first_length);
+    for (index = 0u; index < first_length; ++index) {
+        CHECK(retry_response[index] == first_response[index]);
+    }
+    return 0;
 }
 
 static int test_m2_app_replies_and_never_captures(void)
@@ -1089,6 +1541,18 @@ int main(void)
     if (result != 0) goto complete;
     result = test_mcu_parser_passes_unknown_bounded_command_to_app();
     if (result != 0) goto complete;
+    result = test_m3_parser_validates_io2_loopback_command();
+    if (result != 0) goto complete;
+    result = test_m3_loopback_evaluation_requires_exact_stable_edges();
+    if (result != 0) goto complete;
+    result = test_m3_capture_report_requires_exact_dma_evidence();
+    if (result != 0) goto complete;
+    result = test_m3_segmented_crc_matches_iso_hdlc_vector();
+    if (result != 0) goto complete;
+    result = test_m3_capture_stream_matches_python_fixed_vector();
+    if (result != 0) goto complete;
+    result = test_m3_capture_tx_commits_only_completed_segments();
+    if (result != 0) goto complete;
     result = test_device_identity_and_usb_serial_are_stable();
     if (result != 0) goto complete;
     result = test_device_identity_rejects_blank_die_records();
@@ -1098,6 +1562,10 @@ int main(void)
     result = test_config_v2_round_trip_matches_m1_contract();
     if (result != 0) goto complete;
     result = test_m2_app_replies_and_never_captures();
+    if (result != 0) goto complete;
+    result = test_m3_app_runs_and_caches_io2_loopback_evidence();
+    if (result != 0) goto complete;
+    result = test_m3_app_allows_one_bound_capture_and_returns_ack();
     if (result != 0) goto complete;
     result = test_m2_app_requires_hello_before_other_commands();
     if (result != 0) goto complete;

@@ -8,6 +8,7 @@
 #define USAC_MESSAGE_GET_CONFIG 0x03u
 #define USAC_MESSAGE_SET_CONFIG 0x04u
 #define USAC_MESSAGE_CAPTURE_ONCE 0x05u
+#define USAC_MESSAGE_RUN_IO2_LOOPBACK_TEST 0x0Eu
 
 static const uint8_t magic[4] = {0x55u, 0x53u, 0x41u, 0x43u};
 
@@ -134,6 +135,8 @@ static usac_mcu_parse_result_t validate_header(
         ((message_type == USAC_MESSAGE_GET_CONFIG) && (payload_length != 0u)) ||
         ((message_type == USAC_MESSAGE_CAPTURE_ONCE) &&
          (payload_length != 60u)) ||
+        ((message_type == USAC_MESSAGE_RUN_IO2_LOOPBACK_TEST) &&
+         (payload_length != 56u)) ||
         ((message_type == USAC_MESSAGE_SET_CONFIG) &&
          (payload_length != 120u))) {
         reset_parser(parser);
@@ -164,6 +167,11 @@ static usac_mcu_parse_result_t validate_payload(
     } else if (message_type == USAC_MESSAGE_CAPTURE_ONCE) {
         if ((payload[53] != 0u) || (payload[54] != 0u) ||
             (payload[55] != 0u) || (payload[52] > 2u)) {
+            return USAC_MCU_PARSE_INVALID_PAYLOAD;
+        }
+    } else if (message_type == USAC_MESSAGE_RUN_IO2_LOOPBACK_TEST) {
+        if ((payload[52] != 8u) || (payload[53] != 0u) ||
+            (payload[54] != 0u) || (payload[55] != 0u)) {
             return USAC_MCU_PARSE_INVALID_PAYLOAD;
         }
     }

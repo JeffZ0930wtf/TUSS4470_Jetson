@@ -44,11 +44,15 @@
       {"name":"device_config_crc32","type":"u32","coverage":"profile_canonical_bytes_v2"}
     ]
   },
+  "capture_quality_flags": {
+    "TIMING_UNCALIBRATED": 32
+  },
   "messages": [
     {"value":1,"name":"HELLO","request_length":20,"response_length":64,"request_fields":["host_nonce:bytes[16]","min_version:u8","max_version:u8","reserved:u16=0"],"response_fields":["host_nonce:bytes[16]","boot_id:bytes[16]","device_id:bytes[16]","negotiated_version:u8","reset_reason:u8","fw_major:u16","fw_minor:u16","fw_patch:u16","fw_build:u32","device_state:u8","reserved:bytes[3]=0"]},
     {"value":3,"name":"GET_CONFIG","request_length":0,"response_length":"52+2*register_count","response_fields":["AcquisitionConfigV2"]},
     {"value":4,"name":"SET_CONFIG","request_length":"100+2*register_count","response":"ACK_or_ERROR","request_fields":["request_id:bytes[16]","expected_profile_sha256:bytes[32]","AcquisitionConfigV2"]},
     {"value":5,"name":"CAPTURE_ONCE","request_length":60,"response":"ACK_then_CAPTURE_DATA_or_ERROR","request_fields":["request_id:bytes[16]","expected_profile_sha256:bytes[32]","expected_device_config_crc32:u32","trigger_source:u8","reserved:bytes[3]=0","sync_timeout_ms:u32"]},
+    {"value":14,"name":"RUN_IO2_LOOPBACK_TEST","request_length":56,"response_length":86,"request_fields":["request_id:bytes[16]","expected_profile_sha256:bytes[32]","expected_device_config_crc32:u32","edge_count:u8=8","reserved:bytes[3]=0"],"response_fields":["request_id:bytes[16]","profile_sha256:bytes[32]","device_config_crc32:u32","burst_period_ticks:u16","captured_edges:u8","result_flags:u8","capture_ticks:u16[8]","minimum_interval_ticks:u16","maximum_interval_ticks:u16","pre_spi_status:u8","pre_dev_stat:u8","pre_tof_config:u8","pre_vdrv_ctrl:u8","post_spi_status:u8","post_dev_stat:u8","post_tof_config:u8","post_vdrv_ctrl:u8","final_io2_level:u8","reserved:u8=0"]},
     {"value":64,"name":"CAPTURE_DATA","payload_schema_version":1,"fixed_header_length":188,"maximum_payload_length":4576,"fixed_header_fields":[{"name":"payload_schema_version","type":"u16","value":1},{"name":"fixed_header_length","type":"u16","value":188},{"name":"request_id","type":"bytes[16]"},{"name":"schedule_id","type":"bytes[16]"},{"name":"capture_id","type":"bytes[16]"},{"name":"boot_id","type":"bytes[16]"},{"name":"device_id","type":"bytes[16]"},{"name":"profile_sha256","type":"bytes[32]"},{"name":"device_config_crc32","type":"u32"},{"name":"capture_sequence","type":"u32"},{"name":"sample_interval_ticks","type":"u16"},{"name":"burst_period_ticks","type":"u16"},{"name":"sample_count","type":"u16"},{"name":"pretrigger_count","type":"u16"},{"name":"adc_bits","type":"u8"},{"name":"sample_encoding","type":"u8","value":1},{"name":"vref_mv","type":"u16"},{"name":"smclk_nominal_hz","type":"u32"},{"name":"smclk_calibrated_hz","type":"u32"},{"name":"frame_start_tick48","type":"u64","valid_mask_hex":"0000FFFFFFFFFFFF"},{"name":"t_trigger_offset_ticks","type":"u32"},{"name":"adc0_hold_offset_ticks","type":"i32"},{"name":"adc_aperture_ns","type":"u32"},{"name":"trigger_to_tx_output_ns","type":"u32"},{"name":"calibration_version","type":"u32"},{"name":"quality_flags","type":"u32"},{"name":"tuss_dev_stat","type":"u8"},{"name":"out3_start_level","type":"u8"},{"name":"out4_start_level","type":"u8"},{"name":"event_count","type":"u8","max":17},{"name":"register_count","type":"u8","max":10},{"name":"reserved","type":"bytes[3]","value_hex":"000000"},{"name":"sample_bytes","type":"u32","expression":"sample_count*2"}],"event_layout":["channel:u8","edge:u8","capture_method:u8","level_after:u8","sample_index:i32","subsample_tick:u16","uncertainty_ticks:u16","frame_offset_ticks:u32"],"variable_sections":["register_pairs:bytes[2*register_count]","events:bytes[16*event_count]","samples:uint16_le[sample_count]"]},
     {"value":116,"name":"BRIDGE_CAPTURE_DELIVERY","minimum_length":264,"maximum_length":4708,"fields":["connection_id:u64","spool_record_id:u64","source_connection_id:u64","source_first_stream_offset:u64","source_last_stream_offset:u64","stored_utc_ns:u64","inner_frame_length:u32","inner_frame_crc32:u32","inner_frame:bytes[inner_frame_length]"]},
     {"value":117,"name":"CAPTURE_COMMITTED","request_length":68,"response_length":24,"request_fields":["connection_id:u64","spool_record_id:u64","device_id:bytes[16]","boot_id:bytes[16]","capture_id:bytes[16]","inner_frame_crc32:u32"],"response_fields":["connection_id:u64","spool_record_id:u64","disposition:u8","reserved:bytes[7]=0"]},
@@ -83,6 +87,7 @@
     {"value":24,"name":"IDENTITY_FAULT"},
     {"value":25,"name":"UNSAFE_CONFIG"},
     {"value":26,"name":"SYNC_TIMEOUT"},
-    {"value":27,"name":"UNSUPPORTED_HARDWARE_PROFILE"}
+    {"value":27,"name":"UNSUPPORTED_HARDWARE_PROFILE"},
+    {"value":28,"name":"IO2_LOOPBACK_FAILED"}
   ]
 }

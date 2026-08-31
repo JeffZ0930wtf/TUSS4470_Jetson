@@ -12,6 +12,7 @@ $testBinary = Join-Path $buildDirectory 'test_m2_core.elf'
 
 New-Item -ItemType Directory -Force -Path $buildDirectory | Out-Null
 
+Write-Host 'MSP430 simulator unit tests: compiling'
 & $compiler `
     "-I$(Join-Path $repositoryRoot 'firmware\include')" `
     "-I$(Join-Path $supportRoot 'include')" `
@@ -24,6 +25,10 @@ New-Item -ItemType Directory -Force -Path $buildDirectory | Out-Null
     '-Werror' `
     (Join-Path $repositoryRoot 'firmware\tests\test_m2_core.c') `
     (Join-Path $repositoryRoot 'firmware\src\usac_m2_core.c') `
+    (Join-Path $repositoryRoot 'firmware\src\usac_m3_loopback.c') `
+    (Join-Path $repositoryRoot 'firmware\src\usac_m3_capture.c') `
+    (Join-Path $repositoryRoot 'firmware\src\usac_m3_capture_stream.c') `
+    (Join-Path $repositoryRoot 'firmware\src\usac_m3_capture_tx.c') `
     (Join-Path $repositoryRoot 'firmware\src\tuss4470_profile.c') `
     (Join-Path $repositoryRoot 'firmware\src\tuss4470_configurator.c') `
     (Join-Path $repositoryRoot 'firmware\src\usac_platform_msp430.c') `
@@ -37,6 +42,7 @@ New-Item -ItemType Directory -Force -Path $buildDirectory | Out-Null
     '-o' $testBinary
 if ($LASTEXITCODE -ne 0) { throw "firmware unit-test compile failed: $LASTEXITCODE" }
 
+Write-Host 'MSP430 simulator unit tests: running'
 $gdbScript = Join-Path $repositoryRoot 'firmware\tests\msp430-sim-test.gdb'
 $testOutput = (& $debugger '-batch' '-x' $gdbScript $testBinary 2>&1) -join "`n"
 if ($LASTEXITCODE -ne 0) { throw "firmware simulator debugger failed: $LASTEXITCODE`n$testOutput" }

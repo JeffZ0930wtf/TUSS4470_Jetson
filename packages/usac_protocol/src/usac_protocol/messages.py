@@ -142,6 +142,124 @@ def decode_capture_once_request(data: bytes) -> CaptureOnceRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class Io2LoopbackRequest:
+    """Request the acceptance-only IO2-to-timer-capture timing check."""
+
+    request_id: bytes
+    expected_profile_sha256: bytes
+    expected_device_config_crc32: int
+    edge_count: int
+
+
+_IO2_LOOPBACK_REQUEST = struct.Struct("<16s32sIB3x")
+
+
+def encode_io2_loopback_request(message: Io2LoopbackRequest) -> bytes:
+    if message.edge_count != 8:
+        raise ValueError("IO2 loopback edge_count must be 8")
+    return _IO2_LOOPBACK_REQUEST.pack(
+        _fixed_bytes(message.request_id, 16, "request_id"),
+        _fixed_bytes(message.expected_profile_sha256, 32, "expected_profile_sha256"),
+        message.expected_device_config_crc32,
+        message.edge_count,
+    )
+
+
+def decode_io2_loopback_request(data: bytes) -> Io2LoopbackRequest:
+    if len(data) != _IO2_LOOPBACK_REQUEST.size:
+        raise ValueError("RUN_IO2_LOOPBACK_TEST request payload must be 56 bytes")
+    if data[53:56] != bytes(3):
+        raise ValueError("RUN_IO2_LOOPBACK_TEST request reserved bytes must be zero")
+    message = Io2LoopbackRequest(*_IO2_LOOPBACK_REQUEST.unpack(data))
+    encode_io2_loopback_request(message)
+    return message
+
+
+@dataclass(frozen=True, slots=True)
+class Io2LoopbackResult:
+    """Fixed timing evidence returned without exposing platform register layout."""
+
+    request_id: bytes
+    profile_sha256: bytes
+    device_config_crc32: int
+    burst_period_ticks: int
+    captured_edges: int
+    result_flags: int
+    capture_ticks: tuple[int, int, int, int, int, int, int, int]
+    minimum_interval_ticks: int
+    maximum_interval_ticks: int
+    pre_spi_status: int
+    pre_dev_stat: int
+    pre_tof_config: int
+    pre_vdrv_ctrl: int
+    post_spi_status: int
+    post_dev_stat: int
+    post_tof_config: int
+    post_vdrv_ctrl: int
+    final_io2_level: int
+
+
+_IO2_LOOPBACK_RESULT = struct.Struct("<16s32sIHBB8HHH9Bx")
+
+
+def encode_io2_loopback_result(message: Io2LoopbackResult) -> bytes:
+    if len(message.capture_ticks) != 8:
+        raise ValueError("IO2 loopback result must contain exactly 8 capture ticks")
+    if message.result_flags & ~0x3F:
+        raise ValueError("IO2 loopback result has reserved result flag bits set")
+    return _IO2_LOOPBACK_RESULT.pack(
+        _fixed_bytes(message.request_id, 16, "request_id"),
+        _fixed_bytes(message.profile_sha256, 32, "profile_sha256"),
+        message.device_config_crc32,
+        message.burst_period_ticks,
+        message.captured_edges,
+        message.result_flags,
+        *message.capture_ticks,
+        message.minimum_interval_ticks,
+        message.maximum_interval_ticks,
+        message.pre_spi_status,
+        message.pre_dev_stat,
+        message.pre_tof_config,
+        message.pre_vdrv_ctrl,
+        message.post_spi_status,
+        message.post_dev_stat,
+        message.post_tof_config,
+        message.post_vdrv_ctrl,
+        message.final_io2_level,
+    )
+
+
+def decode_io2_loopback_result(data: bytes) -> Io2LoopbackResult:
+    if len(data) != _IO2_LOOPBACK_RESULT.size:
+        raise ValueError("RUN_IO2_LOOPBACK_TEST response payload must be 86 bytes")
+    if data[-1] != 0:
+        raise ValueError("RUN_IO2_LOOPBACK_TEST response reserved byte must be zero")
+    values = _IO2_LOOPBACK_RESULT.unpack(data)
+    message = Io2LoopbackResult(
+        request_id=values[0],
+        profile_sha256=values[1],
+        device_config_crc32=values[2],
+        burst_period_ticks=values[3],
+        captured_edges=values[4],
+        result_flags=values[5],
+        capture_ticks=tuple(values[6:14]),
+        minimum_interval_ticks=values[14],
+        maximum_interval_ticks=values[15],
+        pre_spi_status=values[16],
+        pre_dev_stat=values[17],
+        pre_tof_config=values[18],
+        pre_vdrv_ctrl=values[19],
+        post_spi_status=values[20],
+        post_dev_stat=values[21],
+        post_tof_config=values[22],
+        post_vdrv_ctrl=values[23],
+        final_io2_level=values[24],
+    )
+    encode_io2_loopback_result(message)
+    return message
+
+
+@dataclass(frozen=True, slots=True)
 class Ack:
     request_id: bytes
     acked_type: int

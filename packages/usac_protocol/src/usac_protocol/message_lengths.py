@@ -26,6 +26,8 @@ def flags_are_valid_for_message(message_type: MessageType, flags: int) -> bool:
         return flags in async_flags
     if message_type is MessageType.CAPTURE_DATA:
         return flags in response_flags + async_flags
+    if message_type is MessageType.RUN_IO2_LOOPBACK_TEST:
+        return flags == 0 or flags in response_flags
     if message_type in (
         MessageType.SET_CONFIG,
         MessageType.CAPTURE_ONCE,
@@ -51,6 +53,8 @@ def payload_length_is_valid(message_type: MessageType, flags: int, length: int) 
         return not response and _even_range(length, 100, 120)
     if message_type is MessageType.CAPTURE_ONCE:
         return not response and length == 60
+    if message_type is MessageType.RUN_IO2_LOOPBACK_TEST:
+        return length == (86 if response else 56)
     if message_type is MessageType.START_PERIODIC:
         return not response and length == 80
     if message_type is MessageType.STOP:

@@ -48,7 +48,10 @@ Magic before scanning again. Magic inside a valid payload is never scanned.
 
 The MCU-side limit remains a separate contract: at most 192 command-payload
 bytes in a 256-byte receive ring. CAPTURE_DATA is transmitted incrementally
-from the single waveform buffer and is not an MCU inbound message.
+from the single waveform buffer and is not an MCU inbound message. The wire
+frame is continuous and has no transport-chunk boundaries: USB endpoint packet
+size and firmware send-segment size are implementation details that must not be
+encoded into, or inferred from, this protocol.
 
 ## Configuration
 

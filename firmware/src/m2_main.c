@@ -16,8 +16,13 @@
 #include "usac_identity.h"
 #include "usac_m2_app.h"
 #include "usac_m2_core.h"
+#include "usac_m3_capture_stream.h"
+#include "usac_m3_capture_tx.h"
 #include "usac_mcu_protocol.h"
 #include "usac_platform_msp430.h"
+#ifdef USAC_ENABLE_M3_LOOPBACK
+#include "usac_platform_m3_msp430.h"
+#endif
 #include "usac_tx_gate.h"
 
 #define USAC_USB_DETACH_CYCLES 14400000ul
@@ -51,6 +56,11 @@ static usac_mcu_parser_t parser;
 static usac_m2_app_t app;
 static tuss4470_bus_t tuss_bus;
 static usac_tx_gate_t tx_gate;
+#ifdef USAC_ENABLE_M3_LOOPBACK
+static usac_m3_capture_stream_t capture_stream;
+static usac_m3_capture_tx_t capture_tx;
+static uint8_t capture_stream_started;
+#endif
 
 static void abort_usb_response(void)
 {
@@ -61,7 +71,79 @@ static void abort_usb_response(void)
     }
     usac_tx_gate_reset(&tx_gate);
     g_usac_usb_send_complete = 0u;
+#ifdef USAC_ENABLE_M3_LOOPBACK
+    if (capture_stream_started != 0u) {
+        usac_m3_capture_tx_abort(&capture_tx);
+    }
+    capture_stream_started = 0u;
+#endif
 }
+
+#ifdef USAC_ENABLE_M3_LOOPBACK
+static void initialize_pending_capture_stream(void)
+{
+    usac_m3_capture_descriptor_t descriptor;
+    uint8_t index;
+
+    for (index = 0u; index < 16u; ++index) {
+        descriptor.request_id[index] = app.capture_request_id[index];
+        descriptor.boot_id[index] = app.boot_id[index];
+        descriptor.device_id[index] = app.device_id[index];
+    }
+    for (index = 0u; index < 32u; ++index) {
+        descriptor.profile_sha256[index] = app.config.profile_sha256[index];
+    }
+    descriptor.device_config_crc32 = app.config.device_config_crc32;
+    descriptor.frame_sequence = app.capture_request_sequence;
+    descriptor.capture_sequence = app.capture_sequence;
+    descriptor.sample_interval_ticks = app.config.profile.sample_interval_ticks;
+    descriptor.burst_period_ticks = app.config.profile.burst_period_ticks;
+    descriptor.tuss_dev_stat = app.capture_report.tuss_dev_stat;
+    for (index = 0u; index < TUSS4470_PROFILE_REGISTER_COUNT; ++index) {
+        descriptor.register_pairs[index] = app.config.profile.registers[index];
+    }
+    usac_m3_capture_stream_init(
+        &capture_stream, &descriptor, g_usac_m3_waveform);
+    usac_m3_capture_tx_init(&capture_tx, &capture_stream);
+    capture_stream_started = 1u;
+}
+
+static void send_next_capture_segment(void)
+{
+    const uint8_t *data;
+    uint16_t length;
+
+    if (capture_stream_started == 0u) {
+        initialize_pending_capture_stream();
+    }
+    if (usac_m3_capture_tx_peek(&capture_tx, &data, &length) == 0u) {
+        if (capture_tx.state == USAC_M3_TX_COMPLETE) {
+            app.capture_pending = 0u;
+            capture_stream_started = 0u;
+        } else if (capture_tx.state == USAC_M3_TX_FAILED) {
+            usac_m2_app_end_session(&app);
+            capture_stream_started = 0u;
+        }
+        return;
+    }
+    g_usac_usb_send_complete = 0u;
+    g_usac_last_send_result = USBCDC_sendData(
+        (uint8_t *)data, length, CDC0_INTFNUM);
+    if (g_usac_last_send_result == USBCDC_SEND_STARTED) {
+        usac_m3_capture_tx_on_start_result(
+            &capture_tx, USAC_M3_TX_START_STARTED);
+        usac_tx_gate_started(&tx_gate);
+    } else if (g_usac_last_send_result == USBCDC_INTERFACE_BUSY_ERROR) {
+        usac_m3_capture_tx_on_start_result(
+            &capture_tx, USAC_M3_TX_START_BUSY);
+    } else {
+        usac_m3_capture_tx_on_start_result(
+            &capture_tx, USAC_M3_TX_START_FATAL);
+        usac_m2_app_end_session(&app);
+        capture_stream_started = 0u;
+    }
+}
+#endif
 
 static void initialize_frame_timeout_timer(void)
 {
@@ -278,6 +360,9 @@ int main(void)
     usac_platform_enter_reset_safe();
     usac_mcu_parser_init(&parser);
     usac_tx_gate_reset(&tx_gate);
+#ifdef USAC_ENABLE_M3_LOOPBACK
+    capture_stream_started = 0u;
+#endif
 
     PMM_setVCore(PMM_CORE_LEVEL_3);
     g_usac_clock_valid = initialize_clocks();
@@ -316,6 +401,12 @@ int main(void)
     app.apply_profile = apply_profile;
     app.safety_context = &tuss_bus;
     app.force_safe = force_safe;
+#ifdef USAC_ENABLE_M3_LOOPBACK
+    app.loopback_context = &tuss_bus;
+    app.run_io2_loopback = usac_platform_run_io2_loopback;
+    app.capture_context = &tuss_bus;
+    app.capture_once = usac_platform_capture_once;
+#endif
 
     USB_setup(FALSE, TRUE);
     usac_identity_usb_serial_descriptor(
@@ -346,6 +437,16 @@ int main(void)
         }
         if (g_usac_usb_send_complete != 0u) {
             g_usac_usb_send_complete = 0u;
+#ifdef USAC_ENABLE_M3_LOOPBACK
+            if ((capture_stream_started != 0u) &&
+                (capture_tx.state == USAC_M3_TX_IN_FLIGHT)) {
+                usac_m3_capture_tx_on_send_completed(&capture_tx);
+                if (capture_tx.state == USAC_M3_TX_COMPLETE) {
+                    app.capture_pending = 0u;
+                    capture_stream_started = 0u;
+                }
+            }
+#endif
             usac_tx_gate_completed(&tx_gate);
             g_usac_usb_data_pending = 1u;
         }
@@ -355,8 +456,15 @@ int main(void)
         }
         if ((USB_getConnectionState() == ST_ENUM_ACTIVE) &&
             (g_usac_dtr_session_ready != 0u) &&
-            (usac_tx_gate_can_encode(&tx_gate) != 0u) &&
-            (g_usac_usb_data_pending != 0u)) {
+            (usac_tx_gate_can_encode(&tx_gate) != 0u)
+#ifdef USAC_ENABLE_M3_LOOPBACK
+            && (app.capture_pending != 0u)) {
+            send_next_capture_segment();
+        } else if ((USB_getConnectionState() == ST_ENUM_ACTIVE) &&
+            (g_usac_dtr_session_ready != 0u) &&
+            (usac_tx_gate_can_encode(&tx_gate) != 0u)
+#endif
+            && (g_usac_usb_data_pending != 0u)) {
             process_usb_input();
         }
         __bis_SR_register(LPM0_bits | GIE);

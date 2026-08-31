@@ -27,6 +27,7 @@ def test_protocol_schema_defines_header_crc_and_first_m1_messages() -> None:
         "GET_CONFIG",
         "SET_CONFIG",
         "CAPTURE_ONCE",
+        "RUN_IO2_LOOPBACK_TEST",
         "CAPTURE_DATA",
         "BRIDGE_CAPTURE_DELIVERY",
         "CAPTURE_COMMITTED",
@@ -35,7 +36,10 @@ def test_protocol_schema_defines_header_crc_and_first_m1_messages() -> None:
     } <= messages.keys()
     assert messages["HELLO"]["request_length"] == 20
     assert messages["CAPTURE_ONCE"]["request_length"] == 60
+    assert messages["RUN_IO2_LOOPBACK_TEST"]["request_length"] == 56
+    assert messages["RUN_IO2_LOOPBACK_TEST"]["response_length"] == 86
     assert messages["CAPTURE_DATA"]["payload_schema_version"] == 1
+    assert schema["capture_quality_flags"]["TIMING_UNCALIBRATED"] == 0x20
 
 
 def test_protocol_schema_expands_config_capture_fields_and_error_codes() -> None:
@@ -69,3 +73,4 @@ def test_protocol_schema_expands_config_capture_fields_and_error_codes() -> None
     assert error_codes["OK"] == 0
     assert error_codes["UNSAFE_CONFIG"] == 25
     assert error_codes["UNSUPPORTED_HARDWARE_PROFILE"] == 27
+    assert error_codes["IO2_LOOPBACK_FAILED"] == 28
