@@ -4,6 +4,6 @@ baudrate = 115200
 timeout_ms = 2000
 
 [storage]
-data_dir = "/var/lib/usac/data"
+data_dir = "/var/lib/usac"
 spool_dir = "/var/lib/usac/spool"
-sqlite_path = "/var/lib/usac/core/captures.sqlite3"
+sqlite_path = "/var/lib/usac/database/acquisition.sqlite3"

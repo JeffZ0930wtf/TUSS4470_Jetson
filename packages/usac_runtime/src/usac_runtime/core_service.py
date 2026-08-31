@@ -58,3 +58,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     listener = open_listener(args.host, args.port)
     serve_connections(listener, store, connection_limit=args.connection_limit)
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

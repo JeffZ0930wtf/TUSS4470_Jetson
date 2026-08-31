@@ -1,9 +1,21 @@
-# M1 container-import smoke service. Persistent bridge/core services are future
-# milestones and must not be inferred from this placeholder command.
+# M4 Windows core. The host port remains loopback-only; Windows bridge runs on
+# the host and initiates each delivery connection.
 services:
   core:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.core
-    image: tuss4470-acquisition-core:m1
-    command: ["python", "-c", "import usac_protocol, usac_runtime; print('usac-core-m1:ready')"]
+    image: tuss4470-acquisition-core:m4
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+      - --sqlite
+      - /var/lib/usac/database/acquisition.sqlite3
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - type: bind
+        source: ${USAC_CORE_DATA_DIR:-D:/Desktop/TUSS4470_data/core}
+        target: /var/lib/usac/database

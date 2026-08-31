@@ -70,7 +70,7 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn("public.ecr.aws/docker/library/python:3.12-slim@sha256:", dockerfile)
         self.assertNotIn("RUN python -m pip install", dockerfile)
         self.assertIn("packages/usac_protocol/src", dockerfile)
-        self.assertIn("import usac_protocol", dockerfile)
+        self.assertIn("usac_runtime.core_service", dockerfile)
         self.assertIn(".venv", dockerignore)
         self.assertIn(".tools", dockerignore)
 
@@ -142,11 +142,26 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertTrue((ROOT / "scripts/test-c-vectors.sh").is_file())
         self.assertIn("test-c-vectors.sh", jetson_test)
 
-    def test_compose_uses_the_m1_image_tag(self) -> None:
+    def test_m4_core_container_uses_external_data_and_loopback_port(self) -> None:
         compose = (ROOT / "deploy/compose.yaml").read_text(encoding="utf-8")
+        dockerfile = (ROOT / "deploy/Dockerfile.core").read_text(encoding="utf-8")
 
-        self.assertIn("tuss4470-acquisition-core:m1", compose)
-        self.assertNotIn("tuss4470-acquisition-core:m0", compose)
+        self.assertIn("tuss4470-acquisition-core:m4", compose)
+        self.assertIn("127.0.0.1:8765:8765", compose)
+        self.assertIn("USAC_CORE_DATA_DIR", compose)
+        self.assertIn("/var/lib/usac/database", compose)
+        self.assertIn("usac_runtime.core_service", compose + dockerfile)
+        self.assertNotIn("usac-core-m1:ready", compose + dockerfile)
+
+    def test_runtime_examples_use_the_approved_external_data_roots(self) -> None:
+        windows = (ROOT / "config/windows.example.toml").read_text(encoding="utf-8")
+        jetson = (ROOT / "config/jetson.example.toml").read_text(encoding="utf-8")
+
+        self.assertIn("D:/Desktop/TUSS4470_data/core/acquisition.sqlite3", windows)
+        self.assertIn("D:/Desktop/TUSS4470_data/bridge/spool", windows)
+        self.assertIn("/var/lib/usac/database/acquisition.sqlite3", jetson)
+        self.assertIn("/var/lib/usac/spool", jetson)
+        self.assertNotIn("TUSS4470_software", windows + jetson)
 
     def test_protocol_hex_vectors_are_not_treated_as_firmware_outputs(self) -> None:
         ignore_rules = (ROOT / ".gitignore").read_text(encoding="utf-8")

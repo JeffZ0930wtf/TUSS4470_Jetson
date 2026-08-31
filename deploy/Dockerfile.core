@@ -1,5 +1,4 @@
-# Digest pinning makes amd64/arm64 environment checks reproducible. This M1
-# smoke image imports first-party libraries only; it is not an acquisition core.
+# Digest pinning keeps the same M4 core runtime reproducible on amd64 and arm64.
 FROM public.ecr.aws/docker/library/python:3.12-slim@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a
 
 WORKDIR /opt/usac
@@ -10,4 +9,4 @@ COPY packages/usac_protocol/src packages/usac_protocol/src
 COPY packages/usac_runtime/src packages/usac_runtime/src
 COPY protocol protocol
 
-CMD ["python", "-c", "import usac_protocol, usac_runtime; print('usac-core-m1:ready')"]
+ENTRYPOINT ["python", "-m", "usac_runtime.core_service"]

@@ -4,6 +4,6 @@ baudrate = 115200
 timeout_ms = 2000
 
 [storage]
-data_dir = "../var/windows/data"
-spool_dir = "../var/windows/spool"
-sqlite_path = "../var/windows/core/captures.sqlite3"
+data_dir = "D:/Desktop/TUSS4470_data"
+spool_dir = "D:/Desktop/TUSS4470_data/bridge/spool"
+sqlite_path = "D:/Desktop/TUSS4470_data/core/acquisition.sqlite3"
