@@ -47,6 +47,13 @@ def _changed_capture_frame() -> bytes:
     )
 
 
+def _wrong_type_capture_frame() -> bytes:
+    frame = decode_frame(_raw_capture())
+    return encode_frame(
+        Frame(MessageType.HELLO, frame.sequence, frame.payload, frame.flags)
+    )
+
+
 def test_core_store_commits_raw_frame_samples_and_metadata(tmp_path: Path) -> None:
     path = tmp_path / "acquisition.sqlite3"
     store = CaptureStore(path)
@@ -95,3 +102,12 @@ def test_core_store_requires_existing_capture(tmp_path: Path) -> None:
 
     with pytest.raises(KeyError, match="capture_id"):
         store.get_capture(bytes(16))
+
+
+def test_core_store_rejects_non_capture_inner_frame(tmp_path: Path) -> None:
+    store = CaptureStore(tmp_path / "acquisition.sqlite3")
+
+    with pytest.raises(ValueError, match="CAPTURE_DATA"):
+        store.commit_delivery(_delivery(_wrong_type_capture_frame()))
+
+    assert store.capture_count() == 0

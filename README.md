@@ -25,7 +25,7 @@ features and does not predict SOC or SOH.
 - Never commit captures, spool files, SQLite databases, credentials, firmware
   binaries, or large instrument exports.
 
-## Implemented through M3; M4 ready to start
+## Implemented through M3; M4 in progress
 
 - Cross-platform runtime configuration and serial transport boundary.
 - USAC v1 little-endian frame codec, CRC-32/ISO-HDLC, bounded host stream
@@ -64,10 +64,73 @@ CRC-protected `CAPTURE_DATA` frame. The accepted real capture contained 4324
 wire bytes and 4096 sample bytes. The frame remains
 `TIMING_UNCALIBRATED` because no external clock reference was available.
 
-M3 does not include bridge/core delivery, SQLite, periodic acquisition, full
-parameter editing, or Jetson hardware capture. Those remain M4 and later work.
+M3 does not include bridge/core delivery or SQLite. M4 adds that host-side
+delivery and persistence boundary without changing the accepted M3 firmware.
+Periodic acquisition, full parameter editing, and Jetson hardware capture
+remain M5 and M6 work.
 The real known-input DMA ordering HIL and the full WDT/PUC reset matrix are
 accepted M3 limitations and remain explicitly deferred to hardening.
+
+## M4 Windows end-to-end operation
+
+M4 keeps runtime data outside this repository. The Windows defaults are:
+
+- core SQLite: `D:/Desktop/TUSS4470_data/core/acquisition.sqlite3`
+- bridge pending spool: `D:/Desktop/TUSS4470_data/bridge/spool/bridge-spool.sqlite3`
+- bridge crash-only staging: `D:/Desktop/TUSS4470_data/bridge/staging/`
+
+The bridge writes a complete, CRC-checked `CAPTURE_DATA` frame to its pending
+spool before opening a core delivery connection. The core validates the inner
+frame again and commits the original wire frame, the exact `uint16` sample
+BLOB, and capture metadata in one SQLite transaction. Only after that commit
+does the core return `CAPTURE_COMMITTED`; only a matching receipt allows the
+bridge to remove pending data and print capture success.
+
+Activate this checkout's environment and start the core in one terminal:
+
+```powershell
+. ./.venv/Scripts/Activate.ps1
+usac-core --sqlite D:/Desktop/TUSS4470_data/core/acquisition.sqlite3
+```
+
+On Windows without Docker this command runs the same core module directly.
+`deploy/Dockerfile.core` and `deploy/compose.yaml` package that module for the
+container deployment; the host path is still outside the source tree.
+
+Before a real capture, set `serial.port` in `config/windows.example.toml` to
+the currently enumerated COM port. Apply the same physical power and pin-40 to
+2.2 kΩ to pin-38 loopback gates accepted in M3, then run from a second terminal:
+
+```powershell
+. ./.venv/Scripts/Activate.ps1
+usac-bridge capture `
+  --config config/windows.example.toml `
+  --confirm-external-vpwr-7v `
+  --confirm-loopback-pin40-2k2-pin38
+```
+
+If the core is unavailable after a complete device frame has reached the
+spool, the command fails without reporting success and leaves the frame for:
+
+```powershell
+usac-bridge replay --config config/windows.example.toml
+```
+
+Use the returned 32-character hexadecimal `capture_id` to inspect or export
+the committed record. Export reproduces the original `.usac` wire frame and
+the exact little-endian `.u16le` sample bytes; it performs no interpolation or
+feature calculation.
+
+```powershell
+usac-m4 show `
+  --sqlite D:/Desktop/TUSS4470_data/core/acquisition.sqlite3 `
+  --capture-id <capture_id>
+
+usac-m4 download `
+  --sqlite D:/Desktop/TUSS4470_data/core/acquisition.sqlite3 `
+  --capture-id <capture_id> `
+  --output-dir D:/Desktop/TUSS4470_data/exports
+```
 
 ## M2 no-Burst hardware checks
 

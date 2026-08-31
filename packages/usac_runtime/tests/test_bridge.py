@@ -4,7 +4,12 @@ import socket
 import threading
 from pathlib import Path
 
-from usac_runtime.bridge import CountingConnection, deliver_spool, spool_artifacts
+from usac_runtime.bridge import (
+    CountingConnection,
+    deliver_spool,
+    new_sqlite_integer_id,
+    spool_artifacts,
+)
 from usac_runtime.core_service import open_listener, serve_connections
 from usac_runtime.core_store import CaptureStore
 from usac_runtime.spool import CaptureSpool
@@ -42,6 +47,19 @@ def test_counting_connection_tracks_only_received_bytes() -> None:
     assert connection.write(b"request") == 7
     assert connection.read(10) == b"cdef"
     assert connection.received_bytes == 6
+
+
+def test_sqlite_connection_id_stays_in_positive_signed_range(monkeypatch) -> None:
+    requested_widths: list[int] = []
+
+    def fake_randbits(width: int) -> int:
+        requested_widths.append(width)
+        return 0
+
+    monkeypatch.setattr("usac_runtime.bridge.secrets.randbits", fake_randbits)
+
+    assert new_sqlite_integer_id() == 1
+    assert requested_widths == [63]
 
 
 def test_spool_artifacts_removes_staging_only_after_durable_store(

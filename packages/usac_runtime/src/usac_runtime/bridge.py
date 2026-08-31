@@ -30,6 +30,17 @@ class CountingConnection:
         self.connection.close()
 
 
+def new_sqlite_integer_id() -> int:
+    """Return a nonzero random ID representable by SQLite INTEGER.
+
+    The wire contract permits an unsigned 64-bit connection ID, while SQLite
+    INTEGER is signed. Locally generated source IDs deliberately use the
+    positive 63-bit subset so persistence cannot fail nondeterministically.
+    """
+
+    return secrets.randbits(63) or 1
+
+
 def spool_artifacts(
     spool: CaptureSpool,
     *,

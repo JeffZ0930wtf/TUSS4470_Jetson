@@ -11,7 +11,12 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from usac_protocol.frame import HEADER_SIZE
-from usac_runtime.bridge import CountingConnection, deliver_spool, spool_artifacts
+from usac_runtime.bridge import (
+    CountingConnection,
+    deliver_spool,
+    new_sqlite_integer_id,
+    spool_artifacts,
+)
 from usac_runtime.config import RuntimeConfig, load_runtime_config
 from usac_runtime.m3_capture import M3CaptureProgress, run_m3_capture
 from usac_runtime.spool import CaptureSpool
@@ -103,7 +108,7 @@ def _capture(args: argparse.Namespace) -> int:
         )
         if first_stream_offset is None:
             raise RuntimeError("capture stream offset was not observed")
-        source_connection_id = secrets.randbits(64) or 1
+        source_connection_id = new_sqlite_integer_id()
         pending = spool_artifacts(
             spool,
             raw_path=result.raw_frame_path,
