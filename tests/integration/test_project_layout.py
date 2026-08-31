@@ -58,6 +58,8 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertEqual(python_version, "3.12")
         self.assertIn("uv sync --frozen --extra dev", windows_bootstrap)
         self.assertIn("uv sync --frozen --extra dev", linux_bootstrap)
+        self.assertIn("UV_PYTHON_INSTALL_DIR", windows_bootstrap)
+        self.assertIn("UV_CACHE_DIR", windows_bootstrap)
         self.assertIn(".venv", windows_bootstrap)
         self.assertIn(".venv", linux_bootstrap)
         self.assertIn(".tools", windows_bootstrap)
