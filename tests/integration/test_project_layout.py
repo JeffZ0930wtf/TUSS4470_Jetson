@@ -87,6 +87,24 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn("m1-arm64", jetson_test)
         self.assertNotIn("make -C firmware", jetson_test)
 
+    def test_windows_test_entrypoint_creates_pytest_build_parent(self) -> None:
+        windows_test = (ROOT / "scripts/test-all.ps1").read_text(encoding="utf-8")
+
+        create_parent = 'New-Item -ItemType Directory -Path $pytestParent -Force'
+        pytest_call = " -m pytest --basetemp $pytestBaseTemp"
+        self.assertIn("$pytestParent = Split-Path -Parent $pytestBaseTemp", windows_test)
+        self.assertIn(create_parent, windows_test)
+        self.assertLess(windows_test.index(create_parent), windows_test.index(pytest_call))
+
+    def test_windows_test_entrypoint_builds_m3_diagnostic_before_audit(self) -> None:
+        windows_test = (ROOT / "scripts/test-all.ps1").read_text(encoding="utf-8")
+
+        build = "build-firmware-m3-adc-dma-diagnostic.ps1"
+        audit = "test-m3-adc-dma-diagnostic-static.ps1"
+        self.assertIn(build, windows_test)
+        self.assertIn(audit, windows_test)
+        self.assertLess(windows_test.index(build), windows_test.index(audit))
+
     def test_m0_firmware_never_configures_a_burst(self) -> None:
         source = (ROOT / "firmware/src/main.c").read_text(encoding="utf-8")
 

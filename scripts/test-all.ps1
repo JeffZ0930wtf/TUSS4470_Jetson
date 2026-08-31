@@ -13,6 +13,8 @@ if (-not $env:VIRTUAL_ENV -or $env:VIRTUAL_ENV -ne $expectedEnvironment) {
 # Windows PowerShell/Python code-page corruption when the user profile contains
 # non-ASCII characters, while keeping all generated data under ignored build/.
 $pytestBaseTemp = Join-Path $repositoryRoot "firmware\build\pytest-$PID"
+$pytestParent = Split-Path -Parent $pytestBaseTemp
+New-Item -ItemType Directory -Path $pytestParent -Force | Out-Null
 & (Join-Path $expectedEnvironment 'Scripts\python.exe') -m pytest --basetemp $pytestBaseTemp
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -38,3 +40,9 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & (Join-Path $PSScriptRoot 'test-m3-acquisition-static.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& (Join-Path $PSScriptRoot 'build-firmware-m3-adc-dma-diagnostic.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& (Join-Path $PSScriptRoot 'test-m3-adc-dma-diagnostic-static.ps1')

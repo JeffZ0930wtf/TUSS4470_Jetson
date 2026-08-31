@@ -3,10 +3,48 @@
 ## Document overview
 
 This document defines repository-wide maintenance rules for the TUSS4470
-ultrasonic acquisition submodule. It applies to M3 and every later milestone,
+ultrasonic acquisition submodule. It applies to M4 and every later milestone,
 as well as maintenance changes to completed milestones. It complements the
 controlled design and staged roadmap; it does not replace their technical
 requirements.
+
+## Milestone workflow
+
+Every milestone starts from and closes against the controlled staged roadmap
+`2026-08-20-tuss4470-ultrasonic-acquisition-module-roadmap.md`. An implementation
+plan or ADR may refine how a requirement is met, but it must not silently
+remove, weaken, or mark a roadmap requirement complete.
+
+Before milestone implementation:
+
+1. Read the roadmap's global constraints, current milestone, exit gate, and
+   adjacent milestone boundaries.
+2. Require the preceding `milestone(Mx)` commit to be present on `origin/main`,
+   with local and remote SHA equal and a clean main worktree.
+3. Mark the new milestone `in progress` in the roadmap and confirm its task
+   checklist, exclusions, hardware conditions, and evidence plan before code.
+4. Create the milestone branch/worktree from the verified main commit.
+
+Before milestone closure:
+
+1. Audit every roadmap item. Use `[x]` only with code, test, or hardware
+   evidence. Leave incomplete items `[ ]` and record the reason, impact,
+   destination milestone, or the user's explicit decision to accept a
+   non-blocking limitation.
+2. Update the roadmap status, README, milestone verification summary, and
+   relevant ADRs. Never describe a device-to-CLI frame as bridge/core/SQLite
+   success.
+3. Run the full milestone verification, whitespace/diff checks, staged-scope
+   review, and sensitive-literal check.
+4. Integrate to `main`, create the exact non-empty `milestone(Mx)` commit named
+   by the roadmap, push `main` without rewriting history, and verify the local
+   and remote 40-character SHA values are identical.
+5. Sync the Jetson repository to the closed main commit, verify a clean
+   worktree, then archive/remove the completed milestone worktree according to
+   ownership rules.
+
+Only after all closure steps pass may the next milestone be marked ready. Its
+implementation still begins with a fresh execution of the start procedure.
 
 ## Formal documentation
 

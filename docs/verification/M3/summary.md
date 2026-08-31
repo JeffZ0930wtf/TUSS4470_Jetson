@@ -1,6 +1,6 @@
 # M3 verification summary
 
-Status: Completed M3 single-waveform acquisition milestone
+Status: Closed with explicitly accepted limitations
 
 Date: 2026-08-31
 
@@ -32,7 +32,7 @@ integration.
 A fresh completion run on 2026-08-31 exited with code 0 and did not access
 COM9:
 
-- all 82 Python protocol, runtime, CLI, and project-layout tests passed;
+- all 84 Python protocol, runtime, CLI, and project-layout tests passed;
 - MSP430 simulator unit tests passed;
 - the TI official C4 USB CDC smoke build passed;
 - M0 safe, M2 no-Burst, and M3 acceptance firmware builds passed;
@@ -42,8 +42,19 @@ COM9:
   5530 bytes of static RAM; and
 - `git diff --check` reported no whitespace error (line-ending notices only).
 
-The final rebuild reproduced the same M3 ELF SHA-256 recorded at the hardware
-flash gate.
+The feature-worktree rebuild reproduced the exact flashed ELF SHA-256. A final
+clean-main rebuild used a different absolute source path, so its complete ELF
+contained different path-dependent debug metadata. Converting both ELFs to
+their loadable binary image produced identical 48128-byte files with SHA-256
+`da4a9d89d1cb5363367af7b05e480e04389c2cc6dfd7317f3ac43cc1ac044dd1`.
+No loadable firmware byte changed during milestone documentation closure.
+
+The clean-main gate also exposed two test-entrypoint dependencies on ignored
+historical build products: pytest's configured parent directory was not
+created, and the ADC/DMA diagnostic static audit assumed its ELF already
+existed. Both were corrected red-green. `test-all.ps1` now creates the ASCII
+pytest build parent and explicitly builds the diagnostic image before auditing
+it, so a cleaned checkout can reproduce the complete M3 offline gate.
 
 ## Firmware and startup gate
 
@@ -122,6 +133,14 @@ M3.
 
 - The clock is nominal rather than externally calibrated, so absolute sample
   time and derived TOF must carry the timing-uncalibrated quality flag.
+- DMA destination increment and sample ordering passed pure-C incremental
+  vectors, static configuration checks, and continuous real-frame delivery,
+  but no real known analogue ramp was applied to the ADC. The user accepted
+  this as non-blocking for M3; the independent known-input HIL remains in M7.
+- M3 retained the corrected M2 reset-safe startup and forced Standby after the
+  authorized capture, but did not execute a complete post-Burst WDT/PUC reset
+  matrix. The user accepted this as non-blocking for controlled single
+  captures; the full reset matrix remains in M7.
 - The recorded waveform proves acquisition and lossless output, not that a
   particular interval represents an internal battery echo.
 - M3 supports the controlled single-capture path. Periodic acquisition,
@@ -134,3 +153,14 @@ The local binary evidence is retained under
 `archive/local/M3/first-waveform-four-segment-tx-20260831/` according to the
 repository archive policy. Its hashes above are the reviewable link from this
 committed summary to the unmodified local files.
+
+## Formal milestone closure
+
+The M3 implementation commit `cda696d` contains the accepted firmware, host
+runtime, tests, design records, and real-capture evidence summary. This closure
+update is intentionally non-functional: it aligns README, repository-wide
+development rules, and accepted limitations before the required
+`milestone(M3): complete Windows hardware waveform` commit is pushed to
+`origin/main`. The authoritative roadmap records the final local/remote SHA
+after that push; M4 code must not start before the SHA check and worktree
+archive complete.

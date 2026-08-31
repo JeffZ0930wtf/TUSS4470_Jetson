@@ -17,14 +17,15 @@ features and does not predict SOC or SOH.
 - M0 builds tools and a non-flashed firmware skeleton only. It must not trigger
   TUSS4470 transmission.
 - USB-only operation is limited to development and no-Burst diagnostics.
-- Future transmission requires the approved Standard power profile, external
-  VPWR 7.0 V, internal VDRV 5 V, SPI readback, VDRV_READY, fault checks, and the
-  explicit safety gate defined for that later milestone. M2 authorizes no
-  transmission, and this repository has not started M3 development.
+- Transmission is limited to the M3 controlled path: approved Standard power,
+  external VPWR 7.0 V, internal VDRV 5 V, SPI readback, VDRV_READY, fault
+  checks, the pin-40-to-pin-38 loopback gate, `d10x4_v1`, and one explicitly
+  authorized `Pulse=1` capture. M2 still authorizes no transmission, and M4
+  must not bypass the M3 gate.
 - Never commit captures, spool files, SQLite databases, credentials, firmware
   binaries, or large instrument exports.
 
-## Implemented through M2; M3 not started
+## Implemented through M3; M4 ready to start
 
 - Cross-platform runtime configuration and serial transport boundary.
 - USAC v1 little-endian frame codec, CRC-32/ISO-HDLC, bounded host stream
@@ -55,6 +56,18 @@ reapplied and read back; these are separate safety states.
 The verified bring-up SPI rate is 1 MHz (24 MHz SMCLK divided by 24). This is
 inside TI's allowed range and is intentionally below the 8 MHz maximum; the
 SPI link is a control path and is not the ADC sample clock.
+
+M3 adds the fixed Windows single-capture path: IO2 loopback acceptance,
+one-pulse Burst control, 200 kS/s nominal ADC/DMA acquisition, 64-sample
+pretrigger, exactly 2048 unmodified `uint16` samples, and a continuous
+CRC-protected `CAPTURE_DATA` frame. The accepted real capture contained 4324
+wire bytes and 4096 sample bytes. The frame remains
+`TIMING_UNCALIBRATED` because no external clock reference was available.
+
+M3 does not include bridge/core delivery, SQLite, periodic acquisition, full
+parameter editing, or Jetson hardware capture. Those remain M4 and later work.
+The real known-input DMA ordering HIL and the full WDT/PUC reset matrix are
+accepted M3 limitations and remain explicitly deferred to hardening.
 
 ## M2 no-Burst hardware checks
 
