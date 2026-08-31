@@ -25,7 +25,7 @@ features and does not predict SOC or SOH.
 - Never commit captures, spool files, SQLite databases, credentials, firmware
   binaries, or large instrument exports.
 
-## Implemented through M3; M4 in progress
+## Implemented through M4; M5 not started
 
 - Cross-platform runtime configuration and serial transport boundary.
 - USAC v1 little-endian frame codec, CRC-32/ISO-HDLC, bounded host stream
@@ -85,6 +85,12 @@ frame again and commits the original wire frame, the exact `uint16` sample
 BLOB, and capture metadata in one SQLite transaction. Only after that commit
 does the core return `CAPTURE_COMMITTED`; only a matching receipt allows the
 bridge to remove pending data and print capture success.
+
+The M4 G3W run completed this path with one authorized real capture on COM9:
+4324 wire bytes, exactly 2048 unmodified samples, one SQLite row, zero pending
+spool rows, and one matching committed tombstone. The raw frame, sample BLOB,
+and downloaded files matched byte for byte. See
+`docs/verification/M4/summary.md` for the non-sensitive identities and hashes.
 
 Activate this checkout's environment and start the core in one terminal:
 
