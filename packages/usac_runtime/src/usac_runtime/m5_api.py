@@ -12,6 +12,7 @@ from .application import (
     AcquisitionApplication,
     CaptureStorageUnavailable,
     ConfigurationEtagConflict,
+    SessionConflict,
 )
 from .device_executor import ConfigConflictError, ConfigValidationError
 
@@ -29,6 +30,21 @@ class CaptureRequestBody(BaseModel):
     expected_device_config_crc32: int
     trigger_source: str = "SOFTWARE"
     sync_timeout_ms: int = 0
+
+
+class PeriodicStartBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_profile_sha256: str
+    expected_device_config_crc32: int
+    period_us: int
+    capture_count: int
+    lease_timeout_ms: int
+
+
+class PeriodicStopBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    session_id: str
+    schedule_id: str
 
 
 def _validation_detail(error: ConfigValidationError) -> list[dict[str, str]]:
@@ -84,6 +100,8 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
             )
         except ConfigurationEtagConflict as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        except SessionConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except ConfigValidationError as error:
             raise HTTPException(
                 status_code=422,
@@ -103,6 +121,8 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
                 sync_timeout_ms=body.sync_timeout_ms,
             )
         except ConfigConflictError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except SessionConflict as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         except CaptureStorageUnavailable as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
@@ -127,5 +147,45 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
         return Response(samples, media_type="application/octet-stream")
+
+    @api.post("/api/v1/periodic/start", status_code=202)
+    def start_periodic(body: PeriodicStartBody) -> dict[str, object]:
+        try:
+            return application.start_periodic(
+                expected_profile_sha256=body.expected_profile_sha256,
+                expected_device_config_crc32=body.expected_device_config_crc32,
+                period_us=body.period_us,
+                capture_count=body.capture_count,
+                lease_timeout_ms=body.lease_timeout_ms,
+            )
+        except (ConfigConflictError, SessionConflict) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except CaptureStorageUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        except (ValueError, RuntimeError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.post("/api/v1/periodic/stop")
+    def stop_periodic(body: PeriodicStopBody) -> dict[str, object]:
+        try:
+            return application.stop_periodic(
+                session_id=body.session_id,
+                schedule_id=body.schedule_id,
+            )
+        except SessionConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.get("/api/v1/sessions/{session_id}")
+    def session(session_id: str) -> dict[str, object]:
+        try:
+            return application.session(session_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     return api

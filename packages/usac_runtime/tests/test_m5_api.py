@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 from fastapi.testclient import TestClient
 
@@ -152,3 +153,72 @@ def test_capture_requires_current_applied_identity(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 409
+
+
+def test_finite_periodic_session_renews_persists_and_completes(tmp_path: Path) -> None:
+    api = client(tmp_path / "captures.sqlite3")
+    applied = api.put(
+        "/api/v1/config",
+        headers={"If-Match": ZERO_ETAG},
+        json={"changes": {}},
+    ).json()
+
+    started = api.post(
+        "/api/v1/periodic/start",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+            "period_us": 100_000,
+            "capture_count": 2,
+            "lease_timeout_ms": 1_000,
+        },
+    )
+
+    assert started.status_code == 202
+    session_id = started.json()["session_id"]
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        session = api.get(f"/api/v1/sessions/{session_id}").json()
+        if session["state"] == "COMPLETED":
+            break
+        time.sleep(0.02)
+    assert session["state"] == "COMPLETED"
+    assert session["capture_count"] == 2
+    assert len(session["capture_ids"]) == 2
+    assert all(
+        api.get(f"/api/v1/captures/{capture_id}").status_code == 200
+        for capture_id in session["capture_ids"]
+    )
+
+
+def test_infinite_periodic_session_can_be_stopped_without_waiting_for_capture(
+    tmp_path: Path,
+) -> None:
+    api = client(tmp_path / "captures.sqlite3")
+    applied = api.put(
+        "/api/v1/config",
+        headers={"If-Match": ZERO_ETAG},
+        json={"changes": {}},
+    ).json()
+    started = api.post(
+        "/api/v1/periodic/start",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+            "period_us": 1_000_000,
+            "capture_count": 0,
+            "lease_timeout_ms": 1_000,
+        },
+    ).json()
+
+    stopped = api.post(
+        "/api/v1/periodic/stop",
+        json={
+            "session_id": started["session_id"],
+            "schedule_id": started["schedule_id"],
+        },
+    )
+
+    assert stopped.status_code == 200
+    assert stopped.json()["state"] == "STOPPED"
+    assert api.get("/api/v1/device").json()["status"]["active_schedule_id"] == "00" * 16

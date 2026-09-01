@@ -7,10 +7,12 @@ keeps semantic validation and configuration identity consistent everywhere.
 
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
+import threading
 import time
 from typing import Protocol
+import uuid
 
 from usac_protocol.bridge_messages import BridgeCaptureDelivery
 from usac_protocol.capture_data import CaptureData
@@ -19,12 +21,11 @@ from .core_store import CaptureRecord, CaptureStore
 from .device_executor import ConfigConflictError
 from .device_executor import SingleDeviceExecutor
 from .parameter_service import ConfigurationSnapshot, ParameterService, ValidationResult
+from .periodic_lease import PeriodicLeaseController, PeriodicSchedule
 
 
 class ApplicationDevice(Protocol):
-    def capabilities(self) -> object: ...
-
-    def status(self) -> object: ...
+    boot_id: bytes | None
 
     def capture_wire_frame(self, capture_id: bytes) -> bytes: ...
 
@@ -35,6 +36,24 @@ class ConfigurationEtagConflict(RuntimeError):
 
 class CaptureStorageUnavailable(RuntimeError):
     """Capture was refused before device IO because no durable store exists."""
+
+
+class SessionConflict(RuntimeError):
+    """A request conflicts with the one active device run session."""
+
+
+@dataclass(slots=True)
+class _PeriodicSession:
+    session_id: bytes
+    schedule: PeriodicSchedule
+    state: str = "RUNNING"
+    capture_ids: list[str] = field(default_factory=list)
+    error: str | None = None
+    started_utc_ns: int = field(default_factory=time.time_ns)
+    finished_utc_ns: int | None = None
+    stop_event: threading.Event = field(default_factory=threading.Event, repr=False)
+    control_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    thread: threading.Thread | None = field(default=None, repr=False)
 
 
 def _json_value(value: object) -> object:
@@ -69,6 +88,8 @@ class AcquisitionApplication:
         self._device = device
         self._store = store
         self._local_spool_record_id = 0
+        self._session_lock = threading.Lock()
+        self._sessions: dict[bytes, _PeriodicSession] = {}
 
     @staticmethod
     def _snapshot(snapshot: ConfigurationSnapshot) -> dict[str, object]:
@@ -97,8 +118,8 @@ class AcquisitionApplication:
 
     def device(self) -> dict[str, object]:
         return {
-            "capabilities": _json_value(self._device.capabilities()),
-            "status": _json_value(self._device.status()),
+            "capabilities": _json_value(self._executor.capabilities()),
+            "status": _json_value(self._executor.status()),
         }
 
     def schema(self) -> dict[str, object]:
@@ -119,6 +140,7 @@ class AcquisitionApplication:
         *,
         expected_etag: str,
     ) -> dict[str, object]:
+        self._require_idle()
         if expected_etag != self.etag():
             raise ConfigurationEtagConflict("If-Match does not match current config")
         return self._snapshot(self._executor.apply_changes(changes))
@@ -164,9 +186,10 @@ class AcquisitionApplication:
         capture: CaptureData,
         *,
         run_plan: dict[str, object],
+        snapshot: ConfigurationSnapshot | None = None,
     ) -> dict[str, object]:
         store = self._require_store()
-        snapshot = self._executor.snapshot()
+        snapshot = snapshot or self._executor.snapshot()
         encoded = {
             "sample_interval_ticks": capture.sample_interval_ticks,
             "burst_period_ticks": capture.burst_period_ticks,
@@ -208,6 +231,7 @@ class AcquisitionApplication:
         """Capture once and report success only after the SQLite commit."""
 
         self._require_store()
+        self._require_idle()
         capture = self._executor.capture_once(
             expected_profile_sha256=expected_profile_sha256,
             expected_device_config_crc32=expected_device_config_crc32,
@@ -227,6 +251,165 @@ class AcquisitionApplication:
                 "sweep": None,
             },
         )
+
+    def _require_idle(self) -> None:
+        with self._session_lock:
+            if any(session.state == "RUNNING" for session in self._sessions.values()):
+                raise SessionConflict("the device already has an active run session")
+
+    @staticmethod
+    def _periodic_payload(session: _PeriodicSession) -> dict[str, object]:
+        return {
+            "session_id": session.session_id.hex(),
+            "kind": "PERIODIC",
+            "state": session.state,
+            "schedule_id": session.schedule.schedule_id.hex(),
+            "period_us": session.schedule.period_us,
+            "requested_capture_count": session.schedule.capture_count,
+            "capture_count": len(session.capture_ids),
+            "capture_ids": list(session.capture_ids),
+            "lease_timeout_ms": session.schedule.lease_timeout_ms,
+            "error": session.error,
+            "started_utc_ns": session.started_utc_ns,
+            "finished_utc_ns": session.finished_utc_ns,
+        }
+
+    def start_periodic(
+        self,
+        *,
+        expected_profile_sha256: str,
+        expected_device_config_crc32: int,
+        period_us: int,
+        capture_count: int,
+        lease_timeout_ms: int,
+    ) -> dict[str, object]:
+        """Start one firmware-leased schedule and a core-owned renewal worker."""
+
+        self._require_store()
+        try:
+            profile_sha256 = bytes.fromhex(expected_profile_sha256)
+        except ValueError as error:
+            raise ValueError("expected_profile_sha256 must be hexadecimal") from error
+        boot_id = self._device.boot_id
+        if boot_id is None:
+            raise RuntimeError("device HELLO boot session is unavailable")
+        schedule = PeriodicSchedule(
+            boot_id=boot_id,
+            schedule_id=uuid.uuid4().bytes,
+            profile_sha256=profile_sha256,
+            device_config_crc32=expected_device_config_crc32,
+            period_us=period_us,
+            capture_count=capture_count,
+            lease_timeout_ms=lease_timeout_ms,
+        )
+        schedule.validate()
+        session = _PeriodicSession(uuid.uuid4().bytes, schedule)
+        controller = PeriodicLeaseController(self._executor)
+        with self._session_lock:
+            if any(item.state == "RUNNING" for item in self._sessions.values()):
+                raise SessionConflict("the device already has an active run session")
+            controller.start(schedule, now_ms=time.monotonic_ns() // 1_000_000)
+            self._sessions[session.session_id] = session
+            session.thread = threading.Thread(
+                target=self._periodic_worker,
+                args=(session, controller, self._executor.snapshot()),
+                name=f"usac-periodic-{session.session_id.hex()[:8]}",
+                daemon=True,
+            )
+            session.thread.start()
+        return self._periodic_payload(session)
+
+    def _periodic_worker(
+        self,
+        session: _PeriodicSession,
+        controller: PeriodicLeaseController,
+        snapshot: ConfigurationSnapshot,
+    ) -> None:
+        """Renew, drain, and durably commit periodic frames owned by core."""
+
+        run_plan = {
+            "mode": "PERIODIC",
+            "schedule_id": session.schedule.schedule_id.hex(),
+            "period_us": session.schedule.period_us,
+            "capture_count": session.schedule.capture_count,
+            "lease_timeout_ms": session.schedule.lease_timeout_ms,
+        }
+        try:
+            while not session.stop_event.wait(0.01):
+                with session.control_lock:
+                    if session.state != "RUNNING":
+                        return
+                    controller.renew_if_due(
+                        now_ms=time.monotonic_ns() // 1_000_000,
+                    )
+                    captures = self._executor.poll_captures()
+                for capture in captures:
+                    if not isinstance(capture, CaptureData):
+                        raise TypeError("device returned an unsupported periodic capture")
+                    persisted = self._persist_capture(
+                        capture,
+                        run_plan=run_plan,
+                        snapshot=snapshot,
+                    )
+                    with session.control_lock:
+                        session.capture_ids.append(str(persisted["capture_id"]))
+                if (
+                    session.schedule.capture_count
+                    and len(session.capture_ids) >= session.schedule.capture_count
+                ):
+                    with session.control_lock:
+                        controller.finish()
+                        session.state = "COMPLETED"
+                        session.finished_utc_ns = time.time_ns()
+                    return
+        except Exception as error:  # preserve the error while lease/STOP makes IO safe
+            with session.control_lock:
+                try:
+                    controller.stop()
+                except Exception:
+                    pass
+                session.state = "FAILED"
+                session.error = f"{type(error).__name__}: {error}"
+                session.finished_utc_ns = time.time_ns()
+
+    def stop_periodic(self, *, session_id: str, schedule_id: str) -> dict[str, object]:
+        identifier = self._session_identifier(session_id)
+        with self._session_lock:
+            try:
+                session = self._sessions[identifier]
+            except KeyError as error:
+                raise KeyError(f"unknown session {session_id}") from error
+        if session.schedule.schedule_id.hex() != schedule_id:
+            raise SessionConflict("schedule_id does not match the session")
+        with session.control_lock:
+            if session.state == "RUNNING":
+                session.stop_event.set()
+                # Ask the device to stop through the same serialized executor;
+                # the worker observes stop_event and sends no later renewal.
+                self._executor.stop_periodic(session.schedule.schedule_id)
+                session.state = "STOPPED"
+                session.finished_utc_ns = time.time_ns()
+        return self._periodic_payload(session)
+
+    @staticmethod
+    def _session_identifier(session_id: str) -> bytes:
+        try:
+            identifier = bytes.fromhex(session_id)
+        except ValueError as error:
+            raise ValueError("session_id must be hexadecimal") from error
+        if len(identifier) != 16:
+            raise ValueError("session_id must encode exactly 16 bytes")
+        return identifier
+
+    def session(self, session_id: str) -> dict[str, object]:
+        identifier = self._session_identifier(session_id)
+        with self._session_lock:
+            try:
+                session = self._sessions[identifier]
+            except KeyError as error:
+                raise KeyError(f"unknown session {session_id}") from error
+        with session.control_lock:
+            return self._periodic_payload(session)
 
     def capture(self, capture_id: str) -> dict[str, object]:
         store = self._require_store()

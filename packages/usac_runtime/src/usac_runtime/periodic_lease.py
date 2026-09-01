@@ -95,9 +95,17 @@ class PeriodicLeaseController:
             lease_timeout_ms=schedule.lease_timeout_ms,
         )
         response = self._client.renew_periodic(renewal)
-        if response != renewal:
+        response_matches = (
+            response.boot_id == renewal.boot_id
+            and response.schedule_id == renewal.schedule_id
+            and response.lease_sequence == renewal.lease_sequence
+            and 0 < response.lease_timeout_ms <= renewal.lease_timeout_ms
+        )
+        if not response_matches:
             # Stop local ownership immediately. Without more renewals the
             # firmware deadline is the fail-safe even if STOP cannot be sent.
+            # The final field is remaining time, so transport/processing delay
+            # may make it smaller than the requested timeout.
             self._schedule = None
             raise LeaseConflictError("lease renewal response does not match the request")
         self._lease_sequence = renewal.lease_sequence
@@ -112,3 +120,15 @@ class PeriodicLeaseController:
         self._lease_sequence = 0
         self._next_renewal_ms = 0
         self._client.stop_periodic(schedule.schedule_id)
+
+    def finish(self) -> None:
+        """Release a finite schedule already completed by firmware.
+
+        STOP is intentionally not sent: after the requested capture count the
+        firmware has already removed the schedule, so a STOP would target a
+        nonexistent resource.
+        """
+
+        self._schedule = None
+        self._lease_sequence = 0
+        self._next_renewal_ms = 0

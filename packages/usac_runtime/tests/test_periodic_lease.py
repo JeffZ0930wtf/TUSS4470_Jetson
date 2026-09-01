@@ -57,6 +57,45 @@ def test_start_renews_at_timeout_third_with_monotonic_sequences() -> None:
     assert all(renewal.boot_id == current.boot_id for renewal in client.renewed)
 
 
+def test_renew_accepts_smaller_positive_remaining_time() -> None:
+    class DelayedClient(FakePeriodicClient):
+        def renew_periodic(self, renewal: LeaseRenewal) -> LeaseRenewal:
+            self.renewed.append(renewal)
+            return replace(renewal, lease_timeout_ms=renewal.lease_timeout_ms - 75)
+
+    controller = PeriodicLeaseController(DelayedClient())
+    controller.start(schedule(), now_ms=0)
+
+    assert controller.renew_if_due(now_ms=1_000) is True
+
+
+@pytest.mark.parametrize(
+    "response_change",
+    [
+        {"boot_id": b"x" * 16},
+        {"schedule_id": b"y" * 16},
+        {"lease_sequence": 99},
+        {"lease_timeout_ms": 0},
+        {"lease_timeout_ms": 3_001},
+    ],
+)
+def test_renew_rejects_identity_sequence_or_remaining_time_mismatch(
+    response_change,
+) -> None:
+    class MismatchedClient(FakePeriodicClient):
+        def renew_periodic(self, renewal: LeaseRenewal) -> LeaseRenewal:
+            self.renewed.append(renewal)
+            return replace(renewal, **response_change)
+
+    controller = PeriodicLeaseController(MismatchedClient())
+    controller.start(schedule(), now_ms=0)
+
+    with pytest.raises(LeaseConflictError, match="response"):
+        controller.renew_if_due(now_ms=1_000)
+
+    assert controller.active is False
+
+
 def test_stop_revokes_local_schedule_and_never_renews_again() -> None:
     client = FakePeriodicClient()
     controller = PeriodicLeaseController(client)
@@ -68,6 +107,17 @@ def test_stop_revokes_local_schedule_and_never_renews_again() -> None:
     assert client.stopped == [current.schedule_id]
     assert controller.active is False
     assert controller.renew_if_due(now_ms=10_000) is False
+
+
+def test_finish_releases_completed_finite_schedule_without_sending_stop() -> None:
+    client = FakePeriodicClient()
+    controller = PeriodicLeaseController(client)
+    controller.start(schedule(), now_ms=0)
+
+    controller.finish()
+
+    assert controller.active is False
+    assert client.stopped == []
 
 
 def test_second_schedule_cannot_replace_active_lease() -> None:

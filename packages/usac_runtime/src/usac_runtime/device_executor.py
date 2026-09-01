@@ -21,6 +21,7 @@ from .parameter_service import (
     ParameterService,
     ValidationResult,
 )
+from .periodic_lease import LeaseRenewal, PeriodicSchedule
 from .run_plan import RunPlanV1, compile_run_steps
 
 
@@ -43,6 +44,18 @@ class DeviceClient(Protocol):
         trigger_source: str,
         sync_timeout_ms: int,
     ) -> object: ...
+
+    def capabilities(self) -> object: ...
+
+    def status(self) -> object: ...
+
+    def start_periodic(self, schedule: PeriodicSchedule) -> None: ...
+
+    def renew_periodic(self, renewal: LeaseRenewal) -> LeaseRenewal: ...
+
+    def stop_periodic(self, schedule_id: bytes) -> None: ...
+
+    def poll_captures(self) -> tuple[object, ...]: ...
 
 
 class ConfigValidationError(ValueError):
@@ -175,6 +188,46 @@ class SingleDeviceExecutor:
                 trigger_source=trigger_source,
                 sync_timeout_ms=sync_timeout_ms,
             )
+
+    def capabilities(self) -> object:
+        with self._lock:
+            return self._client.capabilities()
+
+    def status(self) -> object:
+        with self._lock:
+            return self._client.status()
+
+    def start_periodic(self, schedule: PeriodicSchedule) -> None:
+        with self._lock:
+            self._require_applied_identity(
+                schedule.profile_sha256.hex(),
+                schedule.device_config_crc32,
+            )
+            self._client.start_periodic(schedule)
+
+    def renew_periodic(self, renewal: LeaseRenewal) -> LeaseRenewal:
+        with self._lock:
+            return self._client.renew_periodic(renewal)
+
+    def stop_periodic(self, schedule_id: bytes) -> None:
+        with self._lock:
+            self._client.stop_periodic(schedule_id)
+
+    def poll_captures(self) -> tuple[object, ...]:
+        with self._lock:
+            return self._client.poll_captures()
+
+    def _require_applied_identity(
+        self,
+        profile_sha256: str,
+        device_config_crc32: int,
+    ) -> None:
+        if self._snapshot.state is not ConfigState.APPLIED or self._applied_config is None:
+            raise ConfigConflictError("no APPLIED configuration is available")
+        if self._applied_config.profile_sha256.hex() != profile_sha256:
+            raise ConfigConflictError("expected profile does not match APPLIED profile")
+        if self._applied_config.device_config_crc32 != device_config_crc32:
+            raise ConfigConflictError("expected configuration CRC does not match APPLIED profile")
 
     def execute_run_plan(
         self,
