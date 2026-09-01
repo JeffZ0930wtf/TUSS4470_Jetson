@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TUSS4470 acquisition console</title>
+  <link rel="stylesheet" href="/assets/m5-styles.css">
+</head>
+<body>
+  <header class="instrument-head">
+    <div>
+      <p class="eyebrow">USAC / TUSS4470</p>
+      <h1>Ultrasonic acquisition console</h1>
+      <p class="subhead">Configure, read back, and acquire unmodified envelope samples.</p>
+    </div>
+    <div class="device-badge" aria-live="polite">
+      <span id="device-dot" class="status-dot"></span>
+      <div><small>Device state</small><strong id="device-state">Connecting</strong></div>
+    </div>
+  </header>
+  <nav class="signal-strip" aria-label="Acquisition pipeline">
+    <span data-stage="draft">Draft</span><i></i><span data-stage="validated">Validated</span><i></i>
+    <span data-stage="applied">Read back</span><i></i><span data-stage="captured">Committed</span>
+  </nav>
+  <main class="console-grid">
+    <section class="parameter-bank" aria-labelledby="parameters-title">
+      <div class="section-head">
+        <div><p class="eyebrow">Device + acquisition</p><h2 id="parameters-title">Parameter bank</h2></div>
+        <div class="action-row">
+          <button id="reset-button" class="quiet">Discard edits</button>
+          <button id="validate-button">Validate</button>
+          <button id="apply-button" class="primary">Apply and read back</button>
+        </div>
+      </div>
+      <div id="validation" class="message" hidden></div>
+      <div id="parameter-groups" class="parameter-groups" aria-live="polite"></div>
+    </section>
+    <aside class="run-rail">
+      <section class="rail-card waveform-card">
+        <div class="section-head compact"><div><p class="eyebrow">Latest capture</p><h2>Raw envelope</h2></div><span id="sample-label">No capture</span></div>
+        <canvas id="waveform" width="720" height="280" aria-label="Raw ADC waveform"></canvas>
+        <p class="hint">2048 original ADC points. Display scaling does not alter stored samples.</p>
+      </section>
+      <section class="rail-card">
+        <p class="eyebrow">Single acquisition</p><h2>Capture once</h2>
+        <div class="form-grid two">
+          <label>Trigger<select id="trigger-source"><option>SOFTWARE</option><option>EXTERNAL_SYNC_SLAVE</option><option>EXTERNAL_SYNC_MASTER</option></select></label>
+          <label>Sync timeout (ms)<input id="sync-timeout" type="number" min="0" max="60000" value="0"></label>
+        </div>
+        <button id="capture-button" class="primary full">Capture and commit</button>
+      </section>
+      <section class="rail-card">
+        <p class="eyebrow">Leased schedule</p><h2>Periodic capture</h2>
+        <div class="form-grid two">
+          <label>Period (µs)<input id="period-us" type="number" min="100000" value="1000000"></label>
+          <label>Count (0 = infinite)<input id="periodic-count" type="number" min="0" value="1"></label>
+          <label>Lease (ms)<input id="lease-timeout" type="number" min="1000" max="10000" value="3000"></label>
+        </div>
+        <div class="action-row"><button id="periodic-start" class="primary">Start</button><button id="periodic-stop" class="danger" disabled>Stop</button></div>
+        <output id="periodic-status" class="run-status">Idle</output>
+      </section>
+      <section class="rail-card">
+        <p class="eyebrow">Finite run plan</p><h2>Single-field sweep</h2>
+        <div class="form-grid two">
+          <label>Field<select id="sweep-field"></select></label>
+          <label>Values (JSON)<input id="sweep-values" value="[1,2,3]"></label>
+          <label>Loops<input id="sweep-loops" type="number" min="1" value="1"></label>
+          <label>Loop delay (ms)<input id="sweep-delay" type="number" min="0" value="0"></label>
+        </div>
+        <div class="action-row"><button id="sweep-start">Run sweep</button><button id="sweep-stop" class="danger" disabled>Stop</button></div>
+        <output id="sweep-status" class="run-status">Idle</output>
+      </section>
+    </aside>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="/assets/m5-app.js" defer></script>
+</body>
+</html>

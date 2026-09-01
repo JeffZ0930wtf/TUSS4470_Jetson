@@ -47,6 +47,22 @@ def test_schema_device_and_draft_config_share_one_application_state() -> None:
     assert config.headers["etag"] == ZERO_ETAG
 
 
+def test_web_console_is_served_without_hardcoded_parameter_table() -> None:
+    api = client()
+
+    page = api.get("/")
+    script = api.get("/assets/m5-app.js")
+    styles = api.get("/assets/m5-styles.css")
+
+    assert page.status_code == 200
+    assert "Ultrasonic acquisition console" in page.text
+    assert script.status_code == 200
+    assert 'fetchJson("/api/v1/config/schema")' in script.text
+    assert "BPF_HPF_FREQ" not in script.text
+    assert styles.status_code == 200
+    assert "--signal-blue" in styles.text
+
+
 def test_validate_reports_field_error_without_mutating_current_config() -> None:
     api = client()
 

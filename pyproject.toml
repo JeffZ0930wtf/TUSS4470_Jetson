@@ -19,6 +19,7 @@ usac-m3-capture = "usac_runtime.m3_cli:main"
 usac-m3-loopback = "usac_runtime.m3_loopback_cli:main"
 usac-m4 = "usac_runtime.m4_cli:main"
 usac-m5 = "usac_runtime.m5_cli:main"
+usac-m5-server = "usac_runtime.m5_server:main"
 usac-core = "usac_runtime.core_service:main"
 usac-bridge = "usac_runtime.bridge_cli:main"
 

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict
 
 from .application import (
@@ -15,6 +16,9 @@ from .application import (
     SessionConflict,
 )
 from .device_executor import ConfigConflictError, ConfigValidationError
+
+
+_WEB_ROOT = Path(__file__).with_name("web")
 
 
 class ConfigChanges(BaseModel):
@@ -75,6 +79,18 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
     """Create an API whose handlers contain no duplicated device semantics."""
 
     api = FastAPI(title="TUSS4470 Ultrasonic Acquisition", version="1")
+
+    @api.get("/", include_in_schema=False)
+    def web_console() -> FileResponse:
+        return FileResponse(_WEB_ROOT / "index.html", media_type="text/html")
+
+    @api.get("/assets/m5-app.js", include_in_schema=False)
+    def web_script() -> FileResponse:
+        return FileResponse(_WEB_ROOT / "m5-app.js", media_type="text/javascript")
+
+    @api.get("/assets/m5-styles.css", include_in_schema=False)
+    def web_styles() -> FileResponse:
+        return FileResponse(_WEB_ROOT / "m5-styles.css", media_type="text/css")
 
     @api.get("/api/v1/health")
     def health() -> dict[str, str]:
