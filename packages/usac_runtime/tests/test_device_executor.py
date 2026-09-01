@@ -12,6 +12,7 @@ from usac_runtime.device_executor import (
     SingleDeviceExecutor,
 )
 from usac_runtime.parameter_service import ConfigState, ParameterService
+from usac_runtime.run_plan import RunPlanV1, SweepPlan
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -26,9 +27,12 @@ class FakeDeviceClient:
         self.allow_apply_to_finish = threading.Event()
         self.allow_apply_to_finish.set()
         self.capture_started = threading.Event()
+        self.applied_configs = []
+        self.capture_arguments = []
 
     def apply_config(self, config):
         self.apply_calls += 1
+        self.applied_configs.append(config)
         self.apply_started.set()
         assert self.allow_apply_to_finish.wait(timeout=1)
         return DeviceReadback(
@@ -39,6 +43,7 @@ class FakeDeviceClient:
 
     def capture_once(self, *, config, trigger_source: str, sync_timeout_ms: int):
         self.capture_calls += 1
+        self.capture_arguments.append((config, trigger_source, sync_timeout_ms))
         self.capture_started.set()
         return {
             "profile_sha256": config.profile_sha256.hex(),
@@ -124,3 +129,48 @@ def test_capture_hash_conflict_fails_before_device_call(executor) -> None:
         )
 
     assert client.capture_calls == 0
+
+
+def test_run_plan_executes_sweep_under_one_lock_and_restores_baseline(executor) -> None:
+    worker, client = executor
+    baseline = worker.apply_draft()
+    slept: list[float] = []
+    plan = RunPlanV1(
+        loops=2,
+        start_delay_ms=5,
+        loop_delay_ms=7,
+        sweep=SweepPlan("BURST_PULSE", (1, 2)),
+    )
+
+    captures = worker.execute_run_plan(plan, sleep=slept.append)
+
+    assert len(captures) == 4
+    assert [arguments[0].register_pairs[8][1] & 0x3F for arguments in client.capture_arguments] == [
+        1,
+        1,
+        2,
+        2,
+    ]
+    assert slept == [0.005, 0.007, 0.007]
+    assert worker.snapshot() == baseline
+    assert worker.snapshot().state is ConfigState.APPLIED
+    assert client.applied_configs[-1].profile_sha256.hex() == baseline.actual["profile_sha256"]
+
+
+def test_run_plan_passes_external_slave_sync_contract_to_every_capture(executor) -> None:
+    worker, client = executor
+    worker.apply_draft()
+
+    worker.execute_run_plan(
+        RunPlanV1(
+            loops=2,
+            trigger_source="EXTERNAL_SYNC_SLAVE",
+            sync_timeout_ms=500,
+        ),
+        sleep=lambda _: None,
+    )
+
+    assert [(source, timeout) for _, source, timeout in client.capture_arguments] == [
+        ("EXTERNAL_SYNC_SLAVE", 500),
+        ("EXTERNAL_SYNC_SLAVE", 500),
+    ]

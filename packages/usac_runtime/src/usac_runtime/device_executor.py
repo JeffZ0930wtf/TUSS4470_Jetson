@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
+from typing import Callable
 from typing import Protocol
 
 from usac_protocol.config_v2 import AcquisitionConfigV2
@@ -19,6 +20,7 @@ from .parameter_service import (
     FieldValidationError,
     ParameterService,
 )
+from .run_plan import RunPlanV1, compile_run_steps
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,16 +89,25 @@ class SingleDeviceExecutor:
             result = self._service.validate(self._snapshot)
             if result.errors or result.compiled is None:
                 raise ConfigValidationError(result.errors)
-            readback = self._client.apply_config(result.compiled)
-            applied = self._service.mark_applied(
-                result.snapshot,
-                register_readback=readback.register_pairs,
-                sample_interval_ticks=readback.sample_interval_ticks,
-                burst_period_ticks=readback.burst_period_ticks,
-            )
-            self._applied_config = result.compiled
-            self._snapshot = applied
-            return applied
+            return self._apply_validated(result.snapshot, result.compiled)
+
+    def _apply_validated(
+        self,
+        snapshot: ConfigurationSnapshot,
+        config: AcquisitionConfigV2,
+    ) -> ConfigurationSnapshot:
+        """Publish a configuration only after the device returns exact readback."""
+
+        readback = self._client.apply_config(config)
+        applied = self._service.mark_applied(
+            snapshot,
+            register_readback=readback.register_pairs,
+            sample_interval_ticks=readback.sample_interval_ticks,
+            burst_period_ticks=readback.burst_period_ticks,
+        )
+        self._applied_config = config
+        self._snapshot = applied
+        return applied
 
     @staticmethod
     def _validate_trigger(trigger_source: str, sync_timeout_ms: int) -> None:
@@ -135,3 +146,41 @@ class SingleDeviceExecutor:
                 trigger_source=trigger_source,
                 sync_timeout_ms=sync_timeout_ms,
             )
+
+    def execute_run_plan(
+        self,
+        plan: RunPlanV1,
+        *,
+        sleep: Callable[[float], None],
+    ) -> tuple[object, ...]:
+        """Execute a finite plan atomically and restore its APPLIED baseline."""
+
+        with self._lock:
+            if self._snapshot.state is not ConfigState.APPLIED or self._applied_config is None:
+                raise ConfigConflictError("no APPLIED configuration is available")
+            baseline_snapshot = self._snapshot
+            baseline_config = self._applied_config
+            steps = compile_run_steps(self._service, baseline_snapshot, plan)
+            captures: list[object] = []
+            if plan.start_delay_ms:
+                sleep(plan.start_delay_ms / 1_000)
+            try:
+                for step in steps:
+                    if self._applied_config != step.compiled:
+                        self._apply_validated(step.snapshot, step.compiled)
+                    captures.append(
+                        self._client.capture_once(
+                            config=step.compiled,
+                            trigger_source=plan.trigger_source,
+                            sync_timeout_ms=plan.sync_timeout_ms,
+                        )
+                    )
+                    if plan.loop_delay_ms and step.loop_index + 1 < plan.loops:
+                        sleep(plan.loop_delay_ms / 1_000)
+            finally:
+                if self._applied_config != baseline_config:
+                    baseline = self._service.validate(baseline_snapshot)
+                    if baseline.errors or baseline.compiled is None:
+                        raise ConfigValidationError(baseline.errors)
+                    self._apply_validated(baseline.snapshot, baseline.compiled)
+            return tuple(captures)
