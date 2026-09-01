@@ -19,6 +19,7 @@ from usac_runtime.bridge import (
 )
 from usac_runtime.config import RuntimeConfig, load_runtime_config
 from usac_runtime.m3_capture import M3CaptureProgress, run_m3_capture
+from usac_runtime.reconnect import retry_connection
 from usac_runtime.spool import CaptureSpool
 
 
@@ -31,6 +32,8 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--core-host", default="127.0.0.1")
         command.add_argument("--core-port", type=int, default=8765)
         command.add_argument("--timeout-s", type=float, default=3.0)
+        command.add_argument("--reconnect-attempts", type=int, default=3)
+        command.add_argument("--reconnect-delay-s", type=float, default=0.1)
         if name == "capture":
             command.add_argument("--confirm-external-vpwr-7v", action="store_true")
             command.add_argument(
@@ -46,11 +49,15 @@ def _spool(config_path: Path) -> tuple[CaptureSpool, RuntimeConfig]:
 
 def _replay(args: argparse.Namespace) -> int:
     spool, _ = _spool(args.config)
-    delivered = deliver_spool(
-        spool,
-        core_host=args.core_host,
-        core_port=args.core_port,
-        timeout_s=args.timeout_s,
+    delivered = retry_connection(
+        lambda: deliver_spool(
+            spool,
+            core_host=args.core_host,
+            core_port=args.core_port,
+            timeout_s=args.timeout_s,
+        ),
+        attempts=args.reconnect_attempts,
+        initial_delay_s=args.reconnect_delay_s,
     )
     print(json.dumps({"mode": "m4_replay", "delivered": delivered}, indent=2))
     return 0
@@ -89,7 +96,13 @@ def _capture(args: argparse.Namespace) -> int:
         )
 
     try:
-        serial_connection.open()
+        # Only opening the byte stream is retried. Once DTR/HELLO begins, this
+        # command never repeats capture or Burst after a transport failure.
+        retry_connection(
+            serial_connection.open,
+            attempts=args.reconnect_attempts,
+            initial_delay_s=args.reconnect_delay_s,
+        )
         serial_connection.dtr = False
         time.sleep(0.150)
         serial_connection.reset_input_buffer()
@@ -149,6 +162,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.timeout_s <= 0:
         raise SystemExit("--timeout-s must be positive")
+    if args.reconnect_attempts < 1 or args.reconnect_delay_s < 0:
+        raise SystemExit("reconnect attempts must be positive and delay non-negative")
     if args.command == "replay":
         return _replay(args)
     return _capture(args)
