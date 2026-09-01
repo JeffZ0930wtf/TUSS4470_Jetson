@@ -19,6 +19,7 @@ from .parameter_service import (
     ConfigurationSnapshot,
     FieldValidationError,
     ParameterService,
+    ValidationResult,
 )
 from .run_plan import RunPlanV1, compile_run_steps
 
@@ -72,6 +73,34 @@ class SingleDeviceExecutor:
         with self._lock:
             self._snapshot = self._service.update_draft(self._snapshot, changes)
             return self._snapshot
+
+    def preview_changes(self, changes: dict[str, object]) -> ValidationResult:
+        """Validate proposed semantic changes without mutating shared state."""
+
+        with self._lock:
+            target = self._service.update_draft(self._snapshot, changes)
+            return self._service.validate(target)
+
+    def applied_etag(self) -> str:
+        """Return the HTTP entity tag for the device-confirmed configuration."""
+
+        with self._lock:
+            digest = (
+                self._applied_config.profile_sha256.hex()
+                if self._applied_config is not None
+                else "0" * 64
+            )
+            return f'"{digest}"'
+
+    def apply_changes(self, changes: dict[str, object]) -> ConfigurationSnapshot:
+        """Validate and apply changes without publishing an intermediate draft."""
+
+        with self._lock:
+            target = self._service.update_draft(self._snapshot, changes)
+            result = self._service.validate(target)
+            if result.errors or result.compiled is None:
+                raise ConfigValidationError(result.errors)
+            return self._apply_validated(result.snapshot, result.compiled)
 
     def validated_target(self) -> AcquisitionConfigV2:
         """Compile the current draft without causing a device side effect."""

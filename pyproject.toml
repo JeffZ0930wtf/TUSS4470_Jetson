@@ -23,7 +23,7 @@ usac-bridge = "usac_runtime.bridge_cli:main"
 
 [project.optional-dependencies]
 dev = [
-  "httpx<1",
+  "httpx2>=2,<3",
   "pytest>=8.3,<9",
 ]
 
