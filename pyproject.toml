@@ -8,7 +8,9 @@ version = "0.0.0"
 description = "Cross-platform host skeleton for the TUSS4470 ultrasonic acquisition module"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "fastapi<1",
   "pyserial>=3.5,<4",
+  "uvicorn<1",
 ]
 
 [project.scripts]
@@ -21,6 +23,7 @@ usac-bridge = "usac_runtime.bridge_cli:main"
 
 [project.optional-dependencies]
 dev = [
+  "httpx<1",
   "pytest>=8.3,<9",
 ]
 
