@@ -11,7 +11,7 @@ import hashlib
 
 from usac_protocol.capture_data import CaptureData, decode_capture_data
 from usac_protocol.config_v2 import AcquisitionConfigV2, decode_config_v2
-from usac_protocol.frame import Flags, Frame, MessageType
+from usac_protocol.frame import Flags, Frame, MessageType, encode_frame
 from usac_protocol.messages import (
     CaptureOnceRequest,
     CapabilitiesResponse,
@@ -55,6 +55,7 @@ class SimulatedDeviceClient:
         self.boot_id: bytes | None = None
         self.device_id: bytes | None = None
         self.last_acked_type: MessageType | None = None
+        self._capture_wire_frames: dict[bytes, bytes] = {}
         self._hello()
 
     def _next_sequence(self) -> int:
@@ -160,7 +161,9 @@ class SimulatedDeviceClient:
         self._require_ack(response[0], request_id, MessageType.CAPTURE_ONCE)
         if response[1].message_type is not MessageType.CAPTURE_DATA:
             raise RuntimeError("simulated device did not return CAPTURE_DATA")
-        return decode_capture_data(response[1].payload)
+        capture = decode_capture_data(response[1].payload)
+        self._capture_wire_frames[capture.capture_id] = encode_frame(response[1])
+        return capture
 
     def status(self) -> StatusResponse:
         response = self._device.handle(
@@ -245,5 +248,15 @@ class SimulatedDeviceClient:
         for frame in self._device.poll():
             if frame.message_type is not MessageType.CAPTURE_DATA or frame.flags != Flags.ASYNC:
                 raise RuntimeError("simulated periodic poll returned a non-capture frame")
-            captures.append(decode_capture_data(frame.payload))
+            capture = decode_capture_data(frame.payload)
+            self._capture_wire_frames[capture.capture_id] = encode_frame(frame)
+            captures.append(capture)
         return tuple(captures)
+
+    def capture_wire_frame(self, capture_id: bytes) -> bytes:
+        """Return the exact protocol frame received for a completed capture."""
+
+        try:
+            return self._capture_wire_frames[capture_id]
+        except KeyError as error:
+            raise KeyError(f"capture {capture_id.hex()} has no retained wire frame") from error

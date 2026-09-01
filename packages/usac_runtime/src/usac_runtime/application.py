@@ -9,8 +9,14 @@ from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
 from enum import Enum
+import time
 from typing import Protocol
 
+from usac_protocol.bridge_messages import BridgeCaptureDelivery
+from usac_protocol.capture_data import CaptureData
+
+from .core_store import CaptureRecord, CaptureStore
+from .device_executor import ConfigConflictError
 from .device_executor import SingleDeviceExecutor
 from .parameter_service import ConfigurationSnapshot, ParameterService, ValidationResult
 
@@ -20,9 +26,15 @@ class ApplicationDevice(Protocol):
 
     def status(self) -> object: ...
 
+    def capture_wire_frame(self, capture_id: bytes) -> bytes: ...
+
 
 class ConfigurationEtagConflict(RuntimeError):
     """The caller based a mutation on an obsolete APPLIED configuration."""
+
+
+class CaptureStorageUnavailable(RuntimeError):
+    """Capture was refused before device IO because no durable store exists."""
 
 
 def _json_value(value: object) -> object:
@@ -49,10 +61,14 @@ class AcquisitionApplication:
         service: ParameterService,
         executor: SingleDeviceExecutor,
         device: ApplicationDevice,
+        *,
+        store: CaptureStore | None = None,
     ) -> None:
         self._service = service
         self._executor = executor
         self._device = device
+        self._store = store
+        self._local_spool_record_id = 0
 
     @staticmethod
     def _snapshot(snapshot: ConfigurationSnapshot) -> dict[str, object]:
@@ -106,3 +122,126 @@ class AcquisitionApplication:
         if expected_etag != self.etag():
             raise ConfigurationEtagConflict("If-Match does not match current config")
         return self._snapshot(self._executor.apply_changes(changes))
+
+    @staticmethod
+    def _capture_payload(
+        record: CaptureRecord,
+        *,
+        events: tuple[object, ...],
+    ) -> dict[str, object]:
+        return {
+            "capture_id": record.capture_id.hex(),
+            "device_id": record.device_id.hex(),
+            "boot_id": record.boot_id.hex(),
+            "request_id": record.request_id.hex(),
+            "profile_sha256": record.profile_sha256.hex(),
+            "device_config_crc32": record.device_config_crc32,
+            "capture_sequence": record.capture_sequence,
+            "sample_interval_ticks": record.sample_interval_ticks,
+            "burst_period_ticks": record.burst_period_ticks,
+            "sample_count": record.sample_count,
+            "pretrigger_count": record.pretrigger_count,
+            "quality_flags": record.quality_flags,
+            "tuss_dev_stat": record.tuss_dev_stat,
+            "transport_crc32": record.transport_crc32,
+            "requested_config": record.requested_config,
+            "encoded_config": record.encoded_config,
+            "readback_config": record.readback_config,
+            "actual_config": record.actual_config,
+            "run_plan": record.run_plan,
+            "adc_clipping": record.adc_clipping,
+            "interpolated": False,
+            "events": [_json_value(event) for event in events],
+        }
+
+    def _require_store(self) -> CaptureStore:
+        if self._store is None:
+            raise CaptureStorageUnavailable("capture storage is not configured")
+        return self._store
+
+    def _persist_capture(
+        self,
+        capture: CaptureData,
+        *,
+        run_plan: dict[str, object],
+    ) -> dict[str, object]:
+        store = self._require_store()
+        snapshot = self._executor.snapshot()
+        encoded = {
+            "sample_interval_ticks": capture.sample_interval_ticks,
+            "burst_period_ticks": capture.burst_period_ticks,
+            "register_pairs": [list(pair) for pair in capture.register_pairs],
+        }
+        store.save_configuration_context(
+            profile_sha256=capture.profile_sha256,
+            device_config_crc32=capture.device_config_crc32,
+            request_id=capture.request_id,
+            requested=snapshot.requested,
+            encoded=encoded,
+            readback=snapshot.readback,
+            actual=snapshot.actual,
+            run_plan=run_plan,
+        )
+        wire_frame = self._device.capture_wire_frame(capture.capture_id)
+        self._local_spool_record_id += 1
+        store.commit_delivery(
+            BridgeCaptureDelivery(
+                connection_id=1,
+                spool_record_id=self._local_spool_record_id,
+                source_connection_id=1,
+                source_first_stream_offset=0,
+                source_last_stream_offset=len(wire_frame) - 1,
+                stored_utc_ns=time.time_ns(),
+                inner_frame=wire_frame,
+            )
+        )
+        return self.capture(capture.capture_id.hex())
+
+    def capture_once(
+        self,
+        *,
+        expected_profile_sha256: str,
+        expected_device_config_crc32: int,
+        trigger_source: str,
+        sync_timeout_ms: int,
+    ) -> dict[str, object]:
+        """Capture once and report success only after the SQLite commit."""
+
+        self._require_store()
+        capture = self._executor.capture_once(
+            expected_profile_sha256=expected_profile_sha256,
+            expected_device_config_crc32=expected_device_config_crc32,
+            trigger_source=trigger_source,
+            sync_timeout_ms=sync_timeout_ms,
+        )
+        if not isinstance(capture, CaptureData):
+            raise TypeError("device client returned an unsupported capture object")
+        return self._persist_capture(
+            capture,
+            run_plan={
+                "loops": 1,
+                "start_delay_ms": 0,
+                "loop_delay_ms": 0,
+                "trigger_source": trigger_source,
+                "sync_timeout_ms": sync_timeout_ms,
+                "sweep": None,
+            },
+        )
+
+    def capture(self, capture_id: str) -> dict[str, object]:
+        store = self._require_store()
+        identifier = bytes.fromhex(capture_id)
+        if len(identifier) != 16:
+            raise ValueError("capture_id must encode exactly 16 bytes")
+        record = store.get_capture(identifier)
+        return self._capture_payload(
+            record,
+            events=store.get_capture_events(identifier),
+        )
+
+    def capture_samples(self, capture_id: str) -> bytes:
+        store = self._require_store()
+        identifier = bytes.fromhex(capture_id)
+        if len(identifier) != 16:
+            raise ValueError("capture_id must encode exactly 16 bytes")
+        return store.get_capture(identifier).sample_blob
