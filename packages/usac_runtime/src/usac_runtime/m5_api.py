@@ -47,6 +47,19 @@ class PeriodicStopBody(BaseModel):
     schedule_id: str
 
 
+class SweepStartBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_profile_sha256: str
+    expected_device_config_crc32: int
+    field: str
+    values: list[Any]
+    loops: int = 1
+    start_delay_ms: int = 0
+    loop_delay_ms: int = 0
+    trigger_source: str = "SOFTWARE"
+    sync_timeout_ms: int = 0
+
+
 def _validation_detail(error: ConfigValidationError) -> list[dict[str, str]]:
     return [
         {
@@ -183,6 +196,45 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
     def session(session_id: str) -> dict[str, object]:
         try:
             return application.session(session_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.post("/api/v1/sweeps", status_code=202)
+    def start_sweep(body: SweepStartBody) -> dict[str, object]:
+        try:
+            return application.start_sweep(
+                expected_profile_sha256=body.expected_profile_sha256,
+                expected_device_config_crc32=body.expected_device_config_crc32,
+                field_name=body.field,
+                values=tuple(body.values),
+                loops=body.loops,
+                start_delay_ms=body.start_delay_ms,
+                loop_delay_ms=body.loop_delay_ms,
+                trigger_source=body.trigger_source,
+                sync_timeout_ms=body.sync_timeout_ms,
+            )
+        except (ConfigConflictError, SessionConflict) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except CaptureStorageUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.get("/api/v1/sweeps/{sweep_id}")
+    def sweep(sweep_id: str) -> dict[str, object]:
+        try:
+            return application.sweep(sweep_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.post("/api/v1/sweeps/{sweep_id}/stop")
+    def stop_sweep(sweep_id: str) -> dict[str, object]:
+        try:
+            return application.stop_sweep(sweep_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:

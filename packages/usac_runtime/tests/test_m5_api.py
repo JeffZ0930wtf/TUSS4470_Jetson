@@ -222,3 +222,80 @@ def test_infinite_periodic_session_can_be_stopped_without_waiting_for_capture(
     assert stopped.status_code == 200
     assert stopped.json()["state"] == "STOPPED"
     assert api.get("/api/v1/device").json()["status"]["active_schedule_id"] == "00" * 16
+
+
+def test_sweep_persists_each_step_context_and_restores_baseline(tmp_path: Path) -> None:
+    api = client(tmp_path / "captures.sqlite3")
+    applied = api.put(
+        "/api/v1/config",
+        headers={"If-Match": ZERO_ETAG},
+        json={"changes": {}},
+    ).json()
+    started = api.post(
+        "/api/v1/sweeps",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+            "field": "BURST_PULSE",
+            "values": [2, 3],
+            "loops": 2,
+            "start_delay_ms": 0,
+            "loop_delay_ms": 0,
+            "trigger_source": "SOFTWARE",
+            "sync_timeout_ms": 0,
+        },
+    )
+
+    assert started.status_code == 202
+    sweep_id = started.json()["session_id"]
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        session = api.get(f"/api/v1/sweeps/{sweep_id}").json()
+        if session["state"] == "COMPLETED":
+            break
+        time.sleep(0.01)
+    assert session["state"] == "COMPLETED"
+    assert session["capture_count"] == 4
+    captures = [
+        api.get(f"/api/v1/captures/{capture_id}").json()
+        for capture_id in session["capture_ids"]
+    ]
+    assert [item["requested_config"]["BURST_PULSE"] for item in captures] == [2, 2, 3, 3]
+    assert [item["run_plan"]["sweep_index"] for item in captures] == [0, 0, 1, 1]
+    assert api.get("/api/v1/config").json()["requested"]["BURST_PULSE"] == 1
+
+
+def test_sweep_stop_interrupts_start_delay_without_capture(tmp_path: Path) -> None:
+    api = client(tmp_path / "captures.sqlite3")
+    applied = api.put(
+        "/api/v1/config",
+        headers={"If-Match": ZERO_ETAG},
+        json={"changes": {}},
+    ).json()
+    started = api.post(
+        "/api/v1/sweeps",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+            "field": "BURST_PULSE",
+            "values": [2, 3],
+            "loops": 1,
+            "start_delay_ms": 500,
+            "loop_delay_ms": 0,
+            "trigger_source": "SOFTWARE",
+            "sync_timeout_ms": 0,
+        },
+    ).json()
+
+    stopped = api.post(f"/api/v1/sweeps/{started['session_id']}/stop")
+
+    assert stopped.status_code == 200
+    assert stopped.json()["state"] in {"STOPPING", "STOPPED"}
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        session = api.get(f"/api/v1/sweeps/{started['session_id']}").json()
+        if session["state"] == "STOPPED":
+            break
+        time.sleep(0.01)
+    assert session["state"] == "STOPPED"
+    assert session["capture_count"] == 0

@@ -18,10 +18,10 @@ from usac_protocol.bridge_messages import BridgeCaptureDelivery
 from usac_protocol.capture_data import CaptureData
 
 from .core_store import CaptureRecord, CaptureStore
-from .device_executor import ConfigConflictError
-from .device_executor import SingleDeviceExecutor
+from .device_executor import ConfigConflictError, ExecutedCapture, SingleDeviceExecutor
 from .parameter_service import ConfigurationSnapshot, ParameterService, ValidationResult
 from .periodic_lease import PeriodicLeaseController, PeriodicSchedule
+from .run_plan import RunPlanV1, SweepPlan, compile_run_steps
 
 
 class ApplicationDevice(Protocol):
@@ -46,6 +46,20 @@ class SessionConflict(RuntimeError):
 class _PeriodicSession:
     session_id: bytes
     schedule: PeriodicSchedule
+    state: str = "RUNNING"
+    capture_ids: list[str] = field(default_factory=list)
+    error: str | None = None
+    started_utc_ns: int = field(default_factory=time.time_ns)
+    finished_utc_ns: int | None = None
+    stop_event: threading.Event = field(default_factory=threading.Event, repr=False)
+    control_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    thread: threading.Thread | None = field(default=None, repr=False)
+
+
+@dataclass(slots=True)
+class _SweepSession:
+    session_id: bytes
+    plan: RunPlanV1
     state: str = "RUNNING"
     capture_ids: list[str] = field(default_factory=list)
     error: str | None = None
@@ -89,7 +103,7 @@ class AcquisitionApplication:
         self._store = store
         self._local_spool_record_id = 0
         self._session_lock = threading.Lock()
-        self._sessions: dict[bytes, _PeriodicSession] = {}
+        self._sessions: dict[bytes, _PeriodicSession | _SweepSession] = {}
 
     @staticmethod
     def _snapshot(snapshot: ConfigurationSnapshot) -> dict[str, object]:
@@ -254,7 +268,10 @@ class AcquisitionApplication:
 
     def _require_idle(self) -> None:
         with self._session_lock:
-            if any(session.state == "RUNNING" for session in self._sessions.values()):
+            if any(
+                session.state in {"RUNNING", "STOPPING"}
+                for session in self._sessions.values()
+            ):
                 raise SessionConflict("the device already has an active run session")
 
     @staticmethod
@@ -269,6 +286,20 @@ class AcquisitionApplication:
             "capture_count": len(session.capture_ids),
             "capture_ids": list(session.capture_ids),
             "lease_timeout_ms": session.schedule.lease_timeout_ms,
+            "error": session.error,
+            "started_utc_ns": session.started_utc_ns,
+            "finished_utc_ns": session.finished_utc_ns,
+        }
+
+    @staticmethod
+    def _sweep_payload(session: _SweepSession) -> dict[str, object]:
+        return {
+            "session_id": session.session_id.hex(),
+            "kind": "SWEEP",
+            "state": session.state,
+            "plan": session.plan.to_dict(),
+            "capture_count": len(session.capture_ids),
+            "capture_ids": list(session.capture_ids),
             "error": session.error,
             "started_utc_ns": session.started_utc_ns,
             "finished_utc_ns": session.finished_utc_ns,
@@ -306,7 +337,10 @@ class AcquisitionApplication:
         session = _PeriodicSession(uuid.uuid4().bytes, schedule)
         controller = PeriodicLeaseController(self._executor)
         with self._session_lock:
-            if any(item.state == "RUNNING" for item in self._sessions.values()):
+            if any(
+                item.state in {"RUNNING", "STOPPING"}
+                for item in self._sessions.values()
+            ):
                 raise SessionConflict("the device already has an active run session")
             controller.start(schedule, now_ms=time.monotonic_ns() // 1_000_000)
             self._sessions[session.session_id] = session
@@ -318,6 +352,123 @@ class AcquisitionApplication:
             )
             session.thread.start()
         return self._periodic_payload(session)
+
+    def start_sweep(
+        self,
+        *,
+        expected_profile_sha256: str,
+        expected_device_config_crc32: int,
+        field_name: str,
+        values: tuple[object, ...],
+        loops: int,
+        start_delay_ms: int,
+        loop_delay_ms: int,
+        trigger_source: str,
+        sync_timeout_ms: int,
+    ) -> dict[str, object]:
+        """Validate a finite sweep, then run it without interleaved commands."""
+
+        self._require_store()
+        self._executor.require_applied_identity(
+            expected_profile_sha256,
+            expected_device_config_crc32,
+        )
+        plan = RunPlanV1(
+            loops=loops,
+            start_delay_ms=start_delay_ms,
+            loop_delay_ms=loop_delay_ms,
+            sweep=SweepPlan(field_name, values),
+            trigger_source=trigger_source,
+            sync_timeout_ms=sync_timeout_ms,
+        )
+        baseline = self._executor.snapshot()
+        # Compile once before returning 202 so invalid plans are synchronous
+        # client errors and never create a background session.
+        compile_run_steps(self._service, baseline, plan)
+        session = _SweepSession(uuid.uuid4().bytes, plan)
+        with self._session_lock:
+            if any(
+                item.state in {"RUNNING", "STOPPING"}
+                for item in self._sessions.values()
+            ):
+                raise SessionConflict("the device already has an active run session")
+            self._sessions[session.session_id] = session
+            session.thread = threading.Thread(
+                target=self._sweep_worker,
+                args=(session,),
+                name=f"usac-sweep-{session.session_id.hex()[:8]}",
+                daemon=True,
+            )
+            session.thread.start()
+        return self._sweep_payload(session)
+
+    def _sweep_worker(self, session: _SweepSession) -> None:
+        def persist(result: ExecutedCapture) -> None:
+            if not isinstance(result.capture, CaptureData):
+                raise TypeError("device returned an unsupported sweep capture")
+            run_plan = session.plan.to_dict()
+            run_plan["sweep_index"] = result.sweep_index
+            run_plan["loop_index"] = result.loop_index
+            stored = self._persist_capture(
+                result.capture,
+                run_plan=run_plan,
+                snapshot=result.snapshot,
+            )
+            with session.control_lock:
+                session.capture_ids.append(str(stored["capture_id"]))
+
+        try:
+            self._executor.execute_run_plan(
+                session.plan,
+                sleep=session.stop_event.wait,
+                cancelled=session.stop_event.is_set,
+                on_capture=persist,
+            )
+        except RuntimeError as error:
+            with session.control_lock:
+                if session.stop_event.is_set():
+                    session.state = "STOPPED"
+                else:
+                    session.state = "FAILED"
+                    session.error = f"{type(error).__name__}: {error}"
+                session.finished_utc_ns = time.time_ns()
+            return
+        except Exception as error:
+            with session.control_lock:
+                session.state = "FAILED"
+                session.error = f"{type(error).__name__}: {error}"
+                session.finished_utc_ns = time.time_ns()
+            return
+        with session.control_lock:
+            session.state = "COMPLETED"
+            session.finished_utc_ns = time.time_ns()
+
+    def sweep(self, session_id: str) -> dict[str, object]:
+        identifier = self._session_identifier(session_id)
+        with self._session_lock:
+            try:
+                session = self._sessions[identifier]
+            except KeyError as error:
+                raise KeyError(f"unknown sweep {session_id}") from error
+        if not isinstance(session, _SweepSession):
+            raise KeyError(f"session {session_id} is not a sweep")
+        with session.control_lock:
+            return self._sweep_payload(session)
+
+    def stop_sweep(self, session_id: str) -> dict[str, object]:
+        identifier = self._session_identifier(session_id)
+        with self._session_lock:
+            try:
+                session = self._sessions[identifier]
+            except KeyError as error:
+                raise KeyError(f"unknown sweep {session_id}") from error
+        if not isinstance(session, _SweepSession):
+            raise KeyError(f"session {session_id} is not a sweep")
+        with session.control_lock:
+            if session.state == "RUNNING":
+                session.state = "STOPPING"
+                session.stop_event.set()
+            return self._sweep_payload(session)
 
     def _periodic_worker(
         self,
@@ -409,7 +560,9 @@ class AcquisitionApplication:
             except KeyError as error:
                 raise KeyError(f"unknown session {session_id}") from error
         with session.control_lock:
-            return self._periodic_payload(session)
+            if isinstance(session, _PeriodicSession):
+                return self._periodic_payload(session)
+            return self._sweep_payload(session)
 
     def capture(self, capture_id: str) -> dict[str, object]:
         store = self._require_store()

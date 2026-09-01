@@ -145,6 +145,9 @@ def test_run_plan_executes_sweep_under_one_lock_and_restores_baseline(executor) 
     captures = worker.execute_run_plan(plan, sleep=slept.append)
 
     assert len(captures) == 4
+    assert [item.sweep_index for item in captures] == [0, 0, 1, 1]
+    assert [item.loop_index for item in captures] == [0, 1, 0, 1]
+    assert [item.snapshot.requested["BURST_PULSE"] for item in captures] == [1, 1, 2, 2]
     assert [arguments[0].register_pairs[8][1] & 0x3F for arguments in client.capture_arguments] == [
         1,
         1,
@@ -155,6 +158,27 @@ def test_run_plan_executes_sweep_under_one_lock_and_restores_baseline(executor) 
     assert worker.snapshot() == baseline
     assert worker.snapshot().state is ConfigState.APPLIED
     assert client.applied_configs[-1].profile_sha256.hex() == baseline.actual["profile_sha256"]
+
+
+def test_run_plan_cancellation_restores_baseline_before_next_capture(executor) -> None:
+    worker, client = executor
+    baseline = worker.apply_draft()
+    cancelled = False
+
+    def on_capture(_capture) -> None:
+        nonlocal cancelled
+        cancelled = True
+
+    with pytest.raises(RuntimeError, match="stopped"):
+        worker.execute_run_plan(
+            RunPlanV1(loops=3, sweep=SweepPlan("BURST_PULSE", (2, 3))),
+            sleep=lambda _: None,
+            cancelled=lambda: cancelled,
+            on_capture=on_capture,
+        )
+
+    assert client.capture_calls == 1
+    assert worker.snapshot() == baseline
 
 
 def test_run_plan_passes_external_slave_sync_contract_to_every_capture(executor) -> None:

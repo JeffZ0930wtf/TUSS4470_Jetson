@@ -32,6 +32,16 @@ class DeviceReadback:
     burst_period_ticks: int
 
 
+@dataclass(frozen=True, slots=True)
+class ExecutedCapture:
+    """One capture paired with the exact RunStep active at acquisition time."""
+
+    capture: object
+    sweep_index: int | None
+    loop_index: int
+    snapshot: ConfigurationSnapshot
+
+
 class DeviceClient(Protocol):
     """High-level transport boundary implemented by bridge/device sessions."""
 
@@ -199,7 +209,7 @@ class SingleDeviceExecutor:
 
     def start_periodic(self, schedule: PeriodicSchedule) -> None:
         with self._lock:
-            self._require_applied_identity(
+            self._require_applied_identity_unlocked(
                 schedule.profile_sha256.hex(),
                 schedule.device_config_crc32,
             )
@@ -217,7 +227,18 @@ class SingleDeviceExecutor:
         with self._lock:
             return self._client.poll_captures()
 
-    def _require_applied_identity(
+    def require_applied_identity(
+        self,
+        profile_sha256: str,
+        device_config_crc32: int,
+    ) -> None:
+        with self._lock:
+            self._require_applied_identity_unlocked(
+                profile_sha256,
+                device_config_crc32,
+            )
+
+    def _require_applied_identity_unlocked(
         self,
         profile_sha256: str,
         device_config_crc32: int,
@@ -234,7 +255,9 @@ class SingleDeviceExecutor:
         plan: RunPlanV1,
         *,
         sleep: Callable[[float], None],
-    ) -> tuple[object, ...]:
+        cancelled: Callable[[], bool] = lambda: False,
+        on_capture: Callable[[ExecutedCapture], None] | None = None,
+    ) -> tuple[ExecutedCapture, ...]:
         """Execute a finite plan atomically and restore its APPLIED baseline."""
 
         with self._lock:
@@ -243,20 +266,28 @@ class SingleDeviceExecutor:
             baseline_snapshot = self._snapshot
             baseline_config = self._applied_config
             steps = compile_run_steps(self._service, baseline_snapshot, plan)
-            captures: list[object] = []
+            captures: list[ExecutedCapture] = []
             if plan.start_delay_ms:
                 sleep(plan.start_delay_ms / 1_000)
             try:
                 for step in steps:
+                    if cancelled():
+                        raise RuntimeError("run plan was stopped")
                     if self._applied_config != step.compiled:
                         self._apply_validated(step.snapshot, step.compiled)
-                    captures.append(
-                        self._client.capture_once(
+                    result = ExecutedCapture(
+                        capture=self._client.capture_once(
                             config=step.compiled,
                             trigger_source=plan.trigger_source,
                             sync_timeout_ms=plan.sync_timeout_ms,
-                        )
+                        ),
+                        sweep_index=step.sweep_index,
+                        loop_index=step.loop_index,
+                        snapshot=step.snapshot,
                     )
+                    captures.append(result)
+                    if on_capture is not None:
+                        on_capture(result)
                     if plan.loop_delay_ms and step.loop_index + 1 < plan.loops:
                         sleep(plan.loop_delay_ms / 1_000)
             finally:
