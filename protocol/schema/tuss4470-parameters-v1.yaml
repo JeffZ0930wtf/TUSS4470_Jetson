@@ -49,11 +49,11 @@
     {"name":"SLEEP_MODE_EN","address":27,"mask":128,"shift":7,"encoding":{"kind":"bool"},"unit":"enabled","default":false,"sweepable":false,"mutable_states":["IDLE"],"safety":"state_transition","readback":"masked_exact","source":"ZHCSKL2A Table 7-16"}
   ],
   "nonregister_fields": [
-    {"name":"requested_burst_frequency_hz","kind":"integer","unit":"Hz","min":30000,"max":1000000,"access":"requested","sweepable":true},
-    {"name":"burst_period_ticks","kind":"integer","unit":"SMCLK ticks","min":24,"max":800,"access":"derived_device_authority","sweepable":false},
-    {"name":"requested_sample_rate_hz","kind":"enum","unit":"samples/s","values":[200000,100000,50000,25000],"access":"requested","sweepable":true},
-    {"name":"requested_record_ms","kind":"enum","unit":"ms","values":[10.24,20.48,40.96,81.92],"access":"requested","sweepable":true},
-    {"name":"sample_interval_ticks","kind":"enum","unit":"SMCLK ticks","values":[120,240,480,960],"access":"derived_device_authority","sweepable":false},
+    {"name":"requested_burst_frequency_hz","kind":"integer","unit":"Hz","min":30000,"max":1000000,"default":480000,"access":"requested","sweepable":true},
+    {"name":"burst_period_ticks","kind":"integer","unit":"SMCLK ticks","min":24,"max":800,"default":50,"access":"derived_device_authority","sweepable":false},
+    {"name":"requested_sample_rate_hz","kind":"integer","unit":"samples/s","min":25000,"max":200000,"default":200000,"presets":[200000,100000,50000,25000],"access":"requested","sweepable":true},
+    {"name":"requested_record_ms","kind":"number","unit":"ms","min":10.24,"max":81.92,"default":10.24,"presets":[10.24,20.48,40.96,81.92],"access":"requested","sweepable":true},
+    {"name":"sample_interval_ticks","kind":"integer","unit":"SMCLK ticks","min":120,"max":960,"default":120,"presets":[120,240,480,960],"access":"derived_device_authority","sweepable":false},
     {"name":"sample_count","kind":"constant","unit":"samples","value":2048,"access":"read_only","sweepable":false},
     {"name":"pretrigger_count","kind":"integer","unit":"samples","min":0,"max":2048,"default":64,"access":"requested","sweepable":true},
     {"name":"out3_enabled","kind":"bool","unit":"enabled","default":false,"access":"requested","sweepable":true},
@@ -61,7 +61,7 @@
     {"name":"loops","kind":"integer","unit":"captures","min":0,"max":4294967295,"default":1,"access":"requested","sweepable":false},
     {"name":"start_delay_ms","kind":"integer","unit":"ms","min":0,"max":3600000,"default":0,"access":"requested","sweepable":false},
     {"name":"loop_delay_ms","kind":"integer","unit":"ms","min":0,"max":3600000,"default":0,"access":"requested","sweepable":false},
-    {"name":"sweep","kind":"object","unit":"plan","max_points":256,"access":"requested","sweepable":false},
+    {"name":"sweep","kind":"object","unit":"plan","max_points":256,"default":{},"access":"requested","sweepable":false},
     {"name":"trigger_source","kind":"enum","unit":"mode","values":["SOFTWARE","EXTERNAL_SYNC_SLAVE","EXTERNAL_SYNC_MASTER"],"default":"SOFTWARE","access":"requested","sweepable":false},
     {"name":"sync_timeout_ms","kind":"integer","unit":"ms","min":0,"max":60000,"default":0,"access":"requested","sweepable":false}
   ]

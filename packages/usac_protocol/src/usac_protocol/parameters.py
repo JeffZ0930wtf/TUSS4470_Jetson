@@ -78,9 +78,12 @@ class RegisterField:
 
 @dataclass(frozen=True, slots=True)
 class ParameterSchema:
+    schema_name: str
+    schema_version: int
     register_fields: dict[str, RegisterField]
     nonregister_fields: dict[str, dict[str, Any]]
     register_write_masks: dict[int, int]
+    register_names: dict[int, str]
 
     @classmethod
     def load(cls, path: Path) -> ParameterSchema:
@@ -90,6 +93,7 @@ class ParameterSchema:
         if document.get("schema_version") != 1:
             raise ValueError("unsupported parameter schema version")
         registers = {item["address"]: item["write_mask"] for item in document["registers"]}
+        register_names = {item["address"]: item["name"] for item in document["registers"]}
         fields: dict[str, RegisterField] = {}
         for item in document["register_fields"]:
             core_keys = {
@@ -121,7 +125,14 @@ class ParameterSchema:
                 raise ValueError(f"duplicate parameter {field.name}")
             fields[field.name] = field
         nonregister = {item["name"]: item for item in document["nonregister_fields"]}
-        schema = cls(fields, nonregister, registers)
+        schema = cls(
+            document["schema_name"],
+            document["schema_version"],
+            fields,
+            nonregister,
+            registers,
+            register_names,
+        )
         schema.combined_masks()
         return schema
 
