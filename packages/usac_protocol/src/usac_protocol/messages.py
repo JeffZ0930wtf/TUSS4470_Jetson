@@ -142,6 +142,222 @@ def decode_capture_once_request(data: bytes) -> CaptureOnceRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class CapabilitiesResponse:
+    capability_flags: int
+    mcu_max_command_payload: int
+    max_samples: int
+    min_sample_interval_ticks: int
+    max_sample_interval_ticks: int
+    min_burst_period_ticks: int
+    max_burst_period_ticks: int
+    max_register_pairs: int
+    max_out3_events: int
+    max_out4_events: int
+    adc_bits: int
+    supported_io_modes: int
+
+
+_CAPABILITIES = struct.Struct("<I6H5B3x")
+
+
+def encode_capabilities_response(message: CapabilitiesResponse) -> bytes:
+    if message.capability_flags & ~0x1FF:
+        raise ValueError("capability_flags contains an unknown first-version bit")
+    if message.min_sample_interval_ticks > message.max_sample_interval_ticks:
+        raise ValueError("sample interval capability range is inverted")
+    if message.min_burst_period_ticks > message.max_burst_period_ticks:
+        raise ValueError("burst period capability range is inverted")
+    if message.supported_io_modes & ~0x0F:
+        raise ValueError("supported_io_modes contains an unknown mode bit")
+    return _CAPABILITIES.pack(
+        message.capability_flags,
+        message.mcu_max_command_payload,
+        message.max_samples,
+        message.min_sample_interval_ticks,
+        message.max_sample_interval_ticks,
+        message.min_burst_period_ticks,
+        message.max_burst_period_ticks,
+        message.max_register_pairs,
+        message.max_out3_events,
+        message.max_out4_events,
+        message.adc_bits,
+        message.supported_io_modes,
+    )
+
+
+def decode_capabilities_response(data: bytes) -> CapabilitiesResponse:
+    if len(data) != _CAPABILITIES.size:
+        raise ValueError("GET_CAPABILITIES response payload must be 24 bytes")
+    if data[-3:] != bytes(3):
+        raise ValueError("GET_CAPABILITIES reserved bytes must be zero")
+    message = CapabilitiesResponse(*_CAPABILITIES.unpack(data))
+    encode_capabilities_response(message)
+    return message
+
+
+@dataclass(frozen=True, slots=True)
+class StartPeriodicRequest:
+    request_id: bytes
+    schedule_id: bytes
+    expected_profile_sha256: bytes
+    expected_device_config_crc32: int
+    period_us: int
+    capture_count: int
+    lease_timeout_ms: int
+
+
+_START_PERIODIC = struct.Struct("<16s16s32sIIII")
+
+
+def encode_start_periodic_request(message: StartPeriodicRequest) -> bytes:
+    if message.schedule_id == bytes(16):
+        raise ValueError("schedule_id must not be all zero")
+    if not 1 <= message.period_us <= 0xFFFFFFFF:
+        raise ValueError("period_us must be a positive u32")
+    if not 0 <= message.capture_count <= 0xFFFFFFFF:
+        raise ValueError("capture_count must be a u32")
+    if not 1_000 <= message.lease_timeout_ms <= 10_000:
+        raise ValueError("lease_timeout_ms must be in 1000..10000")
+    return _START_PERIODIC.pack(
+        _fixed_bytes(message.request_id, 16, "request_id"),
+        _fixed_bytes(message.schedule_id, 16, "schedule_id"),
+        _fixed_bytes(message.expected_profile_sha256, 32, "expected_profile_sha256"),
+        message.expected_device_config_crc32,
+        message.period_us,
+        message.capture_count,
+        message.lease_timeout_ms,
+    )
+
+
+def decode_start_periodic_request(data: bytes) -> StartPeriodicRequest:
+    if len(data) != _START_PERIODIC.size:
+        raise ValueError("START_PERIODIC payload must be 80 bytes")
+    message = StartPeriodicRequest(*_START_PERIODIC.unpack(data))
+    encode_start_periodic_request(message)
+    return message
+
+
+@dataclass(frozen=True, slots=True)
+class RenewPeriodicLease:
+    """Common 40-byte lease layout; the last field is timeout or remaining time."""
+
+    boot_id: bytes
+    schedule_id: bytes
+    lease_sequence: int
+    lease_timeout_or_remaining_ms: int
+
+
+_RENEW_PERIODIC = struct.Struct("<16s16sII")
+
+
+def encode_renew_periodic_lease(message: RenewPeriodicLease) -> bytes:
+    if message.boot_id == bytes(16) or message.schedule_id == bytes(16):
+        raise ValueError("boot_id and schedule_id must not be all zero")
+    if not 1 <= message.lease_sequence <= 0xFFFFFFFF:
+        raise ValueError("lease_sequence must be in 1..u32_max")
+    if not 0 <= message.lease_timeout_or_remaining_ms <= 10_000:
+        raise ValueError("lease timeout/remaining value must be in 0..10000 ms")
+    return _RENEW_PERIODIC.pack(
+        _fixed_bytes(message.boot_id, 16, "boot_id"),
+        _fixed_bytes(message.schedule_id, 16, "schedule_id"),
+        message.lease_sequence,
+        message.lease_timeout_or_remaining_ms,
+    )
+
+
+def decode_renew_periodic_lease(data: bytes) -> RenewPeriodicLease:
+    if len(data) != _RENEW_PERIODIC.size:
+        raise ValueError("RENEW_PERIODIC_LEASE payload must be 40 bytes")
+    message = RenewPeriodicLease(*_RENEW_PERIODIC.unpack(data))
+    encode_renew_periodic_lease(message)
+    return message
+
+
+@dataclass(frozen=True, slots=True)
+class StopRequest:
+    request_id: bytes
+    schedule_id: bytes
+
+
+_STOP = struct.Struct("<16s16s")
+
+
+def encode_stop_request(message: StopRequest) -> bytes:
+    return _STOP.pack(
+        _fixed_bytes(message.request_id, 16, "request_id"),
+        _fixed_bytes(message.schedule_id, 16, "schedule_id"),
+    )
+
+
+def decode_stop_request(data: bytes) -> StopRequest:
+    if len(data) != _STOP.size:
+        raise ValueError("STOP payload must be 32 bytes")
+    return StopRequest(*_STOP.unpack(data))
+
+
+@dataclass(frozen=True, slots=True)
+class StatusResponse:
+    boot_id: bytes
+    device_state: int
+    last_error: int
+    profile_sha256: bytes
+    device_config_crc32: int
+    capture_sequence: int
+    missed_capture_count: int
+    quality_flags: int
+    tuss_dev_stat: int
+    vdrv_ready: int
+    out3_enabled: int
+    out4_enabled: int
+    clock_fault_flags: int
+    active_schedule_id: bytes
+    lease_sequence: int
+    lease_remaining_ms: int
+
+
+_STATUS = struct.Struct("<16sBxH32sIIIIBBBBH2x16sII")
+
+
+def encode_status_response(message: StatusResponse) -> bytes:
+    if any(level not in (0, 1) for level in (message.vdrv_ready, message.out3_enabled, message.out4_enabled)):
+        raise ValueError("status boolean fields must be 0 or 1")
+    if message.clock_fault_flags & ~0x0F:
+        raise ValueError("clock_fault_flags contains a reserved bit")
+    if message.active_schedule_id == bytes(16) and (
+        message.lease_sequence != 0 or message.lease_remaining_ms != 0
+    ):
+        raise ValueError("inactive schedule must report zero lease state")
+    return _STATUS.pack(
+        _fixed_bytes(message.boot_id, 16, "boot_id"),
+        message.device_state,
+        message.last_error,
+        _fixed_bytes(message.profile_sha256, 32, "profile_sha256"),
+        message.device_config_crc32,
+        message.capture_sequence,
+        message.missed_capture_count,
+        message.quality_flags,
+        message.tuss_dev_stat,
+        message.vdrv_ready,
+        message.out3_enabled,
+        message.out4_enabled,
+        message.clock_fault_flags,
+        _fixed_bytes(message.active_schedule_id, 16, "active_schedule_id"),
+        message.lease_sequence,
+        message.lease_remaining_ms,
+    )
+
+
+def decode_status_response(data: bytes) -> StatusResponse:
+    if len(data) != _STATUS.size:
+        raise ValueError("GET_STATUS response payload must be 100 bytes")
+    if data[17] != 0 or data[74:76] != bytes(2):
+        raise ValueError("GET_STATUS reserved bytes must be zero")
+    message = StatusResponse(*_STATUS.unpack(data))
+    encode_status_response(message)
+    return message
+
+
+@dataclass(frozen=True, slots=True)
 class Io2LoopbackRequest:
     """Request the acceptance-only IO2-to-timer-capture timing check."""
 
