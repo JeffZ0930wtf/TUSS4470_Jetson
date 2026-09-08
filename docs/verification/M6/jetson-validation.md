@@ -29,8 +29,8 @@ M6/G3J items remain mandatory.
 - `uv 0.12.5` created the isolated project environment with
   `uv sync --frozen --extra dev`.
 - The initial Jetson full suite passed with `234 passed`. After the bridge
-  entry-point correction, its focused regression passed; a final full-suite
-  rerun remains part of M6 closure.
+  entry-point correction, its focused regression passed and the complete
+  Jetson suite passed with `235 passed in 16.40s`.
 - The ARM64 candidate image was built successfully and inspected as
   `linux/arm64`. Candidate tag:
   `tuss4470-acquisition-core:m6-validation-940bd11`; image/manifest ID begins
@@ -119,5 +119,5 @@ the roadmap item requiring a successful post-restart capture.
 - Complete periodic acquisition, STOP, and lease-expiry checks.
 - Complete the real `SAVE_ALL` two-frame, `SAVE_LAST` three-frame, and
   `SAVE_NONE` single-frame policy matrix.
-- Perform a post-restart single capture, rerun the final full test suite, and
-  complete the milestone Git/Jetson synchronization closure.
+- Perform a post-restart single capture and complete the milestone Git/Jetson
+  synchronization closure.
