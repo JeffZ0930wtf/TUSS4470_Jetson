@@ -1,10 +1,11 @@
-"""Windows M4 bridge CLI: replay pending data or acquire one safe waveform."""
+"""Cross-platform bridge CLI for durable replay and physical device service."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import secrets
+import socket
 import sys
 import time
 from collections.abc import Sequence
@@ -17,16 +18,17 @@ from usac_runtime.bridge import (
     new_sqlite_integer_id,
     spool_artifacts,
 )
+from usac_runtime.bridge_session import proxy_bridge_session
 from usac_runtime.config import RuntimeConfig, load_runtime_config
 from usac_runtime.m3_capture import M3CaptureProgress, run_m3_capture
-from usac_runtime.reconnect import retry_connection
+from usac_runtime.reconnect import retry_connection, supervise_sessions
 from usac_runtime.spool import CaptureSpool
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="M4 Windows capture bridge")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("replay", "capture"):
+    for name in ("replay", "capture", "serve"):
         command = commands.add_parser(name)
         command.add_argument("--config", type=Path, required=True)
         command.add_argument("--core-host", default="127.0.0.1")
@@ -34,8 +36,9 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--timeout-s", type=float, default=3.0)
         command.add_argument("--reconnect-attempts", type=int, default=3)
         command.add_argument("--reconnect-delay-s", type=float, default=0.1)
-        if name == "capture":
+        if name in {"capture", "serve"}:
             command.add_argument("--confirm-external-vpwr-7v", action="store_true")
+        if name == "capture":
             command.add_argument(
                 "--confirm-loopback-pin40-2k2-pin38", action="store_true"
             )
@@ -158,6 +161,74 @@ def _capture(args: argparse.Namespace) -> int:
             serial_connection.close()
 
 
+def _serve(args: argparse.Namespace) -> int:
+    """Keep one physical bridge service alive across USB/TCP session loss."""
+
+    if not args.confirm_external_vpwr_7v:
+        raise SystemExit("refusing bridge service without confirmed external VPWR 7 V")
+    spool, config = _spool(args.config)
+    try:
+        import serial
+    except ImportError as error:
+        raise SystemExit("pyserial is required for bridge service") from error
+
+    def run_one_session() -> None:
+        # A fresh Serial object is important on Windows: after an S3 reset the
+        # old handle may remain unusable even when the same COM name reappears.
+        serial_connection = serial.Serial()
+        serial_connection.port = config.serial.port
+        serial_connection.baudrate = config.serial.baudrate
+        serial_connection.timeout = min(args.timeout_s, 0.1)
+        serial_connection.write_timeout = args.timeout_s
+        serial_connection.dtr = False
+        core_connection: socket.socket | None = None
+        try:
+            retry_connection(
+                serial_connection.open,
+                attempts=args.reconnect_attempts,
+                initial_delay_s=args.reconnect_delay_s,
+            )
+            serial_connection.dtr = False
+            time.sleep(0.150)
+            serial_connection.reset_input_buffer()
+            serial_connection.reset_output_buffer()
+            serial_connection.dtr = True
+            core_connection = retry_connection(
+                lambda: socket.create_connection(
+                    (args.core_host, args.core_port), timeout=args.timeout_s
+                ),
+                attempts=args.reconnect_attempts,
+                initial_delay_s=args.reconnect_delay_s,
+            )
+            proxy_bridge_session(
+                core_connection=core_connection,
+                serial_connection=serial_connection,
+                spool=spool,
+                connection_id=new_sqlite_integer_id(),
+                source_connection_id=new_sqlite_integer_id(),
+                commit_timeout_s=args.timeout_s,
+            )
+        finally:
+            if serial_connection.is_open:
+                serial_connection.dtr = False
+                time.sleep(0.100)
+                serial_connection.close()
+            if core_connection is not None:
+                try:
+                    core_connection.close()
+                except OSError:
+                    pass
+
+    # Only transport sessions are restarted.  The failed command is never
+    # retained or replayed; durable pending captures are recovered by spool ID.
+    supervise_sessions(
+        run_one_session,
+        reconnect_delay_s=args.reconnect_delay_s,
+        should_stop=lambda: False,
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.timeout_s <= 0:
@@ -166,4 +237,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("reconnect attempts must be positive and delay non-negative")
     if args.command == "replay":
         return _replay(args)
-    return _capture(args)
+    if args.command == "capture":
+        return _capture(args)
+    return _serve(args)

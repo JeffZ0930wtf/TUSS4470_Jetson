@@ -55,7 +55,7 @@
     {"name":"requested_record_ms","kind":"number","unit":"ms","min":10.24,"max":81.92,"default":10.24,"presets":[10.24,20.48,40.96,81.92],"access":"requested","sweepable":true},
     {"name":"sample_interval_ticks","kind":"integer","unit":"SMCLK ticks","min":120,"max":960,"default":120,"presets":[120,240,480,960],"access":"derived_device_authority","sweepable":false},
     {"name":"sample_count","kind":"constant","unit":"samples","value":2048,"access":"read_only","sweepable":false},
-    {"name":"pretrigger_count","kind":"integer","unit":"samples","min":0,"max":2048,"default":64,"access":"requested","sweepable":true},
+    {"name":"pretrigger_count","kind":"integer","unit":"samples","min":0,"max":2047,"default":64,"access":"requested","sweepable":true},
     {"name":"out3_enabled","kind":"bool","unit":"enabled","default":false,"access":"requested","sweepable":true},
     {"name":"out4_enabled","kind":"bool","unit":"enabled","default":false,"access":"requested","sweepable":true},
     {"name":"loops","kind":"integer","unit":"captures","min":0,"max":4294967295,"default":1,"access":"requested","sweepable":false},

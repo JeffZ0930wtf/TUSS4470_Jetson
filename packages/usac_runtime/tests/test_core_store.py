@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import sqlite3
 
 import pytest
 
@@ -15,9 +16,52 @@ from usac_protocol.frame import (
     encode_frame,
 )
 from usac_runtime.core_store import CaptureStore, StorageConflictError
+import usac_runtime.core_store as core_store_module
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class _TrackedConnection:
+    """Expose whether store transaction scopes explicitly close SQLite."""
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self._connection = connection
+        self.closed = False
+
+    def __enter__(self):
+        self._connection.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        return self._connection.__exit__(*args)
+
+    def close(self) -> None:
+        self.closed = True
+        self._connection.close()
+
+    def __getattr__(self, name: str):
+        return getattr(self._connection, name)
+
+
+def test_core_store_closes_every_transaction_connection(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    real_connect = sqlite3.connect
+    observed: list[_TrackedConnection] = []
+
+    def tracked_connect(*args, **kwargs):
+        connection = _TrackedConnection(real_connect(*args, **kwargs))
+        observed.append(connection)
+        return connection
+
+    monkeypatch.setattr(core_store_module.sqlite3, "connect", tracked_connect)
+    store = CaptureStore(tmp_path / "connection-lifetime.sqlite3")
+    assert store.capture_count() == 0
+
+    assert len(observed) == 2
+    assert all(connection.closed for connection in observed)
 
 
 def _raw_capture() -> bytes:

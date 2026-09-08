@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
+
+import pytest
 
 from usac_protocol.capture_data import decode_capture_data, encode_capture_data
 from usac_protocol.frame import MessageType, decode_frame, encode_frame
@@ -31,3 +34,13 @@ def test_complete_capture_data_vector_decodes_and_reencodes_byte_for_byte() -> N
     assert capture.events[0].sample_index == 2
     assert encode_capture_data(capture) == frame.payload
     assert encode_frame(frame) == vector
+
+
+def test_capture_data_requires_at_least_one_posttrigger_sample() -> None:
+    frame = decode_frame(bytes.fromhex(VECTOR_PATH.read_text(encoding="ascii")))
+    capture = decode_capture_data(frame.payload)
+
+    with pytest.raises(ValueError, match="pretrigger_count"):
+        encode_capture_data(
+            replace(capture, pretrigger_count=capture.sample_count)
+        )

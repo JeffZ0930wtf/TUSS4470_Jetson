@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { schema: null, config: null, etag: null, edits: {}, periodic: null, sweep: null };
+const state = { schema: null, config: null, etag: null, edits: {}, periodic: null, sweep: null, historyCursor: null, historyItems: [] };
 const $ = (selector) => document.querySelector(selector);
 
 async function fetchJson(path, options = {}) {
@@ -42,9 +42,32 @@ function controlFor(field, value) {
       try { next = JSON.parse(control.value); } catch (_error) { toast(`${field.name} must contain valid JSON`); return; }
     } else next = control.value;
     state.edits[field.name] = next;
-    control.closest(".field-row").classList.add("edited"); stage("draft");
+    const row = control.closest(".field-row"); row.classList.add("edited");
+    row.querySelector(".field-state").textContent = `Draft ${JSON.stringify(next)}`;
+    stage("draft");
   });
   return control;
+}
+
+function fieldState(field, value) {
+  if (Object.hasOwn(state.edits, field.name)) return `Draft ${JSON.stringify(value)}`;
+  if (state.config.state !== "APPLIED") return `Requested ${JSON.stringify(value)}`;
+  const actualNames = {
+    requested_burst_frequency_hz: "burst_frequency_hz",
+    requested_sample_rate_hz: "sample_rate_hz",
+    requested_record_ms: "record_ms",
+  };
+  const actualName = actualNames[field.name] || field.name;
+  if (Object.hasOwn(state.config.actual, actualName)) {
+    return `Requested ${JSON.stringify(value)} · actual ${JSON.stringify(state.config.actual[actualName])}`;
+  }
+  if (state.config.readback.fields && Object.hasOwn(state.config.readback.fields, field.name)) {
+    return `Requested ${JSON.stringify(value)} · read back ${JSON.stringify(state.config.readback.fields[field.name])}`;
+  }
+  if (state.config.readback.host_only_fields?.includes(field.name)) {
+    return `Requested ${JSON.stringify(value)} · host controlled`;
+  }
+  return `Requested ${JSON.stringify(value)} · applied`;
 }
 
 function renderParameters() {
@@ -59,12 +82,25 @@ function renderParameters() {
       const label = document.createElement("div"); label.className = "field-label";
       const name = document.createElement("strong"); name.textContent = field.name;
       const unit = document.createElement("small"); unit.textContent = `${field.unit} · ${field.safety || field.access || "semantic"}`;
-      label.append(name, unit); row.append(label, controlFor(field, state.config.requested[field.name])); section.append(row);
+      const value = Object.hasOwn(state.edits, field.name) ? state.edits[field.name] : state.config.requested[field.name];
+      const status = document.createElement("small"); status.className = "field-state"; status.textContent = fieldState(field, value);
+      label.append(name, unit); row.append(label, controlFor(field, value), status); section.append(row);
     });
     root.append(section);
   });
   const sweep = $("#sweep-field"); sweep.replaceChildren();
   state.schema.fields.filter((field) => field.sweepable).forEach((field) => sweep.add(new Option(field.name, field.name)));
+}
+
+function loadBaseline() {
+  const derived = new Set(["burst_period_ticks", "sample_interval_ticks", "sample_count", "requested_record_ms"]);
+  state.edits = {};
+  state.schema.fields.forEach((field) => {
+    if (!field.read_only && !derived.has(field.name) && Object.hasOwn(field, "default")) {
+      state.edits[field.name] = field.default;
+    }
+  });
+  renderParameters(); stage("draft"); toast("D10×4 baseline loaded as draft");
 }
 
 async function loadConfig() {
@@ -84,6 +120,11 @@ async function validateConfig() {
   showValidation(payload);
 }
 
+async function saveDraft() {
+  const { payload } = await fetchJson("/api/v1/config", { method: "PATCH", body: JSON.stringify({ changes: state.edits }) });
+  state.config = payload; state.edits = {}; renderParameters(); stage("draft"); toast("Shared draft saved");
+}
+
 async function applyConfig() {
   const { payload, response } = await fetchJson("/api/v1/config", { method: "PUT", headers: { "If-Match": state.etag }, body: JSON.stringify({ changes: state.edits }) });
   state.config = payload; state.etag = response.headers.get("etag"); state.edits = {}; renderParameters(); stage("applied"); toast("Applied and read back");
@@ -98,6 +139,7 @@ async function captureOnce() {
   const body = { ...identity(), trigger_source: $("#trigger-source").value, sync_timeout_ms: Number($("#sync-timeout").value) };
   const { payload } = await fetchJson("/api/v1/captures", { method: "POST", body: JSON.stringify(body) });
   await drawCapture(payload.capture_id); stage("captured"); toast(`Committed capture ${payload.capture_id.slice(0, 8)}`);
+  await loadHistory(true);
 }
 
 async function drawCapture(captureId) {
@@ -110,12 +152,42 @@ async function drawCapture(captureId) {
   context.stroke(); $("#sample-label").textContent = `${values.length} points · ${captureId.slice(0, 8)}`;
 }
 
+function renderHistory() {
+  const root = $("#capture-history"); root.replaceChildren();
+  if (!state.historyItems.length) { root.textContent = "No committed captures."; return; }
+  state.historyItems.forEach((item) => {
+    const row = document.createElement("div"); row.className = "history-row";
+    const meta = document.createElement("div"); meta.className = "history-meta";
+    const name = document.createElement("strong"); name.textContent = item.capture_id.slice(0, 8);
+    const detail = document.createElement("small"); detail.textContent = `seq ${item.capture_sequence} · ${item.sample_count} points`;
+    meta.append(name, detail);
+    const actions = document.createElement("div"); actions.className = "history-actions";
+    const view = document.createElement("button"); view.className = "quiet"; view.textContent = "View";
+    view.addEventListener("click", () => drawCapture(item.capture_id).catch((error) => toast(error.message)));
+    const download = document.createElement("a"); download.textContent = "Raw .u16le";
+    download.href = `/api/v1/captures/${item.capture_id}/samples`;
+    download.download = `${item.capture_id}.u16le`;
+    actions.append(view, download); row.append(meta, actions); root.append(row);
+  });
+}
+
+async function loadHistory(reset = true) {
+  const parameters = new URLSearchParams({ limit: "20" });
+  if (!reset && state.historyCursor) parameters.set("cursor", state.historyCursor);
+  const query = parameters.toString();
+  const { payload } = await fetchJson(`/api/v1/captures?${query}`);
+  state.historyItems = reset ? payload.items : state.historyItems.concat(payload.items);
+  state.historyCursor = payload.next_cursor;
+  renderHistory(); $("#history-more").hidden = !state.historyCursor;
+}
+
 async function pollSession(kind) {
   const active = state[kind]; if (!active) return;
   const { payload } = await fetchJson(`/api/v1/sessions/${active.session_id}`);
   $(`#${kind}-status`).textContent = `${payload.state} · ${payload.capture_count} captures`;
   if (["COMPLETED", "STOPPED", "FAILED"].includes(payload.state)) {
     if (payload.capture_ids.length) await drawCapture(payload.capture_ids.at(-1));
+    await loadHistory(true);
     state[kind] = null; $(`#${kind}-stop`).disabled = true; $(`#${kind}-start`).disabled = false; return;
   }
   window.setTimeout(() => pollSession(kind).catch((error) => toast(error.message)), 250);
@@ -134,7 +206,7 @@ async function stopPeriodic() {
 
 async function startSweep() {
   const values = JSON.parse($("#sweep-values").value); if (!Array.isArray(values)) throw new Error("Sweep values must be a JSON array");
-  const body = { ...identity(), field: $("#sweep-field").value, values, loops: Number($("#sweep-loops").value), start_delay_ms: 0, loop_delay_ms: Number($("#sweep-delay").value), trigger_source: $("#trigger-source").value, sync_timeout_ms: Number($("#sync-timeout").value) };
+  const body = { ...identity(), field: $("#sweep-field").value, values, loops: Number($("#sweep-loops").value), start_delay_ms: Number($("#sweep-start-delay").value), loop_delay_ms: Number($("#sweep-delay").value), trigger_source: $("#trigger-source").value, sync_timeout_ms: Number($("#sync-timeout").value) };
   state.sweep = (await fetchJson("/api/v1/sweeps", { method: "POST", body: JSON.stringify(body) })).payload;
   $("#sweep-start").disabled = true; $("#sweep-stop").disabled = false; pollSession("sweep");
 }
@@ -143,10 +215,14 @@ async function stopSweep() { await fetchJson(`/api/v1/sweeps/${state.sweep.sessi
 
 function bindActions() {
   const guarded = (operation) => () => operation().catch((error) => toast(error.message));
+  $("#baseline-button").addEventListener("click", loadBaseline);
   $("#reset-button").addEventListener("click", guarded(loadConfig));
+  $("#save-draft-button").addEventListener("click", guarded(saveDraft));
   $("#validate-button").addEventListener("click", guarded(validateConfig));
   $("#apply-button").addEventListener("click", guarded(applyConfig));
   $("#capture-button").addEventListener("click", guarded(captureOnce));
+  $("#history-refresh").addEventListener("click", guarded(() => loadHistory(true)));
+  $("#history-more").addEventListener("click", guarded(() => loadHistory(false)));
   $("#periodic-start").addEventListener("click", guarded(startPeriodic)); $("#periodic-stop").addEventListener("click", guarded(stopPeriodic));
   $("#sweep-start").addEventListener("click", guarded(startSweep)); $("#sweep-stop").addEventListener("click", guarded(stopSweep));
 }
@@ -154,8 +230,10 @@ function bindActions() {
 async function init() {
   bindActions();
   const [schema, device] = await Promise.all([fetchJson("/api/v1/config/schema"), fetchJson("/api/v1/device")]);
-  state.schema = schema.payload; $("#device-state").textContent = `State ${device.payload.status.device_state}`; $("#device-dot").classList.add("ok");
-  await loadConfig();
+  state.schema = schema.payload; $("#device-state").textContent = `State ${device.payload.status.device_state}`;
+  $("#device-detail").textContent = `${device.payload.device_id.slice(0, 8)} · FW ${device.payload.firmware.major}.${device.payload.firmware.minor}.${device.payload.firmware.patch}+${device.payload.firmware.build}`;
+  $("#device-dot").classList.add("ok");
+  await Promise.all([loadConfig(), loadHistory(true)]);
 }
 
 init().catch((error) => toast(error.message));

@@ -32,7 +32,21 @@ def test_registry_view_is_the_single_client_parameter_source(service: ParameterS
     assert by_name["BPF_Q_SEL"]["values"] == ["q4", "q5", "q2", "q3"]
     assert by_name["requested_sample_rate_hz"]["minimum"] == 25_000
     assert by_name["requested_sample_rate_hz"]["maximum"] == 200_000
+    assert by_name["pretrigger_count"]["minimum"] == 0
+    assert by_name["pretrigger_count"]["maximum"] == 2047
     assert by_name["sample_count"]["read_only"] is True
+
+
+def test_pretrigger_requires_at_least_one_posttrigger_sample(
+    service: ParameterService,
+) -> None:
+    accepted = service.update_draft(
+        service.new_draft(), {"pretrigger_count": 2047}
+    )
+    assert service.validate(accepted).errors == ()
+
+    with pytest.raises(ValueError, match="pretrigger_count.*legal range"):
+        service.update_draft(service.new_draft(), {"pretrigger_count": 2048})
 
 
 def test_default_draft_compiles_to_the_d10x4_baseline(service: ParameterService) -> None:
@@ -111,13 +125,13 @@ def test_applied_requires_exact_register_and_timing_readback(service: ParameterS
 
     applied = service.mark_applied(
         validated,
-        register_readback=compiled.register_pairs,
-        sample_interval_ticks=compiled.sample_interval_ticks,
-        burst_period_ticks=compiled.burst_period_ticks,
+        config_readback=compiled,
     )
 
     assert applied.state is ConfigState.APPLIED
     assert applied.readback["register_pairs"] == [list(pair) for pair in compiled.register_pairs]
+    assert applied.readback["fields"]["BPF_HPF_FREQ"] == 46
+    assert applied.readback["fields"]["sample_count"] == 2048
 
     bad_readback = tuple(
         (address, value ^ 0x01 if address == 0x10 else value)
@@ -126,7 +140,27 @@ def test_applied_requires_exact_register_and_timing_readback(service: ParameterS
     with pytest.raises(ValueError, match="readback"):
         service.mark_applied(
             validated,
-            register_readback=bad_readback,
-            sample_interval_ticks=compiled.sample_interval_ticks,
-            burst_period_ticks=compiled.burst_period_ticks,
+            config_readback=type(compiled).create(
+                sample_interval_ticks=compiled.sample_interval_ticks,
+                sample_count=compiled.sample_count,
+                pretrigger_count=compiled.pretrigger_count,
+                adc_bits=compiled.adc_bits,
+                aux_flags=compiled.aux_flags,
+                vref_mv=compiled.vref_mv,
+                burst_period_ticks=compiled.burst_period_ticks,
+                register_pairs=bad_readback,
+            ),
         )
+
+    different_pretrigger = type(compiled).create(
+        sample_interval_ticks=compiled.sample_interval_ticks,
+        sample_count=compiled.sample_count,
+        pretrigger_count=compiled.pretrigger_count + 1,
+        adc_bits=compiled.adc_bits,
+        aux_flags=compiled.aux_flags,
+        vref_mv=compiled.vref_mv,
+        burst_period_ticks=compiled.burst_period_ticks,
+        register_pairs=compiled.register_pairs,
+    )
+    with pytest.raises(ValueError, match="readback"):
+        service.mark_applied(validated, config_readback=different_pretrigger)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import json
 import sqlite3
 from dataclasses import dataclass
@@ -67,6 +69,18 @@ class CaptureEventRecord:
     frame_offset_ticks: int
 
 
+@dataclass(frozen=True, slots=True)
+class CaptureSummary:
+    row_id: int
+    capture_id: str
+    device_id: str
+    boot_id: str
+    capture_sequence: int
+    sample_count: int
+    stored_utc_ns: int
+    session_id: str | None
+
+
 class CaptureStore:
     """SQLite/WAL capture archive that returns only post-COMMIT receipts."""
 
@@ -108,6 +122,7 @@ class CaptureStore:
                     adc_clipping INTEGER NOT NULL DEFAULT 0,
                     transport_crc32 INTEGER NOT NULL DEFAULT 0,
                     stored_utc_ns INTEGER NOT NULL,
+                    session_id TEXT NOT NULL DEFAULT '',
                     UNIQUE(device_id, boot_id, capture_id)
                 )
                 """
@@ -127,10 +142,15 @@ class CaptureStore:
             "run_plan_json": "TEXT NOT NULL DEFAULT '{}'",
             "adc_clipping": "INTEGER NOT NULL DEFAULT 0",
             "transport_crc32": "INTEGER NOT NULL DEFAULT 0",
+            "session_id": "TEXT NOT NULL DEFAULT ''",
         }
         for name, definition in additions.items():
             if name not in columns:
                 connection.execute(f"ALTER TABLE captures ADD COLUMN {name} {definition}")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS captures_session_row "
+            "ON captures(session_id, row_id)"
+        )
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS configuration_contexts (
@@ -209,11 +229,20 @@ class CaptureStore:
                 (profile_sha256, device_config_crc32, request_id, *values),
             )
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """Open one transaction scope and deterministically release its handle."""
+
         connection = sqlite3.connect(self.path)
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=FULL")
-        return connection
+        try:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=FULL")
+            # sqlite3.Connection.__exit__ commits or rolls back but does not
+            # close. The outer finally is required for bounded long-run handles.
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     @staticmethod
     def _receipt(
@@ -285,6 +314,18 @@ class CaptureStore:
             context_values = tuple(context) if context is not None else (
                 "{}", configuration, "{}", "{}", "{}"
             )
+            run_plan = json.loads(context_values[4])
+            session_id = run_plan.get("session_id", "")
+            if session_id:
+                if not isinstance(session_id, str):
+                    raise ValueError("run plan session_id must be hexadecimal text")
+                try:
+                    session_bytes = bytes.fromhex(session_id)
+                except ValueError as error:
+                    raise ValueError("run plan session_id must be hexadecimal text") from error
+                if len(session_bytes) != 16:
+                    raise ValueError("run plan session_id must encode exactly 16 bytes")
+                session_id = session_bytes.hex()
             existing = connection.execute(
                 """
                 SELECT inner_frame_crc32, wire_frame_blob
@@ -312,11 +353,11 @@ class CaptureStore:
                         configuration_json, requested_config_json,
                         encoded_config_json, readback_config_json,
                         actual_config_json, run_plan_json, adc_clipping,
-                        transport_crc32, stored_utc_ns
+                        transport_crc32, stored_utc_ns, session_id
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                     """,
                     (
@@ -346,6 +387,7 @@ class CaptureStore:
                         int(adc_clipping),
                         inner_crc,
                         delivery.stored_utc_ns,
+                        session_id,
                     ),
                 )
                 capture_row_id = int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
@@ -382,6 +424,71 @@ class CaptureStore:
     def capture_count(self) -> int:
         with self._connect() as connection:
             return int(connection.execute("SELECT COUNT(*) FROM captures").fetchone()[0])
+
+    def list_captures(
+        self,
+        *,
+        after_row_id: int = 0,
+        limit: int = 50,
+        session_id: str | None = None,
+    ) -> tuple[tuple[CaptureSummary, ...], int | None]:
+        """Read one stable page of metadata without waveform or frame BLOBs."""
+
+        if after_row_id < 0:
+            raise ValueError("after_row_id must not be negative")
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be in 1..100")
+        normalized_session_id: str | None = None
+        if session_id is not None:
+            try:
+                session_bytes = bytes.fromhex(session_id)
+            except ValueError as error:
+                raise ValueError("session_id must be hexadecimal") from error
+            if len(session_bytes) != 16:
+                raise ValueError("session_id must encode exactly 16 bytes")
+            normalized_session_id = session_bytes.hex()
+        with self._connect() as connection:
+            if normalized_session_id is None:
+                rows = connection.execute(
+                    """
+                    SELECT row_id, capture_id, device_id, boot_id, capture_sequence,
+                           sample_count, stored_utc_ns, session_id
+                    FROM captures
+                    WHERE row_id > ?
+                    ORDER BY row_id
+                    LIMIT ?
+                    """,
+                    (after_row_id, limit + 1),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT row_id, capture_id, device_id, boot_id, capture_sequence,
+                           sample_count, stored_utc_ns, session_id
+                    FROM captures
+                    WHERE row_id > ? AND session_id = ?
+                    ORDER BY row_id
+                    LIMIT ?
+                    """,
+                    (after_row_id, normalized_session_id, limit + 1),
+                ).fetchall()
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        items = tuple(
+            CaptureSummary(
+                row_id=int(row[0]),
+                capture_id=bytes(row[1]).hex(),
+                device_id=bytes(row[2]).hex(),
+                boot_id=bytes(row[3]).hex(),
+                capture_sequence=int(row[4]),
+                sample_count=int(row[5]),
+                stored_utc_ns=int(row[6]),
+                session_id=str(row[7]) or None,
+            )
+            for row in page
+        )
+        next_cursor = int(page[-1][0]) if has_more else None
+        return items, next_cursor
 
     def get_capture(self, capture_id: bytes) -> CaptureRecord:
         with self._connect() as connection:

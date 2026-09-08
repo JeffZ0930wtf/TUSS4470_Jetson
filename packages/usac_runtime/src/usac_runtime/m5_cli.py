@@ -73,7 +73,7 @@ def _parser() -> argparse.ArgumentParser:
     for name in ("health", "device", "schema", "config"):
         sub.add_parser(name)
 
-    for name in ("validate", "apply"):
+    for name in ("draft", "validate", "apply"):
         command = sub.add_parser(name)
         command.add_argument("--set", action="append", default=[], metavar="FIELD=VALUE")
 
@@ -103,6 +103,10 @@ def _parser() -> argparse.ArgumentParser:
     sweep_stop.add_argument("session_id")
     session = sub.add_parser("session")
     session.add_argument("session_id")
+    history = sub.add_parser("history")
+    history.add_argument("--limit", type=int, default=50)
+    history.add_argument("--cursor", type=int)
+    history.add_argument("--session-id")
     show = sub.add_parser("show")
     show.add_argument("capture_id")
     download = sub.add_parser("download")
@@ -135,6 +139,16 @@ def _applied_identity(client) -> tuple[str, int, str]:
     return actual["profile_sha256"], actual["device_config_crc32"], headers.get("etag", "")
 
 
+def _config_etag(client) -> str:
+    """Return the current config revision even before its first application."""
+
+    _, headers = client.json("GET", "/api/v1/config")
+    etag = headers.get("etag", "")
+    if not etag:
+        raise ApiRequestError("configuration response did not include an ETag")
+    return etag
+
+
 def _emit(payload: object) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
 
@@ -155,12 +169,16 @@ def main(
                 "config": "/api/v1/config",
             }
             payload, _ = client.json("GET", paths[args.command])
+        elif args.command == "draft":
+            payload, _ = client.json(
+                "PATCH", "/api/v1/config", body={"changes": _changes(args.set)}
+            )
         elif args.command == "validate":
             payload, _ = client.json(
                 "POST", "/api/v1/config/validate", body={"changes": _changes(args.set)}
             )
         elif args.command == "apply":
-            _, _, etag = _applied_identity(client)
+            etag = _config_etag(client)
             payload, _ = client.json(
                 "PUT",
                 "/api/v1/config",
@@ -222,6 +240,13 @@ def main(
             payload, _ = client.json("POST", f"/api/v1/sweeps/{args.session_id}/stop")
         elif args.command == "session":
             payload, _ = client.json("GET", f"/api/v1/sessions/{args.session_id}")
+        elif args.command == "history":
+            path = f"/api/v1/captures?limit={args.limit}"
+            if args.cursor is not None:
+                path += f"&cursor={args.cursor}"
+            if args.session_id is not None:
+                path += f"&session_id={args.session_id}"
+            payload, _ = client.json("GET", path)
         elif args.command == "show":
             payload, _ = client.json("GET", f"/api/v1/captures/{args.capture_id}")
         else:

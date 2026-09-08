@@ -1,6 +1,7 @@
 # Builds the fixed M2 no-Burst image from first-party sources plus TI's official
 # USB stack. Generated vendor copies live under ignored firmware/build.
 param(
+    [switch]$EnableM5,
     [switch]$EnableM3Loopback,
     [switch]$M3AdcDmaDiagnostic,
     [switch]$M3StartupDiagnostic,
@@ -19,13 +20,15 @@ $driverlib = Join-Path $usbBase 'driverlib\MSP430F5xx_6xx'
 $compiler = Join-Path $compilerRoot 'bin\msp430-elf-gcc.exe'
 $sizeTool = Join-Path $compilerRoot 'bin\msp430-elf-size.exe'
 $objdump = Join-Path $compilerRoot 'bin\msp430-elf-objdump.exe'
-$m3MainEnabled = $EnableM3Loopback -or $M3AdcDmaDiagnostic -or
+$m3MainEnabled = $EnableM5 -or $EnableM3Loopback -or $M3AdcDmaDiagnostic -or
     $M3StartupDiagnostic -or $M3SmallRamDiagnostic
-if ((@($EnableM3Loopback, $M3AdcDmaDiagnostic, $M3StartupDiagnostic, $M3SmallRamDiagnostic) |
+if ((@($EnableM5, $EnableM3Loopback, $M3AdcDmaDiagnostic, $M3StartupDiagnostic, $M3SmallRamDiagnostic) |
         Where-Object { $_ }).Count -gt 1) {
     throw 'M3 acceptance and diagnostic platforms are mutually exclusive.'
 }
-$milestone = if ($EnableM3Loopback) {
+$milestone = if ($EnableM5) {
+    'm5'
+} elseif ($EnableM3Loopback) {
     'm3'
 } elseif ($M3AdcDmaDiagnostic) {
     'm3-adc-dma-diagnostic'
@@ -36,7 +39,9 @@ $milestone = if ($EnableM3Loopback) {
 } else {
     'm2'
 }
-$imageName = if ($EnableM3Loopback) {
+$imageName = if ($EnableM5) {
+    'usac-m5-first-version'
+} elseif ($EnableM3Loopback) {
     'usac-m3-acceptance'
 } elseif ($M3AdcDmaDiagnostic) {
     'usac-m3-adc-dma-diagnostic-no-burst'
@@ -54,6 +59,7 @@ $generatedApiRoot = Join-Path $generatedDirectory 'USB_API'
 $output = Join-Path $buildDirectory "$imageName.elf"
 $mapFile = Join-Path $buildDirectory "$imageName.map"
 $disassembly = Join-Path $buildDirectory "$imageName.disassembly.txt"
+$utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
 
 foreach ($requiredPath in @($compiler, $sizeTool, $objdump, (Join-Path $apiRoot 'msp430USB.ld'), (Join-Path $exampleRoot 'USB_config\descriptors.h'))) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
@@ -79,12 +85,12 @@ if ($headerText -notmatch '#define USB_SUPPORT_SELF_POWERED 0x00') { throw 'fail
 if ($headerText -notmatch '#define USB_DMA_CHAN\s+0xFF') {
     throw 'failed to reserve DMA0 and DMA1 exclusively for M3 acquisition'
 }
-Set-Content -LiteralPath $descriptorHeader -Value $headerText -Encoding utf8NoBOM
+[System.IO.File]::WriteAllText($descriptorHeader, $headerText, $utf8WithoutBom)
 
 $generatedUsbCore = Join-Path $generatedApiRoot 'USB_Common\usb.c'
 $usbCoreText = (Get-Content -Raw -LiteralPath $generatedUsbCore).Replace('abramSerialStringDescriptor[34]', 'abramSerialStringDescriptor[66]')
 if ($usbCoreText -notmatch 'abramSerialStringDescriptor\[66\]') { throw 'failed to enlarge TI USB serial descriptor buffer' }
-Set-Content -LiteralPath $generatedUsbCore -Value $usbCoreText -Encoding utf8NoBOM
+[System.IO.File]::WriteAllText($generatedUsbCore, $usbCoreText, $utf8WithoutBom)
 
 $projectSources = @(
     (Join-Path $repositoryRoot 'firmware\src\m2_main.c'),
@@ -103,7 +109,9 @@ $projectSources = @(
     (Join-Path $repositoryRoot 'firmware\src\usac_config_v2.c'),
     (Join-Path $repositoryRoot 'firmware\src\usac_m2_app.c'),
     (Join-Path $repositoryRoot 'firmware\src\usac_dtr_gate.c'),
-    (Join-Path $repositoryRoot 'firmware\src\usac_tx_gate.c')
+    (Join-Path $repositoryRoot 'firmware\src\usac_tx_gate.c'),
+    (Join-Path $repositoryRoot 'firmware\src\usac_m5_schedule.c'),
+    (Join-Path $repositoryRoot 'firmware\src\usac_m5_burst_plan.c')
 )
 if ($M3SmallRamDiagnostic) {
     # The small-RAM diagnostic supplies a fail-closed report stub and must not
@@ -111,7 +119,7 @@ if ($M3SmallRamDiagnostic) {
     $productionCaptureSource = Join-Path $repositoryRoot 'firmware\src\usac_m3_capture.c'
     $projectSources = @($projectSources | Where-Object { $_ -ne $productionCaptureSource })
 }
-if ($EnableM3Loopback -or $M3AdcDmaDiagnostic) {
+if ($EnableM5 -or $EnableM3Loopback -or $M3AdcDmaDiagnostic) {
     $projectSources += Join-Path $repositoryRoot 'firmware\src\usac_platform_m3_msp430.c'
 } elseif ($M3StartupDiagnostic) {
     $projectSources += Join-Path $repositoryRoot 'firmware\tests\m3_platform_startup_stub.c'
@@ -133,6 +141,9 @@ $projectCompileArguments = @(
 )
 if ($m3MainEnabled) {
     $projectCompileArguments += '-DUSAC_ENABLE_M3_LOOPBACK'
+}
+if ($EnableM5) {
+    $projectCompileArguments += '-DUSAC_ENABLE_M5'
 }
 if ($M3AdcDmaDiagnostic) {
     $projectCompileArguments += '-DUSAC_M3_ADC_DMA_DIAGNOSTIC'
@@ -171,6 +182,9 @@ $arguments = @(
 if ($m3MainEnabled) {
     $arguments += '-DUSAC_ENABLE_M3_LOOPBACK'
 }
+if ($EnableM5) {
+    $arguments += '-DUSAC_ENABLE_M5'
+}
 if ($M3AdcDmaDiagnostic) {
     $arguments += '-DUSAC_M3_ADC_DMA_DIAGNOSTIC'
 }
@@ -180,9 +194,11 @@ $arguments += $sources + @('-o', $output)
 if ($LASTEXITCODE -ne 0) { throw "$milestone firmware build failed: $LASTEXITCODE" }
 & $sizeTool $output
 if ($LASTEXITCODE -ne 0) { throw "$milestone firmware size failed: $LASTEXITCODE" }
-& $objdump '-d' '-S' $output | Set-Content -LiteralPath $disassembly -Encoding utf8NoBOM
+& $objdump '-d' '-S' $output | Set-Content -LiteralPath $disassembly -Encoding UTF8
 if ($LASTEXITCODE -ne 0) { throw "$milestone disassembly failed: $LASTEXITCODE" }
-if ($EnableM3Loopback) {
+if ($EnableM5) {
+    Write-Host "M5 first-version firmware compiled without flashing: $output"
+} elseif ($EnableM3Loopback) {
     Write-Host "M3 acceptance firmware compiled without flashing: $output"
 } elseif ($M3AdcDmaDiagnostic) {
     Write-Host "M3 no-Burst ADC/DMA diagnostic compiled without flashing: $output"

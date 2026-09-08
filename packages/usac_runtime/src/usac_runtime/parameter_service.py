@@ -280,25 +280,55 @@ class ParameterService:
         self,
         snapshot: ConfigurationSnapshot,
         *,
-        register_readback: tuple[tuple[int, int], ...],
-        sample_interval_ticks: int,
-        burst_period_ticks: int,
+        config_readback: AcquisitionConfigV2,
     ) -> ConfigurationSnapshot:
         if snapshot.state is not ConfigState.VALIDATED:
             raise ValueError("only a VALIDATED configuration can become APPLIED")
         compiled = self._compile(snapshot.requested)
-        if tuple(register_readback) != compiled.register_pairs:
-            raise ValueError("register readback does not match the validated target")
-        if sample_interval_ticks != compiled.sample_interval_ticks:
-            raise ValueError("sample tick readback does not match the validated target")
-        if burst_period_ticks != compiled.burst_period_ticks:
-            raise ValueError("burst tick readback does not match the validated target")
+        if config_readback != compiled:
+            raise ValueError("configuration readback does not match the validated target")
+        register_values = dict(config_readback.register_pairs)
+        semantic_fields = {
+            name: self.schema.decode_field(name, register_values[field.address])
+            for name, field in self.schema.register_fields.items()
+        }
+        semantic_fields.update(
+            {
+                "requested_burst_frequency_hz": round(
+                    self.smclk_hz / config_readback.burst_period_ticks
+                ),
+                "burst_period_ticks": config_readback.burst_period_ticks,
+                "requested_sample_rate_hz": round(
+                    self.smclk_hz / config_readback.sample_interval_ticks
+                ),
+                "requested_record_ms": (
+                    config_readback.sample_count
+                    * config_readback.sample_interval_ticks
+                    * 1000
+                    / self.smclk_hz
+                ),
+                "sample_interval_ticks": config_readback.sample_interval_ticks,
+                "sample_count": config_readback.sample_count,
+                "pretrigger_count": config_readback.pretrigger_count,
+                "out3_enabled": bool(config_readback.aux_flags & 0x01),
+                "out4_enabled": bool(config_readback.aux_flags & 0x02),
+            }
+        )
         return replace(
             snapshot,
             state=ConfigState.APPLIED,
             readback={
-                "register_pairs": [list(pair) for pair in register_readback],
-                "sample_interval_ticks": sample_interval_ticks,
-                "burst_period_ticks": burst_period_ticks,
+                "register_pairs": [list(pair) for pair in config_readback.register_pairs],
+                "sample_interval_ticks": config_readback.sample_interval_ticks,
+                "burst_period_ticks": config_readback.burst_period_ticks,
+                "fields": semantic_fields,
+                "host_only_fields": [
+                    "loops",
+                    "start_delay_ms",
+                    "loop_delay_ms",
+                    "sweep",
+                    "trigger_source",
+                    "sync_timeout_ms",
+                ],
             },
         )

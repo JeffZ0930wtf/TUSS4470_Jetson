@@ -61,7 +61,7 @@ def test_config_v2_round_trips_explicit_72_byte_layout() -> None:
     [
         ({"sample_interval_ticks": 119}, "sample_interval_ticks"),
         ({"burst_period_ticks": 801}, "burst_period_ticks"),
-        ({"pretrigger_count": 2049}, "pretrigger_count"),
+        ({"pretrigger_count": 2048}, "pretrigger_count"),
         ({"aux_flags": 4}, "aux_flags"),
     ],
 )

@@ -1,0 +1,62 @@
+# Jetson runs bridge and core as separate services with separate writable data.
+services:
+  core:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.core
+    image: tuss4470-acquisition-core:m5
+    command:
+      - --backend
+      - bridge
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --bridge-host
+      - 0.0.0.0
+      - --bridge-port
+      - "8765"
+      - --bridge-wait-s
+      - "300"
+      - --database
+      - /var/lib/usac/database/acquisition.sqlite3
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - type: bind
+        source: ${USAC_CORE_DATA_DIR:-/var/lib/tuss4470/core}
+        target: /var/lib/usac/database
+    restart: unless-stopped
+
+  bridge:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.core
+    image: tuss4470-acquisition-core:m5
+    entrypoint: ["python", "-m", "usac_runtime.bridge_cli"]
+    command:
+      - serve
+      - --config
+      - /etc/usac/runtime.toml
+      - --core-host
+      - core
+      - --core-port
+      - "8765"
+      - --reconnect-attempts
+      - "10"
+      - --reconnect-delay-s
+      - "0.25"
+      - --confirm-external-vpwr-7v
+    depends_on:
+      - core
+    devices:
+      - ${USAC_SERIAL_DEVICE:-/dev/ttyACM0}:/dev/tuss4470
+    volumes:
+      - type: bind
+        source: ${USAC_BRIDGE_SPOOL_DIR:-/var/lib/tuss4470/bridge/spool}
+        target: /var/lib/usac/spool
+      - type: bind
+        source: ../config/jetson.example.toml
+        target: /etc/usac/runtime.toml
+        read_only: true
+    restart: unless-stopped

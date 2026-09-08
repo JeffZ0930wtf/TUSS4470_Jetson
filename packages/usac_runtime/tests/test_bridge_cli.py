@@ -86,3 +86,17 @@ def test_bridge_capture_requires_explicit_hardware_confirmations(
 
     with pytest.raises(SystemExit, match="external VPWR"):
         main(["capture", "--config", str(config)])
+
+
+def test_bridge_serve_requires_external_power_confirmation(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    with pytest.raises(SystemExit, match="external VPWR"):
+        main(["serve", "--config", str(config)])
+
+
+def test_bridge_serve_requires_external_power_confirmation(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    with pytest.raises(SystemExit, match="external VPWR"):
+        main(["serve", "--config", str(config)])

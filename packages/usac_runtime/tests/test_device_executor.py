@@ -21,12 +21,14 @@ SCHEMA_PATH = ROOT / "protocol/schema/tuss4470-parameters-v1.yaml"
 
 class FakeDeviceClient:
     def __init__(self) -> None:
+        self.session_generation = 0
         self.apply_calls = 0
         self.capture_calls = 0
         self.apply_started = threading.Event()
         self.allow_apply_to_finish = threading.Event()
         self.allow_apply_to_finish.set()
         self.capture_started = threading.Event()
+        self.status_started = threading.Event()
         self.applied_configs = []
         self.capture_arguments = []
 
@@ -35,11 +37,7 @@ class FakeDeviceClient:
         self.applied_configs.append(config)
         self.apply_started.set()
         assert self.allow_apply_to_finish.wait(timeout=1)
-        return DeviceReadback(
-            register_pairs=config.register_pairs,
-            sample_interval_ticks=config.sample_interval_ticks,
-            burst_period_ticks=config.burst_period_ticks,
-        )
+        return DeviceReadback(config)
 
     def capture_once(self, *, config, trigger_source: str, sync_timeout_ms: int):
         self.capture_calls += 1
@@ -51,6 +49,13 @@ class FakeDeviceClient:
             "trigger_source": trigger_source,
             "sync_timeout_ms": sync_timeout_ms,
         }
+
+    def poll_captures(self):
+        return ("periodic-capture",)
+
+    def status(self):
+        self.status_started.set()
+        return {"state": "safe"}
 
 
 @pytest.fixture
@@ -81,6 +86,24 @@ def test_apply_publishes_applied_only_after_exact_device_readback(executor) -> N
     assert applied.state is ConfigState.APPLIED
     assert applied.readback["sample_interval_ticks"] == 120
     assert worker.snapshot() == applied
+
+
+def test_new_transport_session_invalidates_previous_applied_configuration(executor) -> None:
+    worker, client = executor
+    applied = worker.apply_draft()
+
+    client.session_generation += 1
+
+    assert worker.snapshot().state is ConfigState.DRAFT
+    assert worker.snapshot().requested == applied.requested
+    assert worker.applied_etag() == f'"{"0" * 64}"'
+    with pytest.raises(ConfigConflictError, match="no APPLIED"):
+        worker.capture_once(
+            expected_profile_sha256=str(applied.actual["profile_sha256"]),
+            expected_device_config_crc32=int(applied.actual["device_config_crc32"]),
+            trigger_source="SOFTWARE",
+            sync_timeout_ms=0,
+        )
 
 
 def test_apply_and_capture_are_serialized_per_device(executor) -> None:
@@ -131,6 +154,31 @@ def test_capture_hash_conflict_fails_before_device_call(executor) -> None:
     assert client.capture_calls == 0
 
 
+def test_periodic_delivery_callback_remains_inside_device_serialization(executor) -> None:
+    worker, client = executor
+    callback_started = threading.Event()
+    release_callback = threading.Event()
+
+    def commit_before_release(_capture) -> None:
+        callback_started.set()
+        assert release_callback.wait(timeout=1)
+
+    polling = threading.Thread(
+        target=lambda: worker.poll_captures(on_capture=commit_before_release)
+    )
+    polling.start()
+    assert callback_started.wait(timeout=1)
+
+    reading_status = threading.Thread(target=worker.status)
+    reading_status.start()
+    assert client.status_started.wait(timeout=0.05) is False
+
+    release_callback.set()
+    polling.join(timeout=1)
+    reading_status.join(timeout=1)
+    assert client.status_started.is_set()
+
+
 def test_run_plan_executes_sweep_under_one_lock_and_restores_baseline(executor) -> None:
     worker, client = executor
     baseline = worker.apply_draft()
@@ -148,6 +196,8 @@ def test_run_plan_executes_sweep_under_one_lock_and_restores_baseline(executor) 
     assert [item.sweep_index for item in captures] == [0, 0, 1, 1]
     assert [item.loop_index for item in captures] == [0, 1, 0, 1]
     assert [item.snapshot.requested["BURST_PULSE"] for item in captures] == [1, 1, 2, 2]
+    assert all(item.snapshot.state is ConfigState.APPLIED for item in captures)
+    assert all(item.snapshot.readback["sample_interval_ticks"] == 120 for item in captures)
     assert [arguments[0].register_pairs[8][1] & 0x3F for arguments in client.capture_arguments] == [
         1,
         1,
@@ -179,6 +229,21 @@ def test_run_plan_cancellation_restores_baseline_before_next_capture(executor) -
 
     assert client.capture_calls == 1
     assert worker.snapshot() == baseline
+
+
+def test_run_plan_streaming_callback_does_not_retain_capture_history(executor) -> None:
+    worker, _client = executor
+    worker.apply_draft()
+    streamed = []
+
+    retained = worker.execute_run_plan(
+        RunPlanV1(loops=20),
+        sleep=lambda _: None,
+        on_capture=streamed.append,
+    )
+
+    assert len(streamed) == 20
+    assert retained == ()
 
 
 def test_run_plan_passes_external_slave_sync_contract_to_every_capture(executor) -> None:

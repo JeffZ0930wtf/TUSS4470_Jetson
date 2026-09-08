@@ -56,6 +56,23 @@ def test_sweep_expands_each_safe_value_then_each_loop(service: ParameterService)
     assert all(step.compiled.sample_count == 2048 for step in steps)
 
 
+def test_large_run_plan_is_indexable_without_materializing_every_loop(
+    service: ParameterService,
+) -> None:
+    loops = 0xFFFFFFFF
+    steps = compile_run_steps(
+        service,
+        service.new_draft(),
+        RunPlanV1(loops=loops, sweep=SweepPlan("BURST_PULSE", (1, 2))),
+    )
+
+    assert not isinstance(steps, tuple)
+    assert len(steps) == loops * 2
+    assert (steps[0].sweep_index, steps[0].loop_index) == (0, 0)
+    assert (steps[loops].sweep_index, steps[loops].loop_index) == (1, 0)
+    assert (steps[-1].sweep_index, steps[-1].loop_index) == (1, loops - 1)
+
+
 def test_run_plan_rejects_invalid_sync_and_unbounded_local_expansion(
     service: ParameterService,
 ) -> None:

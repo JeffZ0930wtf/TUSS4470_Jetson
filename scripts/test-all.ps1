@@ -1,5 +1,6 @@
 # Windows aggregate gate: host tests, M0 compile, MCU simulator, official USB
-# stack compile, M2 link/no-Burst audit, and M3 compile/static audits. It never
+# stack compile, M2 link/no-Burst audit, M3 compile/static audits, and M5
+# configurable-acquisition tests/build. It never
 # opens a COM port, flashes firmware, or starts a Burst.
 $ErrorActionPreference = 'Stop'
 
@@ -46,3 +47,18 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & (Join-Path $PSScriptRoot 'test-m3-adc-dma-diagnostic-static.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& (Join-Path $PSScriptRoot 'build-firmware-m5.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& (Join-Path $PSScriptRoot 'test-m5-timer-ownership.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& (Join-Path $PSScriptRoot 'test-firmware-m5-burst-plan.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& (Join-Path $PSScriptRoot 'test-firmware-m5-schedule.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& (Join-Path $PSScriptRoot 'test-firmware-m5-app.ps1')

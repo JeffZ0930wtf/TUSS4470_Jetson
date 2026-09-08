@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 
+from usac_protocol.bridge_messages import BridgeCaptureDelivery, CaptureCommittedRequest
 from usac_protocol.capture_data import CaptureData, decode_capture_data
 from usac_protocol.config_v2 import AcquisitionConfigV2, decode_config_v2
 from usac_protocol.frame import Flags, Frame, MessageType, encode_frame
@@ -54,6 +55,7 @@ class SimulatedDeviceClient:
         self._identifier_counter = 0
         self.boot_id: bytes | None = None
         self.device_id: bytes | None = None
+        self.hello = None
         self.last_acked_type: MessageType | None = None
         self._capture_wire_frames: dict[bytes, bytes] = {}
         self._hello()
@@ -85,6 +87,7 @@ class SimulatedDeviceClient:
             raise RuntimeError("simulated HELLO response does not match the request")
         self.boot_id = hello.boot_id
         self.device_id = hello.device_id
+        self.hello = hello
 
     def _require_ack(
         self, frame: Frame, request_id: bytes, expected_type: MessageType
@@ -126,11 +129,7 @@ class SimulatedDeviceClient:
         )
         self._require_count(readback_frames, 1)
         readback = decode_config_v2(readback_frames[0].payload)
-        return DeviceReadback(
-            register_pairs=readback.register_pairs,
-            sample_interval_ticks=readback.sample_interval_ticks,
-            burst_period_ticks=readback.burst_period_ticks,
-        )
+        return DeviceReadback(readback)
 
     def capture_once(
         self,
@@ -260,3 +259,18 @@ class SimulatedDeviceClient:
             return self._capture_wire_frames[capture_id]
         except KeyError as error:
             raise KeyError(f"capture {capture_id.hex()} has no retained wire frame") from error
+
+    def capture_delivery(self, capture_id: bytes) -> BridgeCaptureDelivery | None:
+        """The in-process simulator has no external bridge spool."""
+
+        if capture_id not in self._capture_wire_frames:
+            raise KeyError(f"capture {capture_id.hex()} has no retained wire frame")
+        return None
+
+    def confirm_capture(self, receipt: CaptureCommittedRequest) -> None:
+        """Only a physical bridge requires the post-COMMIT receipt."""
+
+    def release_capture(self, capture_id: bytes) -> None:
+        """Bound simulator memory after the core has durably stored the frame."""
+
+        self._capture_wire_frames.pop(capture_id, None)

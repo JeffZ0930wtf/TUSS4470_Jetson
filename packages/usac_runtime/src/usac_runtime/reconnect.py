@@ -38,3 +38,29 @@ def retry_connection(
             sleep(delay)
             delay = min(delay * 2, 2.0)
     raise AssertionError("retry loop must return or raise")
+
+
+def supervise_sessions(
+    run_one_session: Callable[[], None],
+    *,
+    reconnect_delay_s: float,
+    should_stop: Callable[[], bool],
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """Reopen transport sessions, never the command that failed inside one.
+
+    A USB reset or TCP disconnect invalidates the whole HELLO session.  The
+    bridge therefore closes both transports and starts a fresh session after
+    a short delay.  Protocol/validation failures deliberately escape instead
+    of being hidden by an endless reconnect loop.
+    """
+
+    if reconnect_delay_s < 0:
+        raise ValueError("reconnect_delay_s must be non-negative")
+    while not should_stop():
+        try:
+            run_one_session()
+        except (ConnectionError, TimeoutError, OSError):
+            pass
+        if not should_stop():
+            sleep(reconnect_delay_s)

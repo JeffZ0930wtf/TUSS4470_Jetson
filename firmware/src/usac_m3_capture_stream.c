@@ -7,6 +7,7 @@
 #define USAC_PROTOCOL_VERSION 1u
 #define USAC_MESSAGE_CAPTURE_DATA 0x40u
 #define USAC_FLAG_RESPONSE 0x0001u
+#define USAC_FLAG_ASYNC 0x0002u
 #define USAC_CAPTURE_FIXED_HEADER_LENGTH 188u
 #define USAC_CAPTURE_PAYLOAD_LENGTH 4304ul
 
@@ -83,7 +84,7 @@ static void build_metadata(
     write_u16_le(&stream->metadata[offset], 1u); offset += 2u;
     write_u16_le(&stream->metadata[offset], USAC_CAPTURE_FIXED_HEADER_LENGTH); offset += 2u;
     copy_bytes(&stream->metadata[offset], descriptor->request_id, 16u); offset += 16u;
-    for (index = 0u; index < 16u; ++index) stream->metadata[offset++] = 0u;
+    copy_bytes(&stream->metadata[offset], descriptor->schedule_id, 16u); offset += 16u;
     copy_bytes(&stream->metadata[offset], capture_id, 16u); offset += 16u;
     copy_bytes(&stream->metadata[offset], descriptor->boot_id, 16u); offset += 16u;
     copy_bytes(&stream->metadata[offset], descriptor->device_id, 16u); offset += 16u;
@@ -93,7 +94,7 @@ static void build_metadata(
     write_u16_le(&stream->metadata[offset], descriptor->sample_interval_ticks); offset += 2u;
     write_u16_le(&stream->metadata[offset], descriptor->burst_period_ticks); offset += 2u;
     write_u16_le(&stream->metadata[offset], USAC_M3_SAMPLE_COUNT); offset += 2u;
-    write_u16_le(&stream->metadata[offset], USAC_M3_PRETRIGGER_COUNT); offset += 2u;
+    write_u16_le(&stream->metadata[offset], descriptor->pretrigger_count); offset += 2u;
     stream->metadata[offset++] = 12u;
     stream->metadata[offset++] = 1u;
     write_u16_le(&stream->metadata[offset], 3300u); offset += 2u;
@@ -102,21 +103,21 @@ static void build_metadata(
     for (index = 0u; index < 8u; ++index) stream->metadata[offset++] = 0u;
     write_u32_le(
         &stream->metadata[offset],
-        (uint32_t)USAC_M3_PRETRIGGER_COUNT * descriptor->sample_interval_ticks);
+        (uint32_t)descriptor->pretrigger_count * descriptor->sample_interval_ticks);
     offset += 4u;
     write_u32_le(
         &stream->metadata[offset],
-        (uint32_t)(0ul - ((uint32_t)USAC_M3_PRETRIGGER_COUNT *
+        (uint32_t)(0ul - ((uint32_t)descriptor->pretrigger_count *
                           descriptor->sample_interval_ticks)));
     offset += 4u;
     write_u32_le(&stream->metadata[offset], 1000u); offset += 4u;
     write_u32_le(&stream->metadata[offset], 0u); offset += 4u;
     write_u32_le(&stream->metadata[offset], 0u); offset += 4u;
-    write_u32_le(&stream->metadata[offset], USAC_M3_QUALITY_TIMING_UNCALIBRATED); offset += 4u;
+    write_u32_le(&stream->metadata[offset], descriptor->quality_flags); offset += 4u;
     stream->metadata[offset++] = descriptor->tuss_dev_stat;
-    stream->metadata[offset++] = 0xFFu;
-    stream->metadata[offset++] = 0xFFu;
-    stream->metadata[offset++] = 0u;
+    stream->metadata[offset++] = descriptor->out3_start_level;
+    stream->metadata[offset++] = descriptor->out4_start_level;
+    stream->metadata[offset++] = descriptor->event_count;
     stream->metadata[offset++] = TUSS4470_PROFILE_REGISTER_COUNT;
     stream->metadata[offset++] = 0u;
     stream->metadata[offset++] = 0u;
@@ -126,6 +127,22 @@ static void build_metadata(
         stream->metadata[offset++] = descriptor->register_pairs[index].address;
         stream->metadata[offset++] = descriptor->register_pairs[index].value;
     }
+    for (index = 0u; index < descriptor->event_count; ++index) {
+        const usac_m5_capture_event_t *event = &descriptor->events[index];
+        stream->metadata[offset++] = event->channel;
+        stream->metadata[offset++] = event->edge;
+        stream->metadata[offset++] = event->capture_method;
+        stream->metadata[offset++] = event->level_after;
+        write_u32_le(&stream->metadata[offset], (uint32_t)event->sample_index);
+        offset += 4u;
+        write_u16_le(&stream->metadata[offset], event->subsample_tick);
+        offset += 2u;
+        write_u16_le(&stream->metadata[offset], event->uncertainty_ticks);
+        offset += 2u;
+        write_u32_le(&stream->metadata[offset], event->frame_offset_ticks);
+        offset += 4u;
+    }
+    stream->metadata_length = offset;
 }
 
 void usac_m3_capture_stream_init(
@@ -141,15 +158,19 @@ void usac_m3_capture_stream_init(
     stream->frame_header[3] = 0x43u;
     stream->frame_header[4] = USAC_PROTOCOL_VERSION;
     stream->frame_header[5] = USAC_MESSAGE_CAPTURE_DATA;
-    write_u16_le(&stream->frame_header[6], USAC_FLAG_RESPONSE);
+    write_u16_le(
+        &stream->frame_header[6],
+        (descriptor->async_capture != 0u) ? USAC_FLAG_ASYNC : USAC_FLAG_RESPONSE);
     write_u32_le(&stream->frame_header[8], descriptor->frame_sequence);
-    write_u32_le(&stream->frame_header[12], USAC_CAPTURE_PAYLOAD_LENGTH);
     build_metadata(stream, descriptor);
+    write_u32_le(
+        &stream->frame_header[12],
+        (uint32_t)stream->metadata_length + (USAC_M3_SAMPLE_COUNT * 2ul));
     stream->samples = samples;
 
     crc = usac_m3_crc32_begin();
     crc = usac_m3_crc32_update(crc, &stream->frame_header[4], 12u);
-    crc = usac_m3_crc32_update(crc, stream->metadata, USAC_M3_CAPTURE_METADATA_LENGTH);
+    crc = usac_m3_crc32_update(crc, stream->metadata, stream->metadata_length);
     crc = usac_m3_crc32_update(
         crc, (const uint8_t *)samples, USAC_M3_SAMPLE_COUNT * 2u);
     write_u32_le(stream->frame_crc, usac_m3_crc32_finish(crc));
@@ -171,7 +192,7 @@ uint8_t usac_m3_capture_stream_peek(
         *length = 16u;
     } else if (stream->phase == 1u) {
         *data = stream->metadata;
-        *length = USAC_M3_CAPTURE_METADATA_LENGTH;
+        *length = stream->metadata_length;
     } else if (stream->phase == 2u) {
         *data = (const uint8_t *)stream->samples;
         *length = USAC_M3_SAMPLE_COUNT * 2u;

@@ -7,6 +7,8 @@ commit receipt has been verified.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,8 +50,11 @@ inner_frame_crc32, inner_frame, stored_utc_ns
 class CaptureSpool:
     """Small SQLite WAL spool with one durable transaction per state change."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, tombstone_limit: int = 4096) -> None:
+        if tombstone_limit < 1:
+            raise ValueError("tombstone_limit must be positive")
         self.path = Path(path).resolve()
+        self.tombstone_limit = tombstone_limit
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.executescript(
@@ -80,11 +85,20 @@ class CaptureSpool:
                 """
             )
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """Open one transaction scope and deterministically release its handle."""
+
         connection = sqlite3.connect(self.path)
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=FULL")
-        return connection
+        try:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=FULL")
+            # A sqlite3 connection context controls the transaction only; it
+            # does not close the OS/database handle when the block exits.
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     @staticmethod
     def _pending(row: tuple[object, ...]) -> PendingCapture:
@@ -169,12 +183,17 @@ class CaptureSpool:
                 raise RuntimeError("spool insert did not produce a pending record")
             return self._pending(row)
 
-    def pending_records(self) -> list[PendingCapture]:
-        """Return pending frames in their permanent delivery order."""
+    def pending_records(self, *, limit: int = 64) -> list[PendingCapture]:
+        """Return one bounded batch in permanent delivery order."""
+
+        if not 1 <= limit <= 1024:
+            raise ValueError("limit must be in 1..1024")
 
         with self._connect() as connection:
             rows = connection.execute(
-                f"SELECT {_PENDING_COLUMNS} FROM pending_captures ORDER BY record_id"
+                f"SELECT {_PENDING_COLUMNS} FROM pending_captures "
+                "ORDER BY record_id LIMIT ?",
+                (limit,),
             ).fetchall()
         return [self._pending(row) for row in rows]
 
@@ -213,6 +232,17 @@ class CaptureSpool:
                 )
                 connection.execute(
                     "DELETE FROM pending_captures WHERE record_id=?", (record_id,)
+                )
+                connection.execute(
+                    """
+                    DELETE FROM committed_tombstones
+                    WHERE device_id = ? AND record_id NOT IN (
+                        SELECT record_id FROM committed_tombstones
+                        WHERE device_id = ?
+                        ORDER BY record_id DESC LIMIT ?
+                    )
+                    """,
+                    (device_id, device_id, self.tombstone_limit),
                 )
                 return DELETED
 

@@ -14,6 +14,8 @@ PAYLOAD_SCHEMA_VERSION = 1
 FIXED_HEADER_LENGTH = 188
 SAMPLE_ENCODING_UINT16_LE = 1
 TIMING_UNCALIBRATED = 0x20
+EVENT_OVERFLOW = 0x40
+EVENT_TIME_AMBIGUOUS = 0x80
 _EVENT = struct.Struct("<BBBBiHHI")
 
 
@@ -75,7 +77,7 @@ def _validate(capture: CaptureData) -> None:
     _fixed(capture.profile_sha256, 32, "profile_sha256")
     if capture.sample_count != len(capture.samples):
         raise ValueError("sample_count does not match samples")
-    if not 0 <= capture.pretrigger_count <= capture.sample_count:
+    if not 0 <= capture.pretrigger_count < capture.sample_count:
         raise ValueError("pretrigger_count does not match sample range")
     if capture.adc_bits != 12:
         raise ValueError("adc_bits must be 12")

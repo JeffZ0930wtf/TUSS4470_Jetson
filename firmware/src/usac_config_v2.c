@@ -36,7 +36,7 @@ static void write_u32_le(uint8_t *data, uint32_t value)
 static usac_config_v2_result_t validate(const usac_config_v2_t *config)
 {
     if ((config == 0) || (config->sample_count != 2048u) ||
-        (config->pretrigger_count > config->sample_count) ||
+        (config->pretrigger_count >= config->sample_count) ||
         (config->adc_bits != 12u) || ((config->aux_flags & 0xFCu) != 0u) ||
         (config->vref_mv != 3300u) ||
         (tuss4470_profile_validate(&config->profile) != TUSS4470_PROFILE_OK)) {

@@ -1,19 +1,28 @@
-# M4 Windows core. The host port remains loopback-only; Windows bridge runs on
-# the host and initiates each delivery connection.
+# M5 Windows core. The native Windows bridge initiates the device connection;
+# both the device protocol and HTTP console remain loopback-only.
 services:
   core:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.core
-    image: tuss4470-acquisition-core:m4
+    image: tuss4470-acquisition-core:m5
     command:
+      - --backend
+      - bridge
       - --host
       - 0.0.0.0
       - --port
+      - "8000"
+      - --bridge-host
+      - 0.0.0.0
+      - --bridge-port
       - "8765"
-      - --sqlite
+      - --bridge-wait-s
+      - "300"
+      - --database
       - /var/lib/usac/database/acquisition.sqlite3
     ports:
+      - "127.0.0.1:8000:8000"
       - "127.0.0.1:8765:8765"
     volumes:
       - type: bind

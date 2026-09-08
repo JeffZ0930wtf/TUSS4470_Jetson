@@ -677,7 +677,11 @@ static int test_m3_capture_stream_matches_python_fixed_vector(void)
     descriptor.capture_sequence = 1u;
     descriptor.sample_interval_ticks = 120u;
     descriptor.burst_period_ticks = 50u;
+    descriptor.pretrigger_count = USAC_M3_PRETRIGGER_COUNT;
     descriptor.tuss_dev_stat = 0x08u;
+    descriptor.out3_start_level = 0xFFu;
+    descriptor.out4_start_level = 0xFFu;
+    descriptor.quality_flags = USAC_M3_QUALITY_TIMING_UNCALIBRATED;
     for (index = 0u; index < TUSS4470_PROFILE_REGISTER_COUNT; ++index) {
         descriptor.register_pairs[index] = config.profile.registers[index];
     }
@@ -728,6 +732,7 @@ static int test_m3_capture_tx_commits_only_completed_segments(void)
     uint8_t index;
 
     stream.samples = g_usac_m3_waveform;
+    stream.metadata_length = USAC_M3_CAPTURE_METADATA_LENGTH;
     stream.active = 1u;
     usac_m3_capture_tx_init(&tx, &stream);
     CHECK(tx.state == USAC_M3_TX_READY);
@@ -867,6 +872,16 @@ static int test_config_v2_round_trip_matches_m1_contract(void)
     wire[36] ^= 0x01u;
     CHECK(usac_config_v2_decode(wire, wire_length, &decoded) ==
           USAC_CONFIG_V2_HASH_MISMATCH);
+    return 0;
+}
+
+static int test_config_v2_requires_one_posttrigger_sample(void)
+{
+    usac_config_v2_t config;
+
+    usac_config_v2_init_d10x4(&config);
+    config.pretrigger_count = config.sample_count;
+    CHECK(usac_config_v2_rehash(&config) == USAC_CONFIG_V2_INVALID_VALUE);
     return 0;
 }
 
@@ -1560,6 +1575,8 @@ int main(void)
     result = test_mcu_sha256_matches_d10x4_canonical_vector();
     if (result != 0) goto complete;
     result = test_config_v2_round_trip_matches_m1_contract();
+    if (result != 0) goto complete;
+    result = test_config_v2_requires_one_posttrigger_sample();
     if (result != 0) goto complete;
     result = test_m2_app_replies_and_never_captures();
     if (result != 0) goto complete;

@@ -37,7 +37,8 @@ uint8_t usac_m2_core_burst_permitted(const usac_m2_core_t *core)
 
 uint8_t usac_m2_clock_faults_safe(uint8_t ucsctl7_low)
 {
-    /* DCOFFG=bit0 and XT2OFFG=bit3 are fatal. XT1 is unused: ACLK=REFO. */
+    /* Base M2/M3 use REFO, so DCOFFG=bit0 and XT2OFFG=bit3 are fatal while
+     * XT1 may remain flagged. M5 separately gates its required XT1 source. */
     return (uint8_t)((ucsctl7_low & 0x09u) == 0u);
 }
 

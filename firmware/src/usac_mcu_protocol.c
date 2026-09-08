@@ -5,9 +5,14 @@
 
 #define USAC_PROTOCOL_VERSION 1u
 #define USAC_MESSAGE_HELLO 0x01u
+#define USAC_MESSAGE_GET_CAPABILITIES 0x02u
 #define USAC_MESSAGE_GET_CONFIG 0x03u
 #define USAC_MESSAGE_SET_CONFIG 0x04u
 #define USAC_MESSAGE_CAPTURE_ONCE 0x05u
+#define USAC_MESSAGE_START_PERIODIC 0x06u
+#define USAC_MESSAGE_STOP 0x07u
+#define USAC_MESSAGE_GET_STATUS 0x08u
+#define USAC_MESSAGE_RENEW_PERIODIC_LEASE 0x0Cu
 #define USAC_MESSAGE_RUN_IO2_LOOPBACK_TEST 0x0Eu
 
 static const uint8_t magic[4] = {0x55u, 0x53u, 0x41u, 0x43u};
@@ -132,11 +137,20 @@ static usac_mcu_parse_result_t validate_header(
         return USAC_MCU_PARSE_INVALID_LENGTH;
     }
     if (((message_type == USAC_MESSAGE_HELLO) && (payload_length != 20u)) ||
+        ((message_type == USAC_MESSAGE_GET_CAPABILITIES) &&
+         (payload_length != 0u)) ||
         ((message_type == USAC_MESSAGE_GET_CONFIG) && (payload_length != 0u)) ||
         ((message_type == USAC_MESSAGE_CAPTURE_ONCE) &&
          (payload_length != 60u)) ||
         ((message_type == USAC_MESSAGE_RUN_IO2_LOOPBACK_TEST) &&
          (payload_length != 56u)) ||
+        ((message_type == USAC_MESSAGE_START_PERIODIC) &&
+         (payload_length != 80u)) ||
+        ((message_type == USAC_MESSAGE_STOP) && (payload_length != 32u)) ||
+        ((message_type == USAC_MESSAGE_GET_STATUS) &&
+         (payload_length != 0u)) ||
+        ((message_type == USAC_MESSAGE_RENEW_PERIODIC_LEASE) &&
+         (payload_length != 40u)) ||
         ((message_type == USAC_MESSAGE_SET_CONFIG) &&
          (payload_length != 120u))) {
         reset_parser(parser);
@@ -172,6 +186,25 @@ static usac_mcu_parse_result_t validate_payload(
     } else if (message_type == USAC_MESSAGE_RUN_IO2_LOOPBACK_TEST) {
         if ((payload[52] != 8u) || (payload[53] != 0u) ||
             (payload[54] != 0u) || (payload[55] != 0u)) {
+            return USAC_MCU_PARSE_INVALID_PAYLOAD;
+        }
+    } else if (message_type == USAC_MESSAGE_START_PERIODIC) {
+        uint8_t id_bits = 0u;
+        uint8_t index;
+        uint32_t period_us = read_u32_le(&payload[68]);
+        uint32_t lease_timeout_ms = read_u32_le(&payload[76]);
+        for (index = 16u; index < 32u; ++index) {
+            id_bits |= payload[index];
+        }
+        if ((id_bits == 0u) || (period_us < 100000ul) ||
+            (lease_timeout_ms < 1000ul) ||
+            (lease_timeout_ms > 10000ul)) {
+            return USAC_MCU_PARSE_INVALID_PAYLOAD;
+        }
+    } else if (message_type == USAC_MESSAGE_RENEW_PERIODIC_LEASE) {
+        if ((read_u32_le(&payload[32]) == 0ul) ||
+            (read_u32_le(&payload[36]) < 1000ul) ||
+            (read_u32_le(&payload[36]) > 10000ul)) {
             return USAC_MCU_PARSE_INVALID_PAYLOAD;
         }
     }

@@ -9,25 +9,35 @@
 #include "usac_m3_capture.h"
 
 #define USAC_M3_CAPTURE_METADATA_LENGTH 208u
+#define USAC_M5_CAPTURE_METADATA_MAX_LENGTH 480u
 #define USAC_M3_QUALITY_TIMING_UNCALIBRATED 0x00000020ul
 
 typedef struct {
     uint8_t request_id[16];
+    uint8_t schedule_id[16];
     uint8_t boot_id[16];
     uint8_t device_id[16];
     uint8_t profile_sha256[32];
     uint32_t device_config_crc32;
     uint32_t frame_sequence;
     uint32_t capture_sequence;
+    uint8_t async_capture;
     uint16_t sample_interval_ticks;
     uint16_t burst_period_ticks;
+    uint16_t pretrigger_count;
     uint8_t tuss_dev_stat;
+    uint8_t out3_start_level;
+    uint8_t out4_start_level;
+    uint8_t event_count;
+    uint32_t quality_flags;
+    usac_m5_capture_event_t events[USAC_M5_MAX_CAPTURE_EVENTS];
     tuss4470_register_pair_t register_pairs[TUSS4470_PROFILE_REGISTER_COUNT];
 } usac_m3_capture_descriptor_t;
 
 typedef struct {
     uint8_t frame_header[16];
-    uint8_t metadata[USAC_M3_CAPTURE_METADATA_LENGTH];
+    uint8_t metadata[USAC_M5_CAPTURE_METADATA_MAX_LENGTH];
+    uint16_t metadata_length;
     uint8_t frame_crc[4];
     const uint16_t *samples;
     uint8_t phase;

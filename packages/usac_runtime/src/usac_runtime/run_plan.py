@@ -7,6 +7,7 @@ unbounded local loop issuing new Burst commands.
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 from usac_protocol.config_v2 import AcquisitionConfigV2
@@ -55,6 +56,55 @@ class RunStep:
     compiled: AcquisitionConfigV2
 
 
+@dataclass(frozen=True, slots=True)
+class _RunTarget:
+    sweep_index: int | None
+    snapshot: ConfigurationSnapshot
+    compiled: AcquisitionConfigV2
+
+
+class CompiledRunSteps(Sequence[RunStep]):
+    """Index a validated finite plan without allocating one object per loop.
+
+    Only the at-most-256 distinct sweep targets are retained. Loop indices are
+    derived when consumed, so a long acquisition run does not make plan memory
+    grow with the number of requested captures.
+    """
+
+    def __init__(self, targets: tuple[_RunTarget, ...], loops: int) -> None:
+        self._targets = targets
+        self._loops = loops
+
+    def __len__(self) -> int:
+        return len(self._targets) * self._loops
+
+    def __getitem__(self, index: int) -> RunStep:
+        if not isinstance(index, int):
+            raise TypeError("CompiledRunSteps only supports integer indexing")
+        length = len(self)
+        normalized = index + length if index < 0 else index
+        if normalized < 0 or normalized >= length:
+            raise IndexError("run step index out of range")
+        target_index, loop_index = divmod(normalized, self._loops)
+        target = self._targets[target_index]
+        return RunStep(
+            target.sweep_index,
+            loop_index,
+            target.snapshot,
+            target.compiled,
+        )
+
+    def __iter__(self) -> Iterator[RunStep]:
+        for target in self._targets:
+            for loop_index in range(self._loops):
+                yield RunStep(
+                    target.sweep_index,
+                    loop_index,
+                    target.snapshot,
+                    target.compiled,
+                )
+
+
 def _bounded_integer(name: str, value: object, maximum: int) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= maximum:
         raise RunPlanError(f"{name} must be an integer in 0..{maximum}")
@@ -97,14 +147,14 @@ def compile_run_steps(
     service: ParameterService,
     baseline: ConfigurationSnapshot,
     plan: RunPlanV1,
-) -> tuple[RunStep, ...]:
-    """Validate and deterministically expand a finite plan without device IO."""
+) -> CompiledRunSteps:
+    """Validate a finite plan and expose its steps through a lazy sequence."""
 
     _validate_plan(plan)
-    targets: list[tuple[int | None, ConfigurationSnapshot, AcquisitionConfigV2]] = []
+    targets: list[_RunTarget] = []
     if plan.sweep is None:
         snapshot, compiled = _validated_target(service, baseline, description="baseline")
-        targets.append((None, snapshot, compiled))
+        targets.append(_RunTarget(None, snapshot, compiled))
     else:
         sweep = plan.sweep
         if not 1 <= len(sweep.values) <= 256:
@@ -128,10 +178,6 @@ def compile_run_steps(
                 draft,
                 description=f"Sweep point {index}",
             )
-            targets.append((index, snapshot, compiled))
+            targets.append(_RunTarget(index, snapshot, compiled))
 
-    return tuple(
-        RunStep(sweep_index, loop_index, snapshot, compiled)
-        for sweep_index, snapshot, compiled in targets
-        for loop_index in range(plan.loops)
-    )
+    return CompiledRunSteps(tuple(targets), plan.loops)

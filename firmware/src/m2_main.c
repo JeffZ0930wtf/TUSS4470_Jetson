@@ -16,6 +16,7 @@
 #include "usac_identity.h"
 #include "usac_m2_app.h"
 #include "usac_m2_core.h"
+#include "usac_m5_schedule.h"
 #include "usac_m3_capture_stream.h"
 #include "usac_m3_capture_tx.h"
 #include "usac_mcu_protocol.h"
@@ -46,9 +47,15 @@ volatile uint8_t g_usac_frame_timeout_pending;
 volatile uint8_t g_usac_clock_valid;
 volatile uint8_t g_usac_clock_stage;
 volatile uint8_t g_usac_xt2_start_result;
+#ifdef USAC_ENABLE_M5
+volatile uint8_t g_usac_xt1_start_result;
+#endif
 volatile uint8_t g_usac_clock_ucsctl7;
 volatile uint8_t g_usac_clock_sfrifg1;
 volatile uint8_t g_usac_force_safe_result;
+#ifdef USAC_ENABLE_M5
+static volatile uint16_t g_usac_m5_elapsed_quanta;
+#endif
 
 static uint8_t device_id[USAC_DEVICE_ID_LENGTH];
 static uint8_t response_buffer[128];
@@ -87,6 +94,7 @@ static void initialize_pending_capture_stream(void)
 
     for (index = 0u; index < 16u; ++index) {
         descriptor.request_id[index] = app.capture_request_id[index];
+        descriptor.schedule_id[index] = app.capture_schedule_id[index];
         descriptor.boot_id[index] = app.boot_id[index];
         descriptor.device_id[index] = app.device_id[index];
     }
@@ -96,9 +104,23 @@ static void initialize_pending_capture_stream(void)
     descriptor.device_config_crc32 = app.config.device_config_crc32;
     descriptor.frame_sequence = app.capture_request_sequence;
     descriptor.capture_sequence = app.capture_sequence;
+    descriptor.async_capture = app.capture_is_async;
     descriptor.sample_interval_ticks = app.config.profile.sample_interval_ticks;
     descriptor.burst_period_ticks = app.config.profile.burst_period_ticks;
+    descriptor.pretrigger_count = app.config.pretrigger_count;
     descriptor.tuss_dev_stat = app.capture_report.tuss_dev_stat;
+    descriptor.out3_start_level =
+        ((app.config.aux_flags & 0x01u) != 0u) ?
+            app.capture_report.out3_start_level : 0xFFu;
+    descriptor.out4_start_level =
+        ((app.config.aux_flags & 0x02u) != 0u) ?
+            app.capture_report.out4_start_level : 0xFFu;
+    descriptor.event_count = app.capture_report.event_count;
+    descriptor.quality_flags = app.capture_report.quality_flags |
+        USAC_M3_QUALITY_TIMING_UNCALIBRATED;
+    for (index = 0u; index < app.capture_report.event_count; ++index) {
+        descriptor.events[index] = app.capture_report.events[index];
+    }
     for (index = 0u; index < TUSS4470_PROFILE_REGISTER_COUNT; ++index) {
         descriptor.register_pairs[index] = app.config.profile.registers[index];
     }
@@ -147,21 +169,40 @@ static void send_next_capture_segment(void)
 
 static void initialize_frame_timeout_timer(void)
 {
+#ifdef USAC_ENABLE_M5
+    TA1CCTL0 = 0u;
+    TA1CTL = TASSEL_1 | MC_2 | TACLR;
+    /* TA1/ACLK owns both the parser timeout and lease wake-up. TA0 remains
+     * free for the 24 MHz OUT3/OUT4 extended capture timebase. */
+    g_usac_m5_elapsed_quanta = 0u;
+    TA1CCR1 = USAC_M5_ACLK_QUANTUM_TICKS;
+    TA1CCTL1 = CCIE;
+#else
     TA0CCTL0 = 0u;
     TA0CTL = TASSEL_1 | MC_2 | TACLR;
+#endif
 }
 
 static void arm_frame_timeout(void)
 {
-    /* One full 16-bit ACLK span is 2000 ms at the 32768 Hz REFO source. */
+    /* One full 16-bit ACLK span is 2000 ms at 32768 Hz. */
+#ifdef USAC_ENABLE_M5
+    TA1CCR0 = (uint16_t)(TA1R - 1u);
+    TA1CCTL0 = CCIE;
+#else
     TA0CCR0 = (uint16_t)(TA0R - 1u);
     TA0CCTL0 = CCIE;
+#endif
     g_usac_frame_timeout_pending = 0u;
 }
 
 static void cancel_frame_timeout(void)
 {
+#ifdef USAC_ENABLE_M5
+    TA1CCTL0 = 0u;
+#else
     TA0CCTL0 = 0u;
+#endif
     g_usac_frame_timeout_pending = 0u;
 }
 
@@ -209,6 +250,18 @@ static uint8_t initialize_clocks(void)
 {
     g_usac_clock_stage = 1u;
     UCS_setExternalClockSource(32768ul, 4000000ul);
+#ifdef USAC_ENABLE_M5
+    /* M5 lease expiry must keep advancing independently of USB and the DCO.
+     * LaunchPad P5.4/P5.5 carry the populated 32.768 kHz XT1 crystal. */
+    GPIO_setAsPeripheralModuleFunctionOutputPin(
+        GPIO_PORT_P5,
+        GPIO_PIN4 | GPIO_PIN5);
+    g_usac_xt1_start_result = (uint8_t)UCS_turnOnLFXT1WithTimeout(
+        UCS_XT1_DRIVE_0, UCS_XCAP_3, 65535u);
+    if (g_usac_xt1_start_result == 0u) {
+        return 0u;
+    }
+#endif
     /* TI USB stack requires the MSP430F5529 XT2 pins to be mapped before
      * starting the oscillator (P5.2=XT2IN, P5.3=XT2OUT).
      */
@@ -227,22 +280,45 @@ static uint8_t initialize_clocks(void)
         UCS_CLOCK_DIVIDER_1);
     UCS_initClockSignal(
         UCS_ACLK,
+#ifdef USAC_ENABLE_M5
+        UCS_XT1CLK_SELECT,
+#else
         UCS_REFOCLK_SELECT,
+#endif
         UCS_CLOCK_DIVIDER_1);
     /* 24 MHz / 4 MHz = 6; DriverLib selects DCORSEL=6. */
     UCS_initFLLSettle(24000u, 6u);
     g_usac_clock_stage = 3u;
     g_usac_clock_ucsctl7 = (uint8_t)UCSCTL7;
     g_usac_clock_sfrifg1 = (uint8_t)SFRIFG1;
-    /* XT1 is intentionally unused; ACLK comes from REFO. The global OFIFG
-     * therefore cannot be used as a pass/fail bit because XT1 may hold it.
-     */
+#ifdef USAC_ENABLE_M5
+    if (((UCSCTL7 & (XT1LFOFFG | XT2OFFG | DCOFFG)) != 0u) ||
+        ((SFRIFG1 & OFIFG) != 0u)) {
+        return 0u;
+    }
+#else
+    /* M2/M3 keep their accepted REFO path. XT1 is intentionally unused, so
+     * the base image ignores only the corresponding unused-oscillator flag. */
     if (usac_m2_clock_faults_safe((uint8_t)UCSCTL7) == 0u) {
         return 0u;
     }
+#endif
     g_usac_clock_stage = 4u;
     return 1u;
 }
+
+#ifdef USAC_ENABLE_M5
+static uint16_t read_clock_fault_flags(void)
+{
+    uint16_t flags = 0u;
+
+    if ((UCSCTL7 & XT2OFFG) != 0u) flags |= 0x0001u;
+    if ((UCSCTL7 & DCOFFG) != 0u) flags |= 0x0002u;
+    if ((UCSCTL7 & XT1LFOFFG) != 0u) flags |= 0x0004u;
+    if ((SFRIFG1 & OFIFG) != 0u) flags |= 0x0008u;
+    return flags;
+}
+#endif
 
 static tuss4470_config_result_t initialize_tuss4470(
     tuss4470_config_report_t *report)
@@ -372,7 +448,6 @@ int main(void)
             __bis_SR_register(LPM4_bits | GIE);
         }
     }
-    initialize_frame_timeout_timer();
     usac_platform_spi_init();
     tuss_bus.context = 0;
     tuss_bus.read = usac_platform_tuss_read;
@@ -398,6 +473,12 @@ int main(void)
         0u,
         (g_usac_tuss_config_result == TUSS4470_CONFIG_OK) ?
             USAC_M2_SESSION_WAIT : USAC_M2_FAULT);
+#ifdef USAC_ENABLE_M5
+    usac_m5_app_record_boot_config(
+        &app,
+        (tuss4470_config_result_t)g_usac_tuss_config_result,
+        report.dev_stat);
+#endif
     app.apply_profile = apply_profile;
     app.safety_context = &tuss_bus;
     app.force_safe = force_safe;
@@ -406,9 +487,17 @@ int main(void)
     app.run_io2_loopback = usac_platform_run_io2_loopback;
     app.capture_context = &tuss_bus;
     app.capture_once = usac_platform_capture_once;
+#ifdef USAC_ENABLE_M5
+    app.capture_m5 = usac_platform_capture_m5;
+#endif
 #endif
 
     USB_setup(FALSE, TRUE);
+    /* TI USB_init() temporarily owns TA1 for XT2 frequency detection and
+     * leaves it clocked from SMCLK. Reclaim TA1 only after USB_setup(), so
+     * parser timeouts and M5 leases advance from the intended 32.768 kHz
+     * ACLK on a fresh boot as well as after a CDC reconnect. */
+    initialize_frame_timeout_timer();
     usac_identity_usb_serial_descriptor(
         device_id,
         abramSerialStringDescriptor);
@@ -422,6 +511,19 @@ int main(void)
     __enable_interrupt();
 
     for (;;) {
+#ifdef USAC_ENABLE_M5
+        uint16_t elapsed_quanta;
+
+        __disable_interrupt();
+        elapsed_quanta = g_usac_m5_elapsed_quanta;
+        g_usac_m5_elapsed_quanta = 0u;
+        __enable_interrupt();
+        if (elapsed_quanta != 0u) {
+            usac_m5_app_advance_time(
+                &app, (uint32_t)elapsed_quanta * USAC_M5_ACLK_QUANTUM_US);
+        }
+        usac_m5_app_update_clock_faults(&app, read_clock_fault_flags());
+#endif
         if (g_usac_dtr_session_ready == 0u) {
             if (previous_session_ready != 0u) {
                 abort_usb_response();
@@ -454,6 +556,12 @@ int main(void)
             g_usac_last_parse_result = (uint8_t)usac_mcu_parser_expire(&parser);
             cancel_frame_timeout();
         }
+#ifdef USAC_ENABLE_M5
+        if ((g_usac_dtr_session_ready != 0u) &&
+            (usac_m5_app_periodic_due(&app) != 0u)) {
+            (void)usac_m5_app_run_periodic_capture(&app);
+        }
+#endif
         if ((USB_getConnectionState() == ST_ENUM_ACTIVE) &&
             (g_usac_dtr_session_ready != 0u) &&
             (usac_tx_gate_can_encode(&tx_gate) != 0u)
@@ -472,12 +580,40 @@ int main(void)
     }
 }
 
+#ifdef USAC_ENABLE_M5
+void __attribute__((interrupt(TIMER1_A0_VECTOR))) TIMER1_A0_ISR(void)
+#else
 void __attribute__((interrupt(TIMER0_A0_VECTOR))) TIMER0_A0_ISR(void)
+#endif
 {
+#ifdef USAC_ENABLE_M5
+    TA1CCTL0 = 0u;
+#else
     TA0CCTL0 = 0u;
+#endif
     g_usac_frame_timeout_pending = 1u;
     __bic_SR_register_on_exit(LPM0_bits);
 }
+
+#ifdef USAC_ENABLE_M5
+void __attribute__((interrupt(TIMER1_A1_VECTOR))) TIMER1_A1_ISR(void)
+{
+    switch (__even_in_range(TA1IV, TA1IV_TAIFG)) {
+        case TA1IV_NONE:
+            break;
+        case TA1IV_TACCR1:
+            TA1CCR1 = (uint16_t)(TA1CCR1 + USAC_M5_ACLK_QUANTUM_TICKS);
+            if (g_usac_m5_elapsed_quanta != 0xFFFFu) {
+                ++g_usac_m5_elapsed_quanta;
+            }
+            usac_platform_m5_on_aclk_quantum();
+            __bic_SR_register_on_exit(LPM0_bits);
+            break;
+        default:
+            break;
+    }
+}
+#endif
 
 void __attribute__((interrupt(UNMI_VECTOR))) UNMI_ISR(void)
 {

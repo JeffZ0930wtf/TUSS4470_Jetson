@@ -44,8 +44,18 @@ if ($LASTEXITCODE -ne 0) { throw "firmware unit-test compile failed: $LASTEXITCO
 
 Write-Host 'MSP430 simulator unit tests: running'
 $gdbScript = Join-Path $repositoryRoot 'firmware\tests\msp430-sim-test.gdb'
-$testOutput = (& $debugger '-batch' '-x' $gdbScript $testBinary 2>&1) -join "`n"
-if ($LASTEXITCODE -ne 0) { throw "firmware simulator debugger failed: $LASTEXITCODE`n$testOutput" }
+# GDB can emit a benign index-cache warning on stderr even when it exits zero.
+# Capture that diagnostic without allowing PowerShell to terminate before the
+# authoritative exit-code and USAC_TEST_RESULT checks below run.
+$savedErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    $testOutput = (& $debugger '-batch' '-x' $gdbScript $testBinary 2>&1) -join "`n"
+    $debuggerExitCode = $LASTEXITCODE
+} finally {
+    $ErrorActionPreference = $savedErrorActionPreference
+}
+if ($debuggerExitCode -ne 0) { throw "firmware simulator debugger failed: $debuggerExitCode`n$testOutput" }
 if ($testOutput -notmatch 'USAC_TEST_RESULT=(-?\d+)') {
     throw "firmware simulator did not report a test result`n$testOutput"
 }

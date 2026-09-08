@@ -76,19 +76,20 @@ def deliver_spool(
     core_port: int,
     timeout_s: float = 2.0,
 ) -> int:
-    """Replay every current pending record in permanent record-id order."""
+    """Replay pending records in bounded batches with one delivery in flight."""
 
     delivered = 0
-    for pending in spool.pending_records():
-        with socket.create_connection((core_host, core_port), timeout=timeout_s) as connection:
-            connection.settimeout(timeout_s)
-            connection_id = secrets.randbits(64) or 1
-            deliver_pending(
-                connection,
-                spool,
-                pending,
-                connection_id=connection_id,
-                sequence=pending.record_id & 0xFFFFFFFF,
-            )
-        delivered += 1
+    while batch := spool.pending_records(limit=64):
+        for pending in batch:
+            with socket.create_connection((core_host, core_port), timeout=timeout_s) as connection:
+                connection.settimeout(timeout_s)
+                connection_id = secrets.randbits(64) or 1
+                deliver_pending(
+                    connection,
+                    spool,
+                    pending,
+                    connection_id=connection_id,
+                    sequence=pending.record_id & 0xFFFFFFFF,
+                )
+            delivered += 1
     return delivered

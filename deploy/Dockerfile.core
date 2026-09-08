@@ -1,12 +1,13 @@
-# Digest pinning keeps the same M4 core runtime reproducible on amd64 and arm64.
+# Digest pinning keeps the M5 runtime reproducible on amd64 and arm64.
 FROM public.ecr.aws/docker/library/python:3.12-slim@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a
 
 WORKDIR /opt/usac
 ENV PYTHONPATH=/opt/usac/packages/usac_protocol/src:/opt/usac/packages/usac_runtime/src \
     PYTHONUNBUFFERED=1
 
-COPY packages/usac_protocol/src packages/usac_protocol/src
-COPY packages/usac_runtime/src packages/usac_runtime/src
+COPY pyproject.toml README.md ./
+COPY packages packages
+RUN python -m pip install --no-cache-dir .
 COPY protocol protocol
 
-ENTRYPOINT ["python", "-m", "usac_runtime.core_service"]
+ENTRYPOINT ["python", "-m", "usac_runtime.m5_server"]

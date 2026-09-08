@@ -21,6 +21,8 @@ class ProjectLayoutTests(unittest.TestCase):
             "config/test.example.toml",
             "deploy/Dockerfile.core",
             "deploy/compose.yaml",
+            "deploy/compose.jetson.yaml",
+            "deploy/README-jetson.md",
             "firmware/Makefile",
             "firmware/src/main.c",
             "scripts/build-firmware.ps1",
@@ -70,9 +72,9 @@ class ProjectLayoutTests(unittest.TestCase):
         dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
 
         self.assertIn("public.ecr.aws/docker/library/python:3.12-slim@sha256:", dockerfile)
-        self.assertNotIn("RUN python -m pip install", dockerfile)
+        self.assertIn("RUN python -m pip install --no-cache-dir .", dockerfile)
         self.assertIn("packages/usac_protocol/src", dockerfile)
-        self.assertIn("usac_runtime.core_service", dockerfile)
+        self.assertIn("usac_runtime.m5_server", dockerfile)
         self.assertIn(".venv", dockerignore)
         self.assertIn(".tools", dockerignore)
 
@@ -106,6 +108,23 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn(build, windows_test)
         self.assertIn(audit, windows_test)
         self.assertLess(windows_test.index(build), windows_test.index(audit))
+
+    def test_windows_test_entrypoint_includes_m5_firmware_gate(self) -> None:
+        windows_test = (ROOT / "scripts/test-all.ps1").read_text(encoding="utf-8")
+
+        required_steps = [
+            "build-firmware-m5.ps1",
+            "test-firmware-m5-burst-plan.ps1",
+            "test-firmware-m5-schedule.ps1",
+            "test-firmware-m5-app.ps1",
+        ]
+        for step in required_steps:
+            self.assertIn(step, windows_test)
+
+        self.assertLess(
+            windows_test.index("build-firmware-m5.ps1"),
+            windows_test.index("test-firmware-m5-app.ps1"),
+        )
 
     def test_m0_firmware_never_configures_a_burst(self) -> None:
         source = (ROOT / "firmware/src/main.c").read_text(encoding="utf-8")
@@ -144,16 +163,28 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertTrue((ROOT / "scripts/test-c-vectors.sh").is_file())
         self.assertIn("test-c-vectors.sh", jetson_test)
 
-    def test_m4_core_container_uses_external_data_and_loopback_port(self) -> None:
+    def test_m5_core_container_uses_external_data_and_loopback_ports(self) -> None:
         compose = (ROOT / "deploy/compose.yaml").read_text(encoding="utf-8")
         dockerfile = (ROOT / "deploy/Dockerfile.core").read_text(encoding="utf-8")
 
-        self.assertIn("tuss4470-acquisition-core:m4", compose)
+        self.assertIn("tuss4470-acquisition-core:m5", compose)
         self.assertIn("127.0.0.1:8765:8765", compose)
+        self.assertIn("127.0.0.1:8000:8000", compose)
         self.assertIn("USAC_CORE_DATA_DIR", compose)
         self.assertIn("/var/lib/usac/database", compose)
-        self.assertIn("usac_runtime.core_service", compose + dockerfile)
+        self.assertIn("usac_runtime.m5_server", compose + dockerfile)
         self.assertNotIn("usac-core-m1:ready", compose + dockerfile)
+
+    def test_jetson_compose_maps_device_and_separate_host_storage(self) -> None:
+        compose = (ROOT / "deploy/compose.jetson.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("/var/lib/tuss4470/core", compose)
+        self.assertIn("/var/lib/tuss4470/bridge/spool", compose)
+        self.assertIn("/var/lib/usac/database", compose)
+        self.assertIn("/var/lib/usac/spool", compose)
+        self.assertIn("/dev/tuss4470", compose)
+        self.assertIn("--core-host\n      - core", compose)
+        self.assertIn("--core-port\n      - \"8765\"", compose)
 
     def test_runtime_examples_use_the_approved_external_data_roots(self) -> None:
         windows = (ROOT / "config/windows.example.toml").read_text(encoding="utf-8")

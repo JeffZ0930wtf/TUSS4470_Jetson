@@ -24,9 +24,14 @@ def test_protocol_schema_defines_header_crc_and_first_m1_messages() -> None:
     messages = {item["name"]: item for item in schema["messages"]}
     assert {
         "HELLO",
+        "GET_CAPABILITIES",
         "GET_CONFIG",
         "SET_CONFIG",
         "CAPTURE_ONCE",
+        "START_PERIODIC",
+        "STOP",
+        "GET_STATUS",
+        "RENEW_PERIODIC_LEASE",
         "RUN_IO2_LOOPBACK_TEST",
         "CAPTURE_DATA",
         "BRIDGE_CAPTURE_DELIVERY",
@@ -36,10 +41,17 @@ def test_protocol_schema_defines_header_crc_and_first_m1_messages() -> None:
     } <= messages.keys()
     assert messages["HELLO"]["request_length"] == 20
     assert messages["CAPTURE_ONCE"]["request_length"] == 60
+    assert messages["GET_CAPABILITIES"]["response_length"] == 24
+    assert messages["START_PERIODIC"]["request_length"] == 80
+    assert messages["GET_STATUS"]["response_length"] == 100
+    assert messages["RENEW_PERIODIC_LEASE"]["response_length"] == 40
     assert messages["RUN_IO2_LOOPBACK_TEST"]["request_length"] == 56
     assert messages["RUN_IO2_LOOPBACK_TEST"]["response_length"] == 86
     assert messages["CAPTURE_DATA"]["payload_schema_version"] == 1
     assert schema["capture_quality_flags"]["TIMING_UNCALIBRATED"] == 0x20
+    assert schema["capture_quality_flags"]["EVENT_OVERFLOW"] == 0x40
+    assert schema["capture_quality_flags"]["EVENT_TIME_AMBIGUOUS"] == 0x80
+    assert schema["capability_flags"]["EXTERNAL_SYNC_V1"] == 0x40
 
 
 def test_protocol_schema_expands_config_capture_fields_and_error_codes() -> None:
@@ -60,6 +72,10 @@ def test_protocol_schema_expands_config_capture_fields_and_error_codes() -> None
         "profile_sha256",
         "device_config_crc32",
     ]
+    config_fields = {
+        field["name"]: field for field in schema["acquisition_config_v2"]["fields"]
+    }
+    assert config_fields["pretrigger_count"]["maximum_expression"] == "sample_count-1"
     messages = {item["name"]: item for item in schema["messages"]}
     capture_names = [field["name"] for field in messages["CAPTURE_DATA"]["fixed_header_fields"]]
     assert capture_names[0:4] == [

@@ -46,6 +46,14 @@ $requiredPatterns = @(
     @{ Pattern = 'TB0CCR1\s*=\s*1u'; Label = 'TB0.1 compare creates an early trigger edge' },
     @{ Pattern = 'TB0CCTL1\s*=\s*OUTMOD_3'; Label = 'TB0.1 set-reset pulse mode' },
     @{ Pattern = 'ADC12SSEL_3\s*\|\s*ADC12DIV_5'; Label = '4 MHz ADC12 clock' },
+    @{ Pattern = 'static\s+uint8_t\s+prepare_adc_dma_capture_path\s*\('; Label = 'repeatable ADC DMA preparation helper' },
+    @{ Pattern = 'DMA0CTL\s*=\s*0u[\s\S]*?DMA1CTL\s*=\s*0u[\s\S]*?DMACTL0\s*=\s*0u[\s\S]*?ADC12CTL0\s*=\s*0u[\s\S]*?ADC12IE\s*=\s*0u[\s\S]*?ADC12IFG\s*=\s*0u'; Label = 'ADC and DMA return to a fully disabled idle state before rearm' },
+    @{ Pattern = 'while\s*\(\(ADC12CTL1\s*&\s*ADC12BUSY\)\s*!=\s*0u\)'; Label = 'ADC idle is observed before selecting the DMA trigger' },
+    @{ Pattern = 'DMACTL4\s*=\s*DMARMWDIS'; Label = 'F5529 DMA4 erratum protection for 20-bit address writes' },
+    @{ Pattern = 'TB0CCR2\s*=\s*111u'; Label = 'DMA trigger compare is fixed at tick 111' },
+    @{ Pattern = 'TB0CCTL2\s*=\s*0u'; Label = 'TB0CCR2 interrupt stays disabled for DMA triggering' },
+    @{ Pattern = 'DMACTL0\s*=\s*DMA0TSEL_8\s*\|\s*DMA1TSEL_8'; Label = 'DMA0 and DMA1 use the independent TB0CCR2 trigger' },
+    @{ Pattern = 'stop_capture_hardware[\s\S]*?TB0CCTL2\s*=\s*0u[\s\S]*?TB0CCR2\s*=\s*0u'; Label = 'capture stop clears the TB0CCR2 trigger state' },
     @{ Pattern = 'DMA0SZ\s*=\s*USAC_M3_SAMPLE_COUNT'; Label = 'DMA0 exact full-waveform count' },
     @{ Pattern = 'DMA1SZ\s*=\s*USAC_M3_PRETRIGGER_COUNT'; Label = 'DMA1 hardware pretrigger count' },
     @{ Pattern = 'DMA0DA[\s\S]*?g_usac_m3_waveform'; Label = 'DMA0 writes directly to unique waveform buffer' },
@@ -63,6 +71,9 @@ foreach ($check in $requiredPatterns) {
 if ($allSource -match 'ADC12SHS_2' -or
     $allSource -match 'TB0CCTL0\s*=\s*OUTMOD_4') {
     throw 'obsolete TB0.0 ADC trigger path is still present'
+}
+if ($allSource -match 'DMA0TSEL_24\s*\|\s*DMA1TSEL_24') {
+    throw 'ADC12IFG is still configured as the repeated-capture DMA trigger'
 }
 if ($allSource -match '(?i)interpolat|repeat_last|fill_missing') {
     throw 'M3 acquisition source contains a forbidden sample synthesis path'

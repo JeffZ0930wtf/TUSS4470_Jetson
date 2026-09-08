@@ -1,5 +1,5 @@
-/* M3-only MSP430 acceptance adapter. This API can generate the finite IO2
- * loopback waveform and therefore must never be linked into the M2 image. */
+/* MSP430 acquisition adapter shared by the accepted fixed M3 path and the M5
+ * configurable path. It is linked only into images allowed to reach timers. */
 #ifndef USAC_PLATFORM_M3_MSP430_H
 #define USAC_PLATFORM_M3_MSP430_H
 
@@ -7,6 +7,7 @@
 
 #include "usac_m3_loopback.h"
 #include "usac_m3_capture.h"
+#include "usac_config_v2.h"
 
 /* context must point to the initialized tuss4470_bus_t used by the app. */
 uint8_t usac_platform_run_io2_loopback(
@@ -21,5 +22,22 @@ uint8_t usac_platform_capture_once(
     uint16_t sample_interval_ticks,
     uint16_t burst_period_ticks,
     usac_m3_capture_report_t *report);
+
+#ifdef USAC_ENABLE_M5
+/* Executes one already-validated finite configuration. External slave sync is
+ * bounded by sync_timeout_ms; timeout returns without starting a Burst. */
+uint8_t usac_platform_capture_m5(
+    void *context,
+    const usac_config_v2_t *config,
+    uint8_t trigger_source,
+    uint32_t sync_timeout_ms,
+    usac_m3_capture_report_t *report);
+
+/* Called from the shared TA1 CCR1 ISR.  Slave sync uses this interrupt-owned
+ * timebase because TI does not guarantee direct reads of an asynchronously
+ * clocked running TA1R register. */
+void usac_platform_m5_on_aclk_quantum(void);
+#endif
+
 
 #endif

@@ -115,6 +115,15 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
+    @api.patch("/api/v1/config")
+    def save_draft(body: ConfigChanges) -> dict[str, object]:
+        try:
+            return application.save_draft(body.changes)
+        except SessionConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
     @api.put("/api/v1/config")
     def apply_config(
         body: ConfigChanges,
@@ -153,6 +162,23 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(error)) from error
         except SessionConflict as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        except CaptureStorageUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        except (ValueError, RuntimeError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.get("/api/v1/captures")
+    def captures(
+        limit: int = 50,
+        cursor: str | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, object]:
+        try:
+            return application.captures(
+                limit=limit,
+                cursor=cursor,
+                session_id=session_id,
+            )
         except CaptureStorageUnavailable as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
         except ValueError as error:

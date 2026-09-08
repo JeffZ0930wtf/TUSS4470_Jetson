@@ -120,8 +120,8 @@ def _validate_values(
         raise ValueError("sample_interval_ticks must be in 120..960")
     if not 1 <= sample_count <= 2048:
         raise ValueError("sample_count must be in 1..2048")
-    if not 0 <= pretrigger_count <= sample_count:
-        raise ValueError("pretrigger_count must not exceed sample_count")
+    if not 0 <= pretrigger_count < sample_count:
+        raise ValueError("pretrigger_count must be less than sample_count")
     if adc_bits != 12:
         raise ValueError("adc_bits must be 12")
     if aux_flags & ~0x03:
