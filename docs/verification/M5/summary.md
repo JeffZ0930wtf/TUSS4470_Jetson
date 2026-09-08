@@ -20,11 +20,12 @@ core, and SQLite. S3 reset and safely power-sequenced USB reconnect recovery
 also pass without restarting either host service. The 100, 1000, and all three
 seeded-random long-sequence normal-path gates now pass their count, raw-data,
 SQLite, spool, and bounded-resource criteria. The first-version host-interface/
-persistence checklist and final offline regression are now complete. M5 remains
-was fast-forwarded to `main` after the Windows and native Jetson ARM64 gates.
+persistence checklist and final offline regression are now complete. M5 was
+fast-forwarded to `main` after the Windows and native Jetson ARM64 gates.
 The merged `main` then repeated the complete 215-test and firmware-build
 regression successfully. This summary update is the prescribed
-`milestone(M5): complete first-version parameter coverage` closure commit.
+`milestone(M5): complete first-version parameter coverage` closure commit at
+`170207c8f0ce55c05eec4c28d3cd3200c6be44f1`.
 The 10000 ms lease and non-lossless 5 Hz scheduling limitations remain explicit
 M7 work and are not presented as product readiness.
 
@@ -59,8 +60,8 @@ M7 work and are not presented as product readiness.
   history, while session responses remain bounded to 100 recent IDs;
 
 - `scripts/test-firmware-m5-burst-plan.ps1`: PASS;
-- `scripts/test-firmware-m5-schedule.ps1`: PASS at the earlier M5 scheduler
-  checkpoint and must be rerun in the final pre-HIL gate;
+- `scripts/test-firmware-m5-schedule.ps1`: PASS at the scheduler checkpoint and
+  again as part of the final 215-test/firmware-build regression;
 - `scripts/test-firmware-m5-app.ps1`: PASS, including sync timeout, event
   serialization, lease expiry, and runtime clock-fault shutdown;
 - selected protocol schema/message/config pytest: 21 passed;
