@@ -141,6 +141,23 @@ BLOB and a 4324-byte original wire frame. This matches the requested save
 semantics; neither superseded `SAVE_LAST` frames nor the `SAVE_NONE` frame were
 reported as archived.
 
+### Known diagnostic limitation found by this check
+
+The three distinct sample BLOBs had different SHA-256 values, but the exposed
+`transport_crc32`/bridge `inner_frame_crc32` value was identical. Source review
+confirmed that this CRC is currently calculated over the complete already-CRC-
+protected USAC frame. A valid CRC codeword has a fixed residue, so this value is
+not a useful content fingerprint. This did not invalidate the batch: the
+native USAC decoder independently validates the frame-body CRC before parsing,
+core stores an SHA-256 of every terminal processing decision, and archived
+sample BLOBs are derived from the validated frame without interpolation.
+
+The field should be corrected before it is presented as a diagnostic content
+checksum in a production release, for example by calculating the wrapper CRC
+over the inner frame excluding its existing CRC trailer. Changing that
+cross-component semantic requires an explicit protocol-compatibility test and
+is not folded into this hardware-verification batch.
+
 ## Remaining before M6/G3J closure
 
 - Prove Compose startup with external network unavailable.
