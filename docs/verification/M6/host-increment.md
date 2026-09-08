@@ -38,7 +38,7 @@ closure evidence and does not claim Jetson or physical-device verification.
 
 ## Verification performed
 
-- `python -m pytest -q`: 234 tests passed.
+- `python -m pytest -q`: 235 tests passed.
 - The aggregate Windows gate was run in bounded segments: the same host suite
   passed, followed by all existing M0, TI USB, M2, M3, and M5 build/static and
   simulator gates. No segment accessed a COM port or flashed firmware.
@@ -52,6 +52,11 @@ closure evidence and does not claim Jetson or physical-device verification.
 - Browser smoke with the bridge backend and no bridge attached: **未检测到设备**
   was shown; apply/capture were disabled while draft editing and validation
   remained usable.
+- Initial Jetson Compose bring-up exposed that `python -m
+  usac_runtime.bridge_cli` imported the bridge module without invoking its CLI.
+  A subprocess regression test reproduced the zero-output exit, and the module
+  now has the standard `__main__` guard used by the core entrypoint. This fix
+  changes process startup only; device commands and protocol bytes are unchanged.
 
 ## Still open
 

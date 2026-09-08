@@ -240,3 +240,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "capture":
         return _capture(args)
     return _serve(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

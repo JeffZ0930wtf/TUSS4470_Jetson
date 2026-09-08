@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -13,6 +15,20 @@ from usac_runtime.spool import CaptureSpool
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_bridge_cli_module_invokes_main() -> None:
+    """The Jetson Compose entrypoint must execute, not only import definitions."""
+
+    result = subprocess.run(
+        [sys.executable, "-m", "usac_runtime.bridge_cli", "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "M4 Windows capture bridge" in result.stdout
 
 
 def _config(tmp_path: Path) -> Path:
