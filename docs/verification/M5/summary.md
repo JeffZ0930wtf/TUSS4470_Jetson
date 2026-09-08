@@ -12,7 +12,7 @@ gates are all complete.
 
 ## Status
 
-**Open — Git closure remains.** The reviewed M5 candidate
+**Closed — 2026-09-08.** The reviewed M5 candidate
 using the Timer_B0 CCR2 DMA trigger has passed the default D10x4 two-frame,
 parameter endpoint, finite run-plan, periodic/STOP, renewal, lease-expiry,
 OUT3/OUT4 event, and Master/Slave synchronization gates through COM9, bridge,
@@ -21,8 +21,10 @@ also pass without restarting either host service. The 100, 1000, and all three
 seeded-random long-sequence normal-path gates now pass their count, raw-data,
 SQLite, spool, and bounded-resource criteria. The first-version host-interface/
 persistence checklist and final offline regression are now complete. M5 remains
-open only for final documentation reconciliation and the required Git milestone
-closure.
+was fast-forwarded to `main` after the Windows and native Jetson ARM64 gates.
+The merged `main` then repeated the complete 215-test and firmware-build
+regression successfully. This summary update is the prescribed
+`milestone(M5): complete first-version parameter coverage` closure commit.
 The 10000 ms lease and non-lossless 5 Hz scheduling limitations remain explicit
 M7 work and are not presented as product readiness.
 
