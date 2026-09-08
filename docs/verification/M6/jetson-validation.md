@@ -107,8 +107,39 @@ capture remained queryable, and the host database/spool files remained present
 downgraded the prior applied configuration to DRAFT, requiring explicit
 re-application before another capture.
 
-This proves persistence across the performed restarts. It does not yet satisfy
-the roadmap item requiring a successful post-restart capture.
+After that restart, the save-policy batch below successfully performed another
+single capture. This closes the M6 restart/persistence item: both bind mounts
+survived service restart and the recovered stack continued real acquisition.
+
+## Real save-policy matrix
+
+The operator authorized five additional `Pulse=1` acquisitions at external
+7 V with no automatic retry. The existing D10x4 draft was applied unchanged
+first; all ten TUSS4470 register/value pairs read back identically. Exactly one
+POST was issued for each single acquisition or periodic start operation.
+
+- `SAVE_ALL`: one new single frame completed with requested/acquired/saved/
+  policy-discarded counts `1/1/1/0`. Together with the first Jetson frame above,
+  the real Jetson database contains the required two `SAVE_ALL` archives.
+- `SAVE_LAST`: one finite periodic task acquired three frames at a 1 s period
+  and completed with counts `3/3/1/2`. Only the final capture was present in
+  `captures`; the first two retained bounded `ROLLING_LATEST` decisions, and
+  the final decision was `RAW_ARCHIVED`. No rolling BLOB remained after
+  completion.
+- `SAVE_NONE`: one single frame completed with counts `1/1/0/1` and decision
+  `DISCARDED_BY_POLICY`. No immutable capture row was created. The bounded
+  transient endpoint returned exactly 4096 sample bytes with storage marker
+  `TRANSIENT`; its sample SHA-256 was
+  `feb2687a4741297f8fc85904dd9ab06ca8b4f848e7572428b4993662de0b4da6`.
+- After all five new frames, the bridge spool contained zero pending records
+  and six committed tombstones in total (the first Jetson frame plus this
+  five-frame batch).
+
+Core SQLite contained exactly two new immutable rows for this batch: the
+`SAVE_ALL` frame and the final `SAVE_LAST` frame. Each held a 4096-byte sample
+BLOB and a 4324-byte original wire frame. This matches the requested save
+semantics; neither superseded `SAVE_LAST` frames nor the `SAVE_NONE` frame were
+reported as archived.
 
 ## Remaining before M6/G3J closure
 
@@ -116,8 +147,6 @@ the roadmap item requiring a successful post-restart capture.
 - Complete safe non-default device-field-group apply/readback coverage.
 - Complete the real-hardware sampling/frequency/Burst/IO_MODE, sync, sweep, and
   OUT3/OUT4 checks required by the roadmap.
-- Complete periodic acquisition, STOP, and lease-expiry checks.
-- Complete the real `SAVE_ALL` two-frame, `SAVE_LAST` three-frame, and
-  `SAVE_NONE` single-frame policy matrix.
-- Perform a post-restart single capture and complete the milestone Git/Jetson
-  synchronization closure.
+- Complete periodic STOP and lease-expiry checks; the finite three-frame
+  periodic natural-completion path is now verified.
+- Complete the milestone Git/Jetson synchronization closure.
