@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from usac_protocol.config_v2 import AcquisitionConfigV2
 
+from .core_store import SavePolicy
 from .parameter_service import ConfigurationSnapshot, ParameterService
 
 
@@ -36,6 +37,7 @@ class RunPlanV1:
     sweep: SweepPlan | None = None
     trigger_source: str = "SOFTWARE"
     sync_timeout_ms: int = 0
+    save_policy: SavePolicy = SavePolicy.SAVE_ALL
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -44,6 +46,7 @@ class RunPlanV1:
             "loop_delay_ms": self.loop_delay_ms,
             "trigger_source": self.trigger_source,
             "sync_timeout_ms": self.sync_timeout_ms,
+            "save_policy": self.save_policy.value,
             "sweep": None if self.sweep is None else self.sweep.to_dict(),
         }
 

@@ -16,12 +16,14 @@ from usac_protocol.bridge_messages import (
     encode_capture_committed_response,
 )
 from usac_protocol.config_v2 import AcquisitionConfigV2, D10X4_REGISTER_PAIRS
+from usac_protocol.capture_data import decode_capture_data
 from usac_protocol.frame import CRC_SIZE, HEADER_SIZE, Flags, Frame, MessageType, decode_frame, encode_frame
 from usac_protocol.messages import ErrorResponse, encode_error
 from usac_protocol.simulator import SimulatedDevice
 from usac_runtime.application import AcquisitionApplication
 from usac_runtime.bridge_session import proxy_bridge_session
 from usac_runtime.bridge_device_client import BridgeDeviceClient, ReconnectableBridgeDeviceClient
+from usac_runtime.device_executor import DeviceUnavailable
 from usac_runtime.core_store import CaptureStore
 from usac_runtime.device_executor import SingleDeviceExecutor
 from usac_runtime.parameter_service import ParameterService
@@ -537,6 +539,13 @@ def test_reconnected_bridge_replays_pending_before_new_command(tmp_path: Path) -
     worker = threading.Thread(target=run_bridge, daemon=True)
     worker.start()
     store = CaptureStore(tmp_path / "replay-core.sqlite3")
+    capture = decode_capture_data(decode_frame(raw_capture).payload)
+    store.register_delivery_policy(
+        device_id=capture.device_id,
+        boot_id=capture.boot_id,
+        session_id="61" * 16,
+        save_policy="SAVE_ALL",
+    )
     device = BridgeDeviceClient(core_socket, timeout_s=1.0, replay_store=store)
 
     deadline = time.monotonic() + 0.25
@@ -577,18 +586,46 @@ def test_reconnectable_device_switches_sessions_without_retrying_failed_command(
     new = Session("new")
     device = ReconnectableBridgeDeviceClient(old)
 
-    with pytest.raises(ConnectionError, match="old session lost"):
+    with pytest.raises(DeviceUnavailable, match="bridge session was lost"):
         device.status()
     assert old.status_calls == 1
-    assert device.session_generation == 0
+    assert old.close_calls == 1
+    assert device.connected is False
+    assert device.session_generation == 1
 
     device.replace(new)
 
     assert old.close_calls == 1
-    assert device.session_generation == 1
+    assert device.session_generation == 2
     assert device.hello == "new"
     assert device.status() == "new"
     assert new.status_calls == 1
+
+
+def test_reconnectable_device_can_wait_without_an_initial_bridge() -> None:
+    class Session:
+        hello = "ready"
+        boot_id = b"boot".ljust(16, b"0")
+        device_id = b"device".ljust(16, b"0")
+
+        def status(self) -> str:
+            return "connected"
+
+        def close(self) -> None:
+            pass
+
+    device = ReconnectableBridgeDeviceClient()
+
+    assert device.connected is False
+    assert device.backend_kind == "BRIDGE"
+    with pytest.raises(DeviceUnavailable, match="bridge device is not connected"):
+        device.status()
+
+    device.replace(Session())
+
+    assert device.connected is True
+    assert device.status() == "connected"
+    assert device.session_generation == 1
 
 
 def test_periodic_capture_arriving_before_renew_response_is_not_lost(

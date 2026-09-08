@@ -103,6 +103,10 @@ class ConfigConflictError(RuntimeError):
     """The caller expected a different APPLIED configuration."""
 
 
+class DeviceUnavailable(RuntimeError):
+    """No initialized device session is available for a hardware operation."""
+
+
 class SingleDeviceExecutor:
     """Serialize all side-effecting operations for one physical device."""
 

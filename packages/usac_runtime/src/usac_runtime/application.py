@@ -10,16 +10,22 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
+import struct
 import threading
 import time
-from typing import Protocol
+from typing import Callable, Protocol
 import uuid
 
 from usac_protocol.bridge_messages import BridgeCaptureDelivery
 from usac_protocol.capture_data import CaptureData
 
-from .core_store import CaptureRecord, CaptureStore
-from .device_executor import ConfigConflictError, ExecutedCapture, SingleDeviceExecutor
+from .core_store import CaptureRecord, CaptureResolution, CaptureStore, SavePolicy
+from .device_executor import (
+    ConfigConflictError,
+    DeviceUnavailable,
+    ExecutedCapture,
+    SingleDeviceExecutor,
+)
 from .parameter_service import ConfigurationSnapshot, ParameterService, ValidationResult
 from .periodic_lease import PeriodicLeaseController, PeriodicSchedule
 from .run_plan import RunPlanV1, SweepPlan, compile_run_steps
@@ -27,6 +33,7 @@ from .run_plan import RunPlanV1, SweepPlan, compile_run_steps
 
 class ApplicationDevice(Protocol):
     boot_id: bytes | None
+    device_id: bytes | None
 
     def capture_wire_frame(self, capture_id: bytes) -> bytes: ...
 
@@ -47,8 +54,13 @@ class SessionConflict(RuntimeError):
 class _PeriodicSession:
     session_id: bytes
     schedule: PeriodicSchedule
+    save_policy: SavePolicy = SavePolicy.SAVE_ALL
     state: str = "RUNNING"
     capture_count: int = 0
+    saved_count: int = 0
+    discarded_by_policy_count: int = 0
+    last_saved_capture_id: str | None = None
+    terminal_reason: str | None = None
     capture_ids: deque[str] = field(default_factory=lambda: deque(maxlen=100))
     error: str | None = None
     started_utc_ns: int = field(default_factory=time.time_ns)
@@ -66,6 +78,10 @@ class _SweepSession:
     plan: RunPlanV1
     state: str = "RUNNING"
     capture_count: int = 0
+    saved_count: int = 0
+    discarded_by_policy_count: int = 0
+    last_saved_capture_id: str | None = None
+    terminal_reason: str | None = None
     capture_ids: deque[str] = field(default_factory=lambda: deque(maxlen=100))
     error: str | None = None
     started_utc_ns: int = field(default_factory=time.time_ns)
@@ -73,6 +89,21 @@ class _SweepSession:
     stop_event: threading.Event = field(default_factory=threading.Event, repr=False)
     control_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     thread: threading.Thread | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class _PersistedCapture:
+    payload: dict[str, object]
+    inserted: bool
+    resolution: CaptureResolution
+
+
+@dataclass(frozen=True, slots=True)
+class _TransientCapture:
+    capture_id: str
+    payload: dict[str, object]
+    samples: bytes
+    storage: str
 
 
 def _json_value(value: object) -> object:
@@ -113,6 +144,12 @@ class AcquisitionApplication:
         self._session_lock = threading.Lock()
         self._session_history_limit = session_history_limit
         self._sessions: dict[bytes, _PeriodicSession | _SweepSession] = {}
+        self._latest_transient: _TransientCapture | None = None
+        self._operation_activity: str | None = None
+        if self._store is not None:
+            # An interrupted host never resumes hardware work implicitly. The
+            # store freezes any rolling SAVE_LAST frame before marking it.
+            self._store.reconcile_interrupted_sessions()
 
     @staticmethod
     def _snapshot(snapshot: ConfigurationSnapshot) -> dict[str, object]:
@@ -140,8 +177,51 @@ class AcquisitionApplication:
         return {"status": "ok"}
 
     def device(self) -> dict[str, object]:
-        hello = self._device.hello
+        def unavailable() -> dict[str, object]:
+            return {
+                "connected": False,
+                "health": "NOT_DETECTED",
+                "activity": "IDLE",
+                "backend": str(getattr(self._device, "backend_kind", "BRIDGE")),
+                "device_id": None,
+                "boot_id": None,
+                "firmware": None,
+                "capabilities": None,
+                "status": None,
+            }
+        if not bool(getattr(self._device, "connected", True)):
+            return unavailable()
+        try:
+            hello = self._device.hello
+            status = self._executor.status()
+        except DeviceUnavailable:
+            return unavailable()
+        abnormal = bool(getattr(status, "last_error", 0))
+        with self._session_lock:
+            operation_activity = self._operation_activity
+            active = next(
+                (
+                    item
+                    for item in self._sessions.values()
+                    if item.state in {"RUNNING", "STOPPING"}
+                ),
+                None,
+            )
+        if abnormal:
+            activity = "FAULT"
+        elif operation_activity is not None:
+            activity = operation_activity
+        elif isinstance(active, _PeriodicSession):
+            activity = "CAPTURING_PERIODIC"
+        elif isinstance(active, _SweepSession):
+            activity = "SWEEPING"
+        else:
+            activity = "IDLE"
         return {
+            "connected": True,
+            "health": "ABNORMAL" if abnormal else "NORMAL",
+            "activity": activity,
+            "backend": str(getattr(self._device, "backend_kind", "BRIDGE")),
             "device_id": hello.device_id.hex(),
             "boot_id": hello.boot_id.hex(),
             "firmware": {
@@ -151,7 +231,7 @@ class AcquisitionApplication:
                 "build": hello.fw_build,
             },
             "capabilities": _json_value(self._executor.capabilities()),
-            "status": _json_value(self._executor.status()),
+            "status": _json_value(status),
         }
 
     def schema(self) -> dict[str, object]:
@@ -178,10 +258,21 @@ class AcquisitionApplication:
         *,
         expected_etag: str,
     ) -> dict[str, object]:
+        self._require_device()
         self._require_idle()
         if expected_etag != self.etag():
             raise ConfigurationEtagConflict("If-Match does not match current config")
-        return self._snapshot(self._executor.apply_changes(changes))
+        with self._session_lock:
+            self._operation_activity = "CONFIGURING"
+        try:
+            return self._snapshot(self._executor.apply_changes(changes))
+        finally:
+            with self._session_lock:
+                self._operation_activity = None
+
+    def _require_device(self) -> None:
+        if not bool(getattr(self._device, "connected", True)):
+            raise DeviceUnavailable("device is not connected")
 
     @staticmethod
     def _capture_payload(
@@ -219,13 +310,36 @@ class AcquisitionApplication:
             raise CaptureStorageUnavailable("capture storage is not configured")
         return self._store
 
+    def _register_delivery_policy(
+        self,
+        *,
+        session_id: str,
+        save_policy: SavePolicy,
+    ) -> None:
+        """Persist host-only replay context before any capture can be emitted."""
+
+        self._require_device()
+        device_id = self._device.device_id
+        boot_id = self._device.boot_id
+        if device_id is None or boot_id is None:
+            raise DeviceUnavailable("device HELLO identity is unavailable")
+        self._require_store().register_delivery_policy(
+            device_id=device_id,
+            boot_id=boot_id,
+            session_id=session_id,
+            save_policy=save_policy,
+        )
+
     def _persist_capture(
         self,
         capture: CaptureData,
         *,
         run_plan: dict[str, object],
         snapshot: ConfigurationSnapshot | None = None,
-    ) -> dict[str, object]:
+        save_policy: SavePolicy = SavePolicy.SAVE_ALL,
+        session_id: str | None = None,
+        on_resolved: Callable[[_PersistedCapture], None] | None = None,
+    ) -> _PersistedCapture:
         store = self._require_store()
         snapshot = snapshot or self._executor.snapshot()
         encoded = {
@@ -256,10 +370,60 @@ class AcquisitionApplication:
                 stored_utc_ns=time.time_ns(),
                 inner_frame=wire_frame,
             )
-        result = store.commit_delivery(delivery)
+        result = store.commit_delivery(
+            delivery,
+            save_policy=save_policy,
+            session_id=session_id,
+        )
+        if result.resolution is CaptureResolution.RAW_ARCHIVED:
+            payload = self.capture(capture.capture_id.hex())
+        else:
+            sample_blob = struct.pack(f"<{capture.sample_count}H", *capture.samples)
+            payload = {
+                "capture_id": capture.capture_id.hex(),
+                "device_id": capture.device_id.hex(),
+                "boot_id": capture.boot_id.hex(),
+                "request_id": capture.request_id.hex(),
+                "profile_sha256": capture.profile_sha256.hex(),
+                "device_config_crc32": capture.device_config_crc32,
+                "capture_sequence": capture.capture_sequence,
+                "sample_interval_ticks": capture.sample_interval_ticks,
+                "burst_period_ticks": capture.burst_period_ticks,
+                "sample_count": capture.sample_count,
+                "pretrigger_count": capture.pretrigger_count,
+                "quality_flags": capture.quality_flags,
+                "tuss_dev_stat": capture.tuss_dev_stat,
+                "transport_crc32": result.receipt.inner_frame_crc32,
+                "requested_config": _json_value(snapshot.requested),
+                "encoded_config": encoded,
+                "readback_config": _json_value(snapshot.readback),
+                "actual_config": _json_value(snapshot.actual),
+                "run_plan": run_plan,
+                "adc_clipping": any(
+                    sample in (0, (1 << capture.adc_bits) - 1)
+                    for sample in capture.samples
+                ),
+                "interpolated": False,
+                "events": [_json_value(event) for event in capture.events],
+            }
+            storage = (
+                "TRANSIENT"
+                if result.resolution is CaptureResolution.DISCARDED_BY_POLICY
+                else "ROLLING_LATEST"
+            )
+            self._latest_transient = _TransientCapture(
+                capture.capture_id.hex(), payload, sample_blob, storage
+            )
+        payload["resolution"] = result.resolution.value
+        persisted = _PersistedCapture(payload, result.inserted, result.resolution)
+        # Account the durable storage decision before ACKing bridge spool. If
+        # that ACK loses the connection, replay remains idempotent and the
+        # session summary already reflects the accepted frame.
+        if on_resolved is not None:
+            on_resolved(persisted)
         self._device.confirm_capture(result.receipt)
         self._device.release_capture(capture.capture_id)
-        return self.capture(capture.capture_id.hex())
+        return persisted
 
     def capture_once(
         self,
@@ -268,30 +432,145 @@ class AcquisitionApplication:
         expected_device_config_crc32: int,
         trigger_source: str,
         sync_timeout_ms: int,
+        save_policy: SavePolicy = SavePolicy.SAVE_ALL,
     ) -> dict[str, object]:
         """Capture once and report success only after the SQLite commit."""
 
-        self._require_store()
+        store = self._require_store()
+        self._require_device()
         self._require_idle()
-        capture = self._executor.capture_once(
-            expected_profile_sha256=expected_profile_sha256,
-            expected_device_config_crc32=expected_device_config_crc32,
-            trigger_source=trigger_source,
-            sync_timeout_ms=sync_timeout_ms,
+        session_id = uuid.uuid4().hex
+        started_utc_ns = time.time_ns()
+        storage_policy = (
+            SavePolicy.SAVE_ALL if save_policy is SavePolicy.SAVE_LAST else save_policy
         )
-        if not isinstance(capture, CaptureData):
-            raise TypeError("device client returned an unsupported capture object")
-        return self._persist_capture(
-            capture,
-            run_plan={
-                "loops": 1,
-                "start_delay_ms": 0,
-                "loop_delay_ms": 0,
-                "trigger_source": trigger_source,
-                "sync_timeout_ms": sync_timeout_ms,
-                "sweep": None,
-            },
+        run_plan = {
+            "mode": "SINGLE",
+            "session_id": session_id,
+            "loops": 1,
+            "start_delay_ms": 0,
+            "loop_delay_ms": 0,
+            "trigger_source": trigger_source,
+            "sync_timeout_ms": sync_timeout_ms,
+            "save_policy": save_policy.value,
+            "sweep": None,
+        }
+        summary: dict[str, object] = {
+            "session_id": session_id,
+            "kind": "SINGLE",
+            "state": "RUNNING",
+            "save_policy": save_policy.value,
+            "requested_count": 1,
+            "acquired_count": 0,
+            "saved_count": 0,
+            "discarded_by_policy_count": 0,
+            "last_capture_id": None,
+            "last_saved_capture_id": None,
+            "terminal_reason": None,
+            "error": None,
+            "started_utc_ns": started_utc_ns,
+            "finished_utc_ns": None,
+        }
+        self._register_delivery_policy(
+            session_id=session_id,
+            save_policy=storage_policy,
         )
+        store.save_session_summary(summary)
+
+        def record_resolved(persisted: _PersistedCapture) -> None:
+            capture_id = str(persisted.payload["capture_id"])
+            summary.update(
+                {
+                    **persisted.payload,
+                    "acquired_count": 1,
+                    "saved_count": int(
+                        persisted.resolution is CaptureResolution.RAW_ARCHIVED
+                    ),
+                    "discarded_by_policy_count": int(
+                        persisted.resolution is CaptureResolution.DISCARDED_BY_POLICY
+                    ),
+                    "last_capture_id": capture_id,
+                    "last_saved_capture_id": (
+                        capture_id
+                        if persisted.resolution is CaptureResolution.RAW_ARCHIVED
+                        else None
+                    ),
+                }
+            )
+            store.save_session_summary(summary)
+
+        with self._session_lock:
+            self._operation_activity = "CAPTURING_SINGLE"
+        try:
+            capture = self._executor.capture_once(
+                expected_profile_sha256=expected_profile_sha256,
+                expected_device_config_crc32=expected_device_config_crc32,
+                trigger_source=trigger_source,
+                sync_timeout_ms=sync_timeout_ms,
+            )
+            if not isinstance(capture, CaptureData):
+                raise TypeError("device client returned an unsupported capture object")
+            persisted = self._persist_capture(
+                capture,
+                run_plan=run_plan,
+                save_policy=storage_policy,
+                session_id=session_id,
+                on_resolved=record_resolved,
+            )
+        except Exception as error:
+            summary.update(
+                {
+                    "state": "FAILED",
+                    "terminal_reason": "FAILED",
+                    "error": f"{type(error).__name__}: {error}",
+                    "finished_utc_ns": time.time_ns(),
+                }
+            )
+            store.finalize_session_summary(summary)
+            raise
+        finally:
+            with self._session_lock:
+                self._operation_activity = None
+        payload = persisted.payload
+        payload.update(
+            {
+                "session_id": session_id,
+                "save_policy": save_policy.value,
+                "requested_count": 1,
+                "acquired_count": 1,
+                "saved_count": int(
+                    persisted.resolution is CaptureResolution.RAW_ARCHIVED
+                ),
+                "discarded_by_policy_count": int(
+                    persisted.resolution is CaptureResolution.DISCARDED_BY_POLICY
+                ),
+                "last_capture_id": capture.capture_id.hex(),
+                "last_saved_capture_id": (
+                    capture.capture_id.hex()
+                    if persisted.resolution is CaptureResolution.RAW_ARCHIVED
+                    else None
+                ),
+                "terminal_reason": "COMPLETED",
+            }
+        )
+        summary.update(
+            {
+                **payload,
+                "state": "COMPLETED",
+                "terminal_reason": "COMPLETED",
+                "finished_utc_ns": time.time_ns(),
+            }
+        )
+        final_summary = store.finalize_session_summary(summary)
+        for key in (
+            "acquired_count",
+            "saved_count",
+            "discarded_by_policy_count",
+            "last_capture_id",
+            "last_saved_capture_id",
+        ):
+            payload[key] = final_summary[key]
+        return payload
 
     def _require_idle(self) -> None:
         with self._session_lock:
@@ -318,10 +597,54 @@ class AcquisitionApplication:
     @staticmethod
     def _record_capture(
         session: _PeriodicSession | _SweepSession,
-        capture_id: str,
+        persisted: _PersistedCapture,
     ) -> None:
         session.capture_count += 1
+        capture_id = str(persisted.payload["capture_id"])
         session.capture_ids.append(capture_id)
+        if persisted.resolution is CaptureResolution.RAW_ARCHIVED:
+            session.saved_count += 1
+            session.last_saved_capture_id = capture_id
+        elif persisted.resolution is CaptureResolution.DISCARDED_BY_POLICY:
+            session.discarded_by_policy_count += 1
+        else:
+            # SAVE_LAST retains one rolling frame and supersedes every prior one.
+            session.discarded_by_policy_count = max(0, session.capture_count - 1)
+
+    def _finish_session_locked(
+        self,
+        session: _PeriodicSession | _SweepSession,
+        *,
+        state: str,
+        terminal_reason: str,
+        error: str | None = None,
+    ) -> dict[str, object]:
+        """Finalize retained data and terminal accounting in one SQLite commit."""
+
+        session.state = state
+        session.terminal_reason = terminal_reason
+        session.error = error
+        session.finished_utc_ns = time.time_ns()
+        payload = (
+            self._periodic_payload(session)
+            if isinstance(session, _PeriodicSession)
+            else self._sweep_payload(session)
+        )
+        final = self._require_store().finalize_session_summary(payload)
+        session.capture_count = int(final["acquired_count"])
+        session.saved_count = int(final["saved_count"])
+        session.discarded_by_policy_count = int(final["discarded_by_policy_count"])
+        raw_last = final.get("last_saved_capture_id")
+        session.last_saved_capture_id = str(raw_last) if raw_last is not None else None
+        return final
+
+    def _save_session(self, session: _PeriodicSession | _SweepSession) -> None:
+        payload = (
+            self._periodic_payload(session)
+            if isinstance(session, _PeriodicSession)
+            else self._sweep_payload(session)
+        )
+        self._require_store().save_session_summary(payload)
 
     @staticmethod
     def _periodic_payload(session: _PeriodicSession) -> dict[str, object]:
@@ -334,13 +657,20 @@ class AcquisitionApplication:
             "period_us": session.schedule.period_us,
             "requested_capture_count": session.schedule.capture_count,
             "capture_count": session.capture_count,
+            "requested_count": session.schedule.capture_count,
+            "acquired_count": session.capture_count,
+            "saved_count": session.saved_count,
+            "discarded_by_policy_count": session.discarded_by_policy_count,
+            "save_policy": session.save_policy.value,
             "last_capture_id": recent[-1] if recent else None,
+            "last_saved_capture_id": session.last_saved_capture_id,
             "recent_capture_ids": recent,
             "capture_ids": recent,
             "lease_timeout_ms": session.schedule.lease_timeout_ms,
             "error": session.error,
             "started_utc_ns": session.started_utc_ns,
             "finished_utc_ns": session.finished_utc_ns,
+            "terminal_reason": session.terminal_reason,
         }
 
     def _clear_async_capture_handler(self, handler) -> None:
@@ -357,6 +687,7 @@ class AcquisitionApplication:
             "period_us": session.schedule.period_us,
             "capture_count": session.schedule.capture_count,
             "lease_timeout_ms": session.schedule.lease_timeout_ms,
+            "save_policy": session.save_policy.value,
         }
 
     @staticmethod
@@ -368,12 +699,19 @@ class AcquisitionApplication:
             "state": session.state,
             "plan": session.plan.to_dict(),
             "capture_count": session.capture_count,
+            "requested_count": len(session.plan.sweep.values) * session.plan.loops,
+            "acquired_count": session.capture_count,
+            "saved_count": session.saved_count,
+            "discarded_by_policy_count": session.discarded_by_policy_count,
+            "save_policy": session.plan.save_policy.value,
             "last_capture_id": recent[-1] if recent else None,
+            "last_saved_capture_id": session.last_saved_capture_id,
             "recent_capture_ids": recent,
             "capture_ids": recent,
             "error": session.error,
             "started_utc_ns": session.started_utc_ns,
             "finished_utc_ns": session.finished_utc_ns,
+            "terminal_reason": session.terminal_reason,
         }
 
     def start_periodic(
@@ -384,10 +722,12 @@ class AcquisitionApplication:
         period_us: int,
         capture_count: int,
         lease_timeout_ms: int,
+        save_policy: SavePolicy = SavePolicy.SAVE_ALL,
     ) -> dict[str, object]:
         """Start one firmware-leased schedule and a core-owned renewal worker."""
 
         self._require_store()
+        self._require_device()
         try:
             profile_sha256 = bytes.fromhex(expected_profile_sha256)
         except ValueError as error:
@@ -405,20 +745,27 @@ class AcquisitionApplication:
             lease_timeout_ms=lease_timeout_ms,
         )
         schedule.validate()
-        session = _PeriodicSession(uuid.uuid4().bytes, schedule)
+        session = _PeriodicSession(uuid.uuid4().bytes, schedule, save_policy)
         controller = PeriodicLeaseController(self._executor)
         snapshot = self._executor.snapshot()
 
         def persist_interleaved(capture: CaptureData) -> bool:
             if capture.schedule_id != schedule.schedule_id:
                 return False
-            stored = self._persist_capture(
+
+            def record_resolved(stored: _PersistedCapture) -> None:
+                with session.control_lock:
+                    self._record_capture(session, stored)
+                    self._save_session(session)
+
+            self._persist_capture(
                 capture,
                 run_plan=self._periodic_run_plan(session),
                 snapshot=snapshot,
+                save_policy=session.save_policy,
+                session_id=session.session_id.hex(),
+                on_resolved=record_resolved,
             )
-            with session.control_lock:
-                self._record_capture(session, str(stored["capture_id"]))
             return True
 
         session.async_handler = persist_interleaved
@@ -433,12 +780,17 @@ class AcquisitionApplication:
                 self._clear_async_capture_handler(persist_interleaved)
                 raise SessionConflict("the device already has an active run session")
             self._prune_finished_sessions_locked()
+            self._register_delivery_policy(
+                session_id=session.session_id.hex(),
+                save_policy=session.save_policy,
+            )
             try:
                 controller.start(schedule, now_ms=time.monotonic_ns() // 1_000_000)
             except Exception:
                 self._clear_async_capture_handler(persist_interleaved)
                 raise
             self._sessions[session.session_id] = session
+            self._save_session(session)
             session.thread = threading.Thread(
                 target=self._periodic_worker,
                 args=(session, controller, snapshot, persist_interleaved),
@@ -460,10 +812,12 @@ class AcquisitionApplication:
         loop_delay_ms: int,
         trigger_source: str,
         sync_timeout_ms: int,
+        save_policy: SavePolicy = SavePolicy.SAVE_ALL,
     ) -> dict[str, object]:
         """Validate a finite sweep, then run it without interleaved commands."""
 
         self._require_store()
+        self._require_device()
         self._executor.require_applied_identity(
             expected_profile_sha256,
             expected_device_config_crc32,
@@ -475,6 +829,7 @@ class AcquisitionApplication:
             sweep=SweepPlan(field_name, values),
             trigger_source=trigger_source,
             sync_timeout_ms=sync_timeout_ms,
+            save_policy=save_policy,
         )
         baseline = self._executor.snapshot()
         # Compile once before returning 202 so invalid plans are synchronous
@@ -488,7 +843,12 @@ class AcquisitionApplication:
             ):
                 raise SessionConflict("the device already has an active run session")
             self._prune_finished_sessions_locked()
+            self._register_delivery_policy(
+                session_id=session.session_id.hex(),
+                save_policy=session.plan.save_policy,
+            )
             self._sessions[session.session_id] = session
+            self._save_session(session)
             session.thread = threading.Thread(
                 target=self._sweep_worker,
                 args=(session,),
@@ -506,13 +866,19 @@ class AcquisitionApplication:
             run_plan["session_id"] = session.session_id.hex()
             run_plan["sweep_index"] = result.sweep_index
             run_plan["loop_index"] = result.loop_index
-            stored = self._persist_capture(
+            def record_resolved(stored: _PersistedCapture) -> None:
+                with session.control_lock:
+                    self._record_capture(session, stored)
+                    self._save_session(session)
+
+            self._persist_capture(
                 result.capture,
                 run_plan=run_plan,
                 snapshot=result.snapshot,
+                save_policy=session.plan.save_policy,
+                session_id=session.session_id.hex(),
+                on_resolved=record_resolved,
             )
-            with session.control_lock:
-                self._record_capture(session, str(stored["capture_id"]))
 
         try:
             self._executor.execute_run_plan(
@@ -524,21 +890,34 @@ class AcquisitionApplication:
         except RuntimeError as error:
             with session.control_lock:
                 if session.stop_event.is_set():
-                    session.state = "STOPPED"
+                    self._finish_session_locked(
+                        session,
+                        state="STOPPED",
+                        terminal_reason="STOPPED_BY_USER",
+                    )
                 else:
-                    session.state = "FAILED"
-                    session.error = f"{type(error).__name__}: {error}"
-                session.finished_utc_ns = time.time_ns()
+                    self._finish_session_locked(
+                        session,
+                        state="FAILED",
+                        terminal_reason="FAILED",
+                        error=f"{type(error).__name__}: {error}",
+                    )
             return
         except Exception as error:
             with session.control_lock:
-                session.state = "FAILED"
-                session.error = f"{type(error).__name__}: {error}"
-                session.finished_utc_ns = time.time_ns()
+                self._finish_session_locked(
+                    session,
+                    state="FAILED",
+                    terminal_reason="FAILED",
+                    error=f"{type(error).__name__}: {error}",
+                )
             return
         with session.control_lock:
-            session.state = "COMPLETED"
-            session.finished_utc_ns = time.time_ns()
+            self._finish_session_locked(
+                session,
+                state="COMPLETED",
+                terminal_reason="COMPLETED",
+            )
 
     def sweep(self, session_id: str) -> dict[str, object]:
         identifier = self._session_identifier(session_id)
@@ -546,7 +925,13 @@ class AcquisitionApplication:
             try:
                 session = self._sessions[identifier]
             except KeyError as error:
-                raise KeyError(f"unknown sweep {session_id}") from error
+                try:
+                    persisted = self._require_store().get_session_summary(session_id)
+                except KeyError:
+                    raise KeyError(f"unknown sweep {session_id}") from error
+                if persisted.get("kind") != "SWEEP":
+                    raise KeyError(f"session {session_id} is not a sweep") from error
+                return persisted
         if not isinstance(session, _SweepSession):
             raise KeyError(f"session {session_id} is not a sweep")
         with session.control_lock:
@@ -586,8 +971,11 @@ class AcquisitionApplication:
                         and session.capture_count >= session.schedule.capture_count
                     ):
                         controller.finish()
-                        session.state = "COMPLETED"
-                        session.finished_utc_ns = time.time_ns()
+                        self._finish_session_locked(
+                            session,
+                            state="COMPLETED",
+                            terminal_reason="COMPLETED",
+                        )
                         return
                 # Never hold the session lock while waiting for device I/O.
                 # A status request can receive an interleaved async capture
@@ -605,8 +993,11 @@ class AcquisitionApplication:
                 ):
                     with session.control_lock:
                         controller.finish()
-                        session.state = "COMPLETED"
-                        session.finished_utc_ns = time.time_ns()
+                        self._finish_session_locked(
+                            session,
+                            state="COMPLETED",
+                            terminal_reason="COMPLETED",
+                        )
                     return
         except Exception as error:  # preserve the error while lease/STOP makes IO safe
             with session.control_lock:
@@ -623,9 +1014,11 @@ class AcquisitionApplication:
                     # requested finite count is committed, this is completion—not
                     # a reason to send STOP or report successful data as failed.
                     controller.finish()
-                    session.state = "COMPLETED"
-                    session.error = None
-                    session.finished_utc_ns = time.time_ns()
+                    self._finish_session_locked(
+                        session,
+                        state="COMPLETED",
+                        terminal_reason="COMPLETED",
+                    )
                     return
             if not stopped:
                 try:
@@ -633,9 +1026,12 @@ class AcquisitionApplication:
                 except Exception:
                     pass
             with session.control_lock:
-                session.state = "STOPPED" if stopped else "FAILED"
-                session.error = None if stopped else f"{type(error).__name__}: {error}"
-                session.finished_utc_ns = time.time_ns()
+                self._finish_session_locked(
+                    session,
+                    state="STOPPED" if stopped else "FAILED",
+                    terminal_reason="STOPPED_BY_USER" if stopped else "FAILED",
+                    error=None if stopped else f"{type(error).__name__}: {error}",
+                )
         finally:
             # STOP owns the handler until its ACK so a frame already in flight
             # cannot bypass session accounting after the worker observes the
@@ -666,14 +1062,20 @@ class AcquisitionApplication:
                 self._executor.stop_periodic(session.schedule.schedule_id)
             except Exception as error:
                 with session.control_lock:
-                    session.state = "FAILED"
-                    session.error = f"{type(error).__name__}: {error}"
-                    session.finished_utc_ns = time.time_ns()
+                    self._finish_session_locked(
+                        session,
+                        state="FAILED",
+                        terminal_reason="FAILED",
+                        error=f"{type(error).__name__}: {error}",
+                    )
                 raise
             else:
                 with session.control_lock:
-                    session.state = "STOPPED"
-                    session.finished_utc_ns = time.time_ns()
+                    self._finish_session_locked(
+                        session,
+                        state="STOPPED",
+                        terminal_reason="STOPPED_BY_USER",
+                    )
             finally:
                 self._clear_async_capture_handler(session.async_handler)
         with session.control_lock:
@@ -695,7 +1097,10 @@ class AcquisitionApplication:
             try:
                 session = self._sessions[identifier]
             except KeyError as error:
-                raise KeyError(f"unknown session {session_id}") from error
+                try:
+                    return self._require_store().get_session_summary(session_id)
+                except KeyError:
+                    raise KeyError(f"unknown session {session_id}") from error
         with session.control_lock:
             if isinstance(session, _PeriodicSession):
                 return self._periodic_payload(session)
@@ -706,7 +1111,15 @@ class AcquisitionApplication:
         identifier = bytes.fromhex(capture_id)
         if len(identifier) != 16:
             raise ValueError("capture_id must encode exactly 16 bytes")
-        record = store.get_capture(identifier)
+        try:
+            record = store.get_capture(identifier)
+        except KeyError:
+            transient = self._latest_transient
+            if transient is None or transient.capture_id != capture_id.lower():
+                raise
+            payload = dict(transient.payload)
+            payload["storage"] = transient.storage
+            return payload
         return self._capture_payload(
             record,
             events=store.get_capture_events(identifier),
@@ -738,9 +1151,15 @@ class AcquisitionApplication:
             "next_cursor": None if next_cursor is None else str(next_cursor),
         }
 
-    def capture_samples(self, capture_id: str) -> bytes:
+    def capture_samples(self, capture_id: str) -> tuple[bytes, str]:
         store = self._require_store()
         identifier = bytes.fromhex(capture_id)
         if len(identifier) != 16:
             raise ValueError("capture_id must encode exactly 16 bytes")
-        return store.get_capture(identifier).sample_blob
+        try:
+            return store.get_capture(identifier).sample_blob, "ARCHIVE"
+        except KeyError:
+            transient = self._latest_transient
+            if transient is None or transient.capture_id != capture_id.lower():
+                raise
+            return transient.samples, transient.storage

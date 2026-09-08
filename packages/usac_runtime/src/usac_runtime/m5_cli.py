@@ -80,11 +80,21 @@ def _parser() -> argparse.ArgumentParser:
     capture = sub.add_parser("capture")
     capture.add_argument("--trigger", default="SOFTWARE")
     capture.add_argument("--sync-timeout-ms", type=int, default=0)
+    capture.add_argument(
+        "--save-policy",
+        choices=("SAVE_NONE", "SAVE_ALL", "SAVE_LAST"),
+        default="SAVE_ALL",
+    )
 
     periodic = sub.add_parser("periodic-start")
     periodic.add_argument("--period-us", type=int, required=True)
     periodic.add_argument("--count", type=int, default=0)
     periodic.add_argument("--lease-timeout-ms", type=int, default=3_000)
+    periodic.add_argument(
+        "--save-policy",
+        choices=("SAVE_NONE", "SAVE_ALL", "SAVE_LAST"),
+        default="SAVE_ALL",
+    )
 
     periodic_stop = sub.add_parser("periodic-stop")
     periodic_stop.add_argument("session_id")
@@ -98,6 +108,11 @@ def _parser() -> argparse.ArgumentParser:
     sweep.add_argument("--loop-delay-ms", type=int, default=0)
     sweep.add_argument("--trigger", default="SOFTWARE")
     sweep.add_argument("--sync-timeout-ms", type=int, default=0)
+    sweep.add_argument(
+        "--save-policy",
+        choices=("SAVE_NONE", "SAVE_ALL", "SAVE_LAST"),
+        default="SAVE_ALL",
+    )
 
     sweep_stop = sub.add_parser("sweep-stop")
     sweep_stop.add_argument("session_id")
@@ -195,6 +210,7 @@ def main(
                     "expected_device_config_crc32": crc,
                     "trigger_source": args.trigger,
                     "sync_timeout_ms": args.sync_timeout_ms,
+                    "save_policy": args.save_policy,
                 },
             )
         elif args.command == "periodic-start":
@@ -208,6 +224,7 @@ def main(
                     "period_us": args.period_us,
                     "capture_count": args.count,
                     "lease_timeout_ms": args.lease_timeout_ms,
+                    "save_policy": args.save_policy,
                 },
             )
         elif args.command == "periodic-stop":
@@ -234,6 +251,7 @@ def main(
                     "loop_delay_ms": args.loop_delay_ms,
                     "trigger_source": args.trigger,
                     "sync_timeout_ms": args.sync_timeout_ms,
+                    "save_policy": args.save_policy,
                 },
             )
         elif args.command == "sweep-stop":

@@ -1,85 +1,87 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TUSS4470 acquisition console</title>
+  <title>TUSS4470 超声采集控制台</title>
   <link rel="stylesheet" href="/assets/m5-styles.css">
 </head>
 <body>
   <header class="instrument-head">
     <div>
       <p class="eyebrow">USAC / TUSS4470</p>
-      <h1>Ultrasonic acquisition console</h1>
-      <p class="subhead">Configure, read back, and acquire unmodified envelope samples.</p>
+      <h1 data-i18n="app.title">超声采集控制台</h1>
+      <p class="subhead" data-i18n="app.subtitle">配置设备并采集未经插值或修改的包络原始数据。</p>
     </div>
-    <div class="device-badge" aria-live="polite">
-      <span id="device-dot" class="status-dot"></span>
-      <div><small>Device state</small><strong id="device-state">Connecting</strong><span id="device-detail"></span></div>
+    <div class="header-tools">
+      <button id="language-toggle" class="language-toggle" data-i18n-aria-label="language.aria">English</button>
+      <div class="device-badge" aria-live="polite">
+        <span id="device-dot" class="status-dot"></span>
+        <div><small data-i18n="device.label">设备状态</small><strong id="device-state">正在检测</strong><span id="device-detail">等待主机服务</span></div>
+      </div>
     </div>
   </header>
-  <nav class="signal-strip" aria-label="Acquisition pipeline">
-    <span data-stage="draft">Draft</span><i></i><span data-stage="validated">Validated</span><i></i>
-    <span data-stage="applied">Read back</span><i></i><span data-stage="captured">Committed</span>
+  <nav class="signal-strip" aria-label="采集流程" data-i18n-aria-label="stages.aria">
+    <span data-stage="draft" data-i18n="stages.draft">草稿</span><i></i><span data-stage="validated" data-i18n="stages.validated">已校验</span><i></i>
+    <span data-stage="applied" data-i18n="stages.applied">已应用并回读</span><i></i><span data-stage="captured" data-i18n="stages.captured">已采集</span>
   </nav>
   <main class="console-grid">
     <section class="parameter-bank" aria-labelledby="parameters-title">
       <div class="section-head">
-        <div><p class="eyebrow">Device + acquisition</p><h2 id="parameters-title">Parameter bank</h2></div>
+        <div><p class="eyebrow" data-i18n="bank.eyebrow">设备 + 波形</p><h2 id="parameters-title" data-i18n="bank.title">参数库</h2></div>
         <div class="action-row">
-          <button id="baseline-button" class="quiet">Load D10×4 baseline</button>
-          <button id="reset-button" class="quiet">Discard edits</button>
-          <button id="save-draft-button">Save draft</button>
-          <button id="validate-button">Validate</button>
-          <button id="apply-button" class="primary">Apply and read back</button>
+          <button id="baseline-button" class="quiet" data-i18n="bank.baseline">载入 D10×4 基线</button>
+          <button id="reset-button" class="quiet" data-i18n="bank.reset">放弃编辑</button>
+          <button id="save-draft-button" data-i18n="bank.saveDraft">保存草稿</button>
+          <button id="validate-button" data-i18n="bank.validate">校验</button>
+          <button id="apply-button" class="primary" data-i18n="bank.apply">应用并回读</button>
         </div>
       </div>
+      <p class="hint bank-hint" data-i18n="bank.hint">这里只设置 TUSS4470 设备属性和单帧波形参数；运行次数、间隔和保存策略统一在右侧采集模块设置。</p>
       <div id="validation" class="message" hidden></div>
       <div id="parameter-groups" class="parameter-groups" aria-live="polite"></div>
     </section>
     <aside class="run-rail">
+      <section class="rail-card acquisition-card">
+        <div class="section-head compact">
+          <div><p class="eyebrow" data-i18n="capture.eyebrow">统一运行入口</p><h2 data-i18n="capture.title">采集</h2></div>
+          <span id="capture-status">空闲</span>
+        </div>
+        <div class="form-grid two">
+          <label><span data-i18n="capture.mode">采集模式</span><select id="capture-mode"><option value="SINGLE" data-i18n="mode.single">单次采集</option><option value="PERIODIC" data-i18n="mode.periodic">周期采集</option><option value="SWEEP" data-i18n="mode.sweep">单参数扫描</option></select></label>
+          <label><span data-i18n="capture.savePolicy">数据保存</span><select id="save-policy"><option value="SAVE_ALL" selected data-i18n="save.all">保存每一次</option><option value="SAVE_LAST" data-i18n="save.last">只保存最后一次</option><option value="SAVE_NONE" data-i18n="save.none">不保存</option></select></label>
+          <label><span data-i18n="capture.trigger">触发方式</span><select id="trigger-source"><option value="SOFTWARE" data-i18n="trigger.software">软件触发</option><option value="EXTERNAL_SYNC_SLAVE" data-i18n="trigger.slave">外部同步从机</option><option value="EXTERNAL_SYNC_MASTER" data-i18n="trigger.master">外部同步主机</option></select></label>
+          <label><span data-i18n="capture.syncTimeout">同步超时（ms）</span><input id="sync-timeout" type="number" min="0" max="60000" value="0"></label>
+        </div>
+        <div id="periodic-fields" class="mode-fields form-grid two" hidden>
+          <label><span data-i18n="periodic.period">周期（µs）</span><input id="period-us" type="number" min="100000" value="1000000"></label>
+          <label><span data-i18n="periodic.count">次数（0 = 无限）</span><input id="periodic-count" type="number" min="0" value="1"></label>
+          <label><span data-i18n="periodic.lease">租约（ms）</span><input id="lease-timeout" type="number" min="1000" max="10000" value="3000"></label>
+        </div>
+        <div id="sweep-fields" class="mode-fields form-grid two" hidden>
+          <label><span data-i18n="sweep.field">扫描参数</span><select id="sweep-field"></select></label>
+          <label><span data-i18n="sweep.values">扫描值（JSON 数组）</span><input id="sweep-values" value="[1,2,3]"></label>
+          <label><span data-i18n="sweep.loops">每个值采集次数</span><input id="sweep-loops" type="number" min="1" value="1"></label>
+          <label><span data-i18n="sweep.startDelay">开始延时（ms）</span><input id="sweep-start-delay" type="number" min="0" max="3600000" value="0"></label>
+          <label><span data-i18n="sweep.loopDelay">循环间隔（ms）</span><input id="sweep-delay" type="number" min="0" max="3600000" value="0"></label>
+        </div>
+        <div class="action-row run-actions"><button id="capture-start" class="primary">开始单次采集</button><button id="capture-stop" class="danger" disabled data-i18n="capture.stop">停止</button></div>
+        <div id="capture-counters" class="counter-strip" aria-live="polite">
+          <span><small data-i18n="counter.planned">计划</small><strong>—</strong></span><span><small data-i18n="counter.acquired">已采集</small><strong>0</strong></span><span><small data-i18n="counter.saved">已保存</small><strong>0</strong></span><span><small data-i18n="counter.discarded">按策略丢弃</small><strong>0</strong></span>
+        </div>
+      </section>
       <section class="rail-card waveform-card">
-        <div class="section-head compact"><div><p class="eyebrow">Latest capture</p><h2>Raw envelope</h2></div><span id="sample-label">No capture</span></div>
-        <canvas id="waveform" width="720" height="280" aria-label="Raw ADC waveform"></canvas>
-        <p class="hint">2048 original ADC points. Display scaling does not alter stored samples.</p>
+        <div class="section-head compact"><div><p class="eyebrow" data-i18n="waveform.eyebrow">最近一次</p><h2 data-i18n="waveform.title">原始包络</h2></div><span id="sample-label">暂无波形</span></div>
+        <canvas id="waveform" width="720" height="280" aria-label="原始 ADC 波形" data-i18n-aria-label="waveform.aria"></canvas>
+        <p class="hint" data-i18n="waveform.hint">显示 2048 个原始 ADC 点；画布缩放不会改变采集值或已保存数据。</p>
       </section>
       <section class="rail-card">
         <div class="section-head compact">
-          <div><p class="eyebrow">SQLite archive</p><h2>Recent captures</h2></div>
-          <button id="history-refresh" class="quiet">Refresh</button>
+          <div><p class="eyebrow" data-i18n="history.eyebrow">SQLite 数据库</p><h2 data-i18n="history.title">已保存记录</h2></div>
+          <button id="history-refresh" class="quiet" data-i18n="history.refresh">刷新</button>
         </div>
         <div id="capture-history" class="history-list" aria-live="polite"></div>
-        <button id="history-more" class="quiet full" hidden>Load older</button>
-      </section>
-      <section class="rail-card">
-        <p class="eyebrow">Single acquisition</p><h2>Capture once</h2>
-        <div class="form-grid two">
-          <label>Trigger<select id="trigger-source"><option>SOFTWARE</option><option>EXTERNAL_SYNC_SLAVE</option><option>EXTERNAL_SYNC_MASTER</option></select></label>
-          <label>Sync timeout (ms)<input id="sync-timeout" type="number" min="0" max="60000" value="0"></label>
-        </div>
-        <button id="capture-button" class="primary full">Capture and commit</button>
-      </section>
-      <section class="rail-card">
-        <p class="eyebrow">Leased schedule</p><h2>Periodic capture</h2>
-        <div class="form-grid two">
-          <label>Period (µs)<input id="period-us" type="number" min="100000" value="1000000"></label>
-          <label>Count (0 = infinite)<input id="periodic-count" type="number" min="0" value="1"></label>
-          <label>Lease (ms)<input id="lease-timeout" type="number" min="1000" max="10000" value="3000"></label>
-        </div>
-        <div class="action-row"><button id="periodic-start" class="primary">Start</button><button id="periodic-stop" class="danger" disabled>Stop</button></div>
-        <output id="periodic-status" class="run-status">Idle</output>
-      </section>
-      <section class="rail-card">
-        <p class="eyebrow">Finite run plan</p><h2>Single-field sweep</h2>
-        <div class="form-grid two">
-          <label>Field<select id="sweep-field"></select></label>
-          <label>Values (JSON)<input id="sweep-values" value="[1,2,3]"></label>
-          <label>Loops<input id="sweep-loops" type="number" min="1" value="1"></label>
-          <label>Start delay (ms)<input id="sweep-start-delay" type="number" min="0" max="3600000" value="0"></label>
-          <label>Loop delay (ms)<input id="sweep-delay" type="number" min="0" value="0"></label>
-        </div>
-        <div class="action-row"><button id="sweep-start">Run sweep</button><button id="sweep-stop" class="danger" disabled>Stop</button></div>
-        <output id="sweep-status" class="run-status">Idle</output>
+        <button id="history-more" class="quiet full" hidden data-i18n="history.more">加载更早记录</button>
       </section>
     </aside>
   </main>

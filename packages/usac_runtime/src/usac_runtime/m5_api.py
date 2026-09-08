@@ -15,7 +15,8 @@ from .application import (
     ConfigurationEtagConflict,
     SessionConflict,
 )
-from .device_executor import ConfigConflictError, ConfigValidationError
+from .core_store import SavePolicy
+from .device_executor import ConfigConflictError, ConfigValidationError, DeviceUnavailable
 
 
 _WEB_ROOT = Path(__file__).with_name("web")
@@ -34,6 +35,7 @@ class CaptureRequestBody(BaseModel):
     expected_device_config_crc32: int
     trigger_source: str = "SOFTWARE"
     sync_timeout_ms: int = 0
+    save_policy: SavePolicy = SavePolicy.SAVE_ALL
 
 
 class PeriodicStartBody(BaseModel):
@@ -43,6 +45,7 @@ class PeriodicStartBody(BaseModel):
     period_us: int
     capture_count: int
     lease_timeout_ms: int
+    save_policy: SavePolicy = SavePolicy.SAVE_ALL
 
 
 class PeriodicStopBody(BaseModel):
@@ -62,6 +65,7 @@ class SweepStartBody(BaseModel):
     loop_delay_ms: int = 0
     trigger_source: str = "SOFTWARE"
     sync_timeout_ms: int = 0
+    save_policy: SavePolicy = SavePolicy.SAVE_ALL
 
 
 def _validation_detail(error: ConfigValidationError) -> list[dict[str, str]]:
@@ -140,6 +144,8 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(error)) from error
         except SessionConflict as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        except DeviceUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
         except ConfigValidationError as error:
             raise HTTPException(
                 status_code=422,
@@ -157,9 +163,12 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
                 expected_device_config_crc32=body.expected_device_config_crc32,
                 trigger_source=body.trigger_source,
                 sync_timeout_ms=body.sync_timeout_ms,
+                save_policy=body.save_policy,
             )
         except ConfigConflictError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        except DeviceUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
         except SessionConflict as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         except CaptureStorageUnavailable as error:
@@ -196,12 +205,16 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
     @api.get("/api/v1/captures/{capture_id}/samples")
     def capture_samples(capture_id: str) -> Response:
         try:
-            samples = application.capture_samples(capture_id)
+            samples, storage = application.capture_samples(capture_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
-        return Response(samples, media_type="application/octet-stream")
+        return Response(
+            samples,
+            media_type="application/octet-stream",
+            headers={"X-USAC-Storage": storage},
+        )
 
     @api.post("/api/v1/periodic/start", status_code=202)
     def start_periodic(body: PeriodicStartBody) -> dict[str, object]:
@@ -212,10 +225,13 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
                 period_us=body.period_us,
                 capture_count=body.capture_count,
                 lease_timeout_ms=body.lease_timeout_ms,
+                save_policy=body.save_policy,
             )
         except (ConfigConflictError, SessionConflict) as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         except CaptureStorageUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        except DeviceUnavailable as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
         except (ValueError, RuntimeError) as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
@@ -231,6 +247,8 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(error)) from error
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+        except DeviceUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
@@ -256,10 +274,13 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
                 loop_delay_ms=body.loop_delay_ms,
                 trigger_source=body.trigger_source,
                 sync_timeout_ms=body.sync_timeout_ms,
+                save_policy=body.save_policy,
             )
         except (ConfigConflictError, SessionConflict) as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         except CaptureStorageUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        except DeviceUnavailable as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error

@@ -25,7 +25,7 @@ features and does not predict SOC or SOH.
 - Never commit captures, spool files, SQLite databases, credentials, firmware
   binaries, or large instrument exports.
 
-## Implemented through M4; M5 not started
+## Implemented through M5; M6 Jetson validation in progress
 
 - Cross-platform runtime configuration and serial transport boundary.
 - USAC v1 little-endian frame codec, CRC-32/ISO-HDLC, bounded host stream
@@ -66,10 +66,41 @@ wire bytes and 4096 sample bytes. The frame remains
 
 M3 does not include bridge/core delivery or SQLite. M4 adds that host-side
 delivery and persistence boundary without changing the accepted M3 firmware.
-Periodic acquisition, full parameter editing, and Jetson hardware capture
-remain M5 and M6 work.
+M5 adds complete semantic parameter editing, finite run plans, firmware-leased
+periodic capture, synchronization/events, Windows long-sequence verification,
+and native Jetson ARM64 build verification. Its evidence is recorded in
+`docs/verification/M5/summary.md`.
 The real known-input DMA ordering HIL and the full WDT/PUC reset matrix are
 accepted M3 limitations and remain explicitly deferred to hardening.
+
+The accepted M6 host increment does not change firmware or the wire protocol.
+It adds offline-first bridge lifecycle handling, readable device/activity
+state, one unified acquisition panel, three explicit save policies, persistent
+session counters, and restart closure for an interrupted `SAVE_LAST` run. It
+passed Windows operator review on 2026-09-08. Jetson migration and physical-
+device validation remain open and are not yet claimed.
+
+## Review the M6 host increment without hardware
+
+Activate this worktree's environment and start the deterministic simulator.
+Keep its SQLite file outside the source repository:
+
+```powershell
+. ./.venv/Scripts/Activate.ps1
+usac-m5-server `
+  --backend simulator `
+  --schema protocol/schema/tuss4470-parameters-v1.yaml `
+  --database D:/Desktop/TUSS4470_data/review/m6-host.sqlite3 `
+  --host 127.0.0.1 `
+  --port 8000
+```
+
+Open `http://127.0.0.1:8000`. The simulator is visibly identified as a
+development backend and performs no USB, COM, SPI, flashing, or Burst action.
+Use **应用并回读** once before testing the unified acquisition panel. The
+three save choices are **不保存**, **保存每一次** (default), and
+**只保存最后一次**; the counters distinguish acquired, saved, and
+policy-discarded frames.
 
 ## M4 Windows end-to-end operation
 

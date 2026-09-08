@@ -54,7 +54,7 @@ from usac_protocol.messages import (
     encode_stop_request,
 )
 
-from .device_executor import DeviceReadback
+from .device_executor import DeviceReadback, DeviceUnavailable
 from .core_store import CaptureStore
 from .periodic_lease import LeaseRenewal, PeriodicSchedule
 
@@ -150,7 +150,7 @@ class BridgeDeviceClient:
                 if self._replay_store is None:
                     raise RuntimeError("bridge replay arrived without configured core storage")
                 delivery = self.capture_delivery(capture.capture_id)
-                result = self._replay_store.commit_delivery(delivery)
+                result = self._replay_store.commit_replayed_delivery(delivery)
                 self.confirm_capture(result.receipt)
                 self.release_capture(capture.capture_id)
                 continue
@@ -432,10 +432,21 @@ class ReconnectableBridgeDeviceClient:
     only affects later calls and therefore cannot repeat CAPTURE or SET_CONFIG.
     """
 
-    def __init__(self, initial: BridgeDeviceClient) -> None:
+    def __init__(self, initial: BridgeDeviceClient | None = None) -> None:
         self._lock = threading.RLock()
         self._client = initial
         self._session_generation = 0
+
+    @property
+    def connected(self) -> bool:
+        """Report whether an initialized bridge session is currently published."""
+
+        with self._lock:
+            return self._client is not None
+
+    @property
+    def backend_kind(self) -> str:
+        return "BRIDGE"
 
     @property
     def session_generation(self) -> int:
@@ -449,18 +460,50 @@ class ReconnectableBridgeDeviceClient:
             previous = self._client
             self._client = replacement
             self._session_generation += 1
-        previous.close()
+        if previous is not None:
+            previous.close()
+
+    def close(self) -> None:
+        """Retire the current session without requiring one to exist."""
+
+        with self._lock:
+            previous = self._client
+            self._client = None
+            if previous is not None:
+                self._session_generation += 1
+        if previous is not None:
+            previous.close()
 
     def __getattr__(self, name: str):
         if name.startswith("_"):
             raise AttributeError(name)
         with self._lock:
+            if self._client is None:
+                raise DeviceUnavailable("bridge device is not connected")
             attribute = getattr(self._client, name)
             if not callable(attribute):
                 return attribute
 
         def invoke(*args, **kwargs):
+            failed_client = None
+            failure = None
             with self._lock:
-                return getattr(self._client, name)(*args, **kwargs)
+                if self._client is None:
+                    raise DeviceUnavailable("bridge device is not connected")
+                client = self._client
+                try:
+                    return getattr(client, name)(*args, **kwargs)
+                except (ConnectionError, TimeoutError, OSError) as error:
+                    # Publish the disconnect before returning to HTTP callers.
+                    # A later replacement is a new generation and never retries
+                    # the failed side effect on the retired stream.
+                    if self._client is client:
+                        self._client = None
+                        self._session_generation += 1
+                        failed_client = client
+                    failure = error
+            if failed_client is not None:
+                failed_client.close()
+            raise DeviceUnavailable("bridge session was lost") from failure
 
         return invoke

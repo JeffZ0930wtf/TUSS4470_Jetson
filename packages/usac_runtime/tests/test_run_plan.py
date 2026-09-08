@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from usac_runtime.core_store import SavePolicy
 from usac_runtime.parameter_service import ConfigState, ParameterService
 from usac_runtime.run_plan import RunPlanError, RunPlanV1, SweepPlan, compile_run_steps
 
@@ -28,8 +29,10 @@ def test_default_run_plan_is_one_software_capture(service: ParameterService) -> 
         "loop_delay_ms": 0,
         "trigger_source": "SOFTWARE",
         "sync_timeout_ms": 0,
+        "save_policy": "SAVE_ALL",
         "sweep": None,
     }
+    assert plan.save_policy is SavePolicy.SAVE_ALL
     assert len(steps) == 1
     assert steps[0].snapshot.state is ConfigState.VALIDATED
     assert steps[0].sweep_index is None

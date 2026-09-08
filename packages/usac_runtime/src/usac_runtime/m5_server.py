@@ -49,16 +49,19 @@ def create_bridge_api(
     *,
     schema_path: Path,
     database_path: Path,
-    connection: socket.socket,
+    connection: socket.socket | None,
     timeout_s: float,
 ):
     """Build the same application around one physical bridge connection."""
 
     service = ParameterService.from_schema_file(schema_path, smclk_hz=24_000_000)
     store = CaptureStore(database_path)
-    device = ReconnectableBridgeDeviceClient(
-        BridgeDeviceClient(connection, timeout_s=timeout_s, replay_store=store)
+    initial = (
+        None
+        if connection is None
+        else BridgeDeviceClient(connection, timeout_s=timeout_s, replay_store=store)
     )
+    device = ReconnectableBridgeDeviceClient(initial)
     application = AcquisitionApplication(
         service,
         SingleDeviceExecutor(service, device),
@@ -147,20 +150,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener.bind((args.bridge_host, args.bridge_port))
         listener.listen(1)
-        listener.settimeout(args.bridge_wait_s)
-        try:
-            connection, _ = listener.accept()
-        except TimeoutError as error:
-            listener.close()
-            raise SystemExit("timed out waiting for the configured bridge") from error
         api = create_bridge_api(
             schema_path=args.schema,
             database_path=args.database,
-            connection=connection,
+            connection=None,
             timeout_s=args.bridge_wait_s,
         )
         device = api.state.bridge_device
         store = api.state.capture_store
+        # HTTP is now independent of device availability. The acceptor publishes
+        # a fully initialized bridge session later, so schema and draft editing
+        # remain usable while the hardware is unplugged.
         listener.settimeout(None)
         replacement_worker = threading.Thread(
             target=_accept_replacement_bridges,

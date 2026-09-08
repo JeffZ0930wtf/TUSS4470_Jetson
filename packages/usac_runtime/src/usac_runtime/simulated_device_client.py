@@ -60,6 +60,14 @@ class SimulatedDeviceClient:
         self._capture_wire_frames: dict[bytes, bytes] = {}
         self._hello()
 
+    @property
+    def connected(self) -> bool:
+        return True
+
+    @property
+    def backend_kind(self) -> str:
+        return "SIMULATOR"
+
     def _next_sequence(self) -> int:
         self._sequence += 1
         return self._sequence

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import sqlite3
 import time
 
 from fastapi.testclient import TestClient
+import pytest
 
 from usac_protocol.simulator import SimulatedDevice
 from usac_runtime.application import AcquisitionApplication
-from usac_runtime.core_store import CaptureStore
+from usac_runtime.core_store import CaptureStore, SavePolicy
 from usac_runtime.device_executor import SingleDeviceExecutor
 from usac_runtime.m5_api import create_api
 from usac_runtime.parameter_service import ParameterService
@@ -64,21 +67,39 @@ def test_web_console_is_served_without_hardcoded_parameter_table() -> None:
     styles = api.get("/assets/m5-styles.css")
 
     assert page.status_code == 200
-    assert "Ultrasonic acquisition console" in page.text
+    assert "超声采集控制台" in page.text
     assert script.status_code == 200
     assert 'fetchJson("/api/v1/config/schema")' in script.text
     assert "BPF_HPF_FREQ" not in script.text
-    assert 'id="sweep-start-delay"' in page.text
+    assert 'id="capture-mode"' in page.text
+    assert 'id="save-policy"' in page.text
+    assert 'id="capture-start"' in page.text
+    assert 'id="capture-stop"' in page.text
+    assert 'id="periodic-fields"' in page.text
+    assert 'id="sweep-fields"' in page.text
+    assert 'id="periodic-start"' not in page.text
+    assert 'id="sweep-start"' not in page.text
     assert 'id="baseline-button"' in page.text
     assert 'id="save-draft-button"' in page.text
     assert 'fetchJson("/api/v1/config", { method: "PATCH"' in script.text
-    assert 'start_delay_ms: Number($("#sweep-start-delay").value)' in script.text
+    assert 'const RUN_PLAN_FIELDS = new Set' in script.text
+    assert 'save_policy: $("#save-policy").value' in script.text
+    assert 'const DEVICE_HEALTH_LABELS' in script.text
+    assert 'function startCapture()' in script.text
     assert "function loadBaseline()" in script.text
     assert 'className = "field-state"' in script.text
     assert 'id="capture-history"' in page.text
     assert 'id="history-more"' in page.text
+    assert 'id="language-toggle"' in page.text
+    assert 'data-i18n="app.title"' in page.text
     assert 'fetchJson(`/api/v1/captures?${query}`)' in script.text
     assert '/samples`' in script.text
+    assert "const I18N =" in script.text
+    assert 'localStorage.getItem("usac-language")' in script.text
+    assert "function setLanguage(language)" in script.text
+    assert '"device.health.normal"' in script.text
+    assert '"capture.status.singleComplete"' in script.text
+    assert '"history.empty"' in script.text
     assert styles.status_code == 200
     assert "--signal-blue" in styles.text
 
@@ -94,6 +115,32 @@ def test_device_endpoint_includes_session_identity_and_firmware() -> None:
         "patch": 0,
         "build": 1,
     }
+
+
+def test_interrupted_session_remains_queryable_after_core_restart(tmp_path: Path) -> None:
+    path = tmp_path / "captures.sqlite3"
+    session_id = "52" * 16
+    CaptureStore(path).save_session_summary(
+        {
+            "session_id": session_id,
+            "kind": "PERIODIC",
+            "state": "RUNNING",
+            "save_policy": "SAVE_NONE",
+            "requested_count": 10,
+            "acquired_count": 3,
+            "saved_count": 0,
+            "discarded_by_policy_count": 3,
+            "last_capture_id": None,
+            "last_saved_capture_id": None,
+            "terminal_reason": None,
+        }
+    )
+
+    response = client(path).get(f"/api/v1/sessions/{session_id}")
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "INTERRUPTED"
+    assert response.json()["terminal_reason"] == "CORE_RESTART"
 
 
 def test_validate_reports_field_error_without_mutating_current_config() -> None:
@@ -208,6 +255,104 @@ def test_capture_commits_raw_samples_context_and_events_before_success(
     assert samples.content[:8] == bytes.fromhex("d300f8001d014201")
 
 
+def test_capture_storage_decision_is_accounted_before_bridge_confirmation(
+    tmp_path: Path,
+) -> None:
+    class ConfirmationFails(SimulatedDeviceClient):
+        def confirm_capture(self, receipt) -> None:
+            raise ConnectionError("bridge disconnected before confirmation")
+
+    path = tmp_path / "confirm-failure.sqlite3"
+    service = ParameterService.from_schema_file(SCHEMA_PATH, smclk_hz=24_000_000)
+    device = ConfirmationFails(SimulatedDevice())
+    store = CaptureStore(path)
+    application = AcquisitionApplication(
+        service,
+        SingleDeviceExecutor(service, device),
+        device,
+        store=store,
+    )
+    applied = application.apply_config({}, expected_etag='"' + "0" * 64 + '"')
+
+    with pytest.raises(ConnectionError, match="before confirmation"):
+        application.capture_once(
+            expected_profile_sha256=str(applied["actual"]["profile_sha256"]),
+            expected_device_config_crc32=int(applied["actual"]["device_config_crc32"]),
+            trigger_source="SOFTWARE",
+            sync_timeout_ms=0,
+            save_policy=SavePolicy.SAVE_ALL,
+        )
+
+    with sqlite3.connect(path) as connection:
+        raw = connection.execute(
+            "SELECT summary_json FROM acquisition_sessions"
+        ).fetchone()[0]
+    summary = json.loads(raw)
+    assert summary["state"] == "FAILED"
+    assert summary["acquired_count"] == 1
+    assert summary["saved_count"] == 1
+    assert summary["last_saved_capture_id"] == summary["last_capture_id"]
+
+
+def test_single_capture_save_none_is_transient_and_not_in_history(tmp_path: Path) -> None:
+    api = client(tmp_path / "captures.sqlite3")
+    applied = api.put(
+        "/api/v1/config",
+        headers={"If-Match": ZERO_ETAG},
+        json={"changes": {}},
+    ).json()
+
+    response = api.post(
+        "/api/v1/captures",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+            "trigger_source": "SOFTWARE",
+            "sync_timeout_ms": 0,
+            "save_policy": "SAVE_NONE",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["resolution"] == "DISCARDED_BY_POLICY"
+    assert payload["save_policy"] == "SAVE_NONE"
+    assert payload["acquired_count"] == 1
+    assert payload["saved_count"] == 0
+    assert payload["discarded_by_policy_count"] == 1
+    assert api.get("/api/v1/captures").json()["items"] == []
+    samples = api.get(f"/api/v1/captures/{payload['capture_id']}/samples")
+    assert samples.status_code == 200
+    assert samples.headers["x-usac-storage"] == "TRANSIENT"
+    assert len(samples.content) == 4096
+
+
+def test_single_capture_save_last_is_archived_like_save_all(tmp_path: Path) -> None:
+    api = client(tmp_path / "captures.sqlite3")
+    applied = api.put(
+        "/api/v1/config",
+        headers={"If-Match": ZERO_ETAG},
+        json={"changes": {}},
+    ).json()
+
+    response = api.post(
+        "/api/v1/captures",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+            "save_policy": "SAVE_LAST",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["resolution"] == "RAW_ARCHIVED"
+    assert payload["save_policy"] == "SAVE_LAST"
+    assert payload["saved_count"] == 1
+    assert payload["discarded_by_policy_count"] == 0
+    assert api.get(f"/api/v1/captures/{payload['capture_id']}").status_code == 200
+
+
 def test_capture_requires_current_applied_identity(tmp_path: Path) -> None:
     api = client(tmp_path / "captures.sqlite3")
 
@@ -289,6 +434,79 @@ def test_finite_periodic_session_renews_persists_and_completes(tmp_path: Path) -
     )
 
 
+def test_periodic_save_last_archives_only_the_final_capture(tmp_path: Path) -> None:
+    database = tmp_path / "captures.sqlite3"
+    api = client(database)
+    applied = api.put(
+        "/api/v1/config", headers={"If-Match": ZERO_ETAG}, json={"changes": {}}
+    ).json()
+    started = api.post(
+        "/api/v1/periodic/start",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+            "period_us": 100_000,
+            "capture_count": 3,
+            "lease_timeout_ms": 1_000,
+            "save_policy": "SAVE_LAST",
+        },
+    ).json()
+
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        session = api.get(f"/api/v1/sessions/{started['session_id']}").json()
+        if session["state"] == "COMPLETED":
+            break
+        time.sleep(0.01)
+
+    assert session["state"] == "COMPLETED"
+    assert session["acquired_count"] == 3
+    assert session["saved_count"] == 1
+    assert session["discarded_by_policy_count"] == 2
+    assert session["last_saved_capture_id"] == session["last_capture_id"]
+    history = api.get("/api/v1/captures").json()["items"]
+    assert [item["capture_id"] for item in history] == [session["last_capture_id"]]
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM configuration_contexts").fetchone()[0] == 0
+
+
+def test_periodic_save_none_keeps_only_bounded_transient_latest(tmp_path: Path) -> None:
+    database = tmp_path / "captures.sqlite3"
+    api = client(database)
+    applied = api.put(
+        "/api/v1/config", headers={"If-Match": ZERO_ETAG}, json={"changes": {}}
+    ).json()
+    started = api.post(
+        "/api/v1/periodic/start",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+            "period_us": 100_000,
+            "capture_count": 3,
+            "lease_timeout_ms": 1_000,
+            "save_policy": "SAVE_NONE",
+        },
+    ).json()
+
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        session = api.get(f"/api/v1/sessions/{started['session_id']}").json()
+        if session["state"] == "COMPLETED":
+            break
+        time.sleep(0.01)
+
+    assert session["state"] == "COMPLETED"
+    assert session["acquired_count"] == 3
+    assert session["saved_count"] == 0
+    assert session["discarded_by_policy_count"] == 3
+    assert api.get("/api/v1/captures").json()["items"] == []
+    samples = api.get(f"/api/v1/captures/{session['last_capture_id']}/samples")
+    assert samples.status_code == 200
+    assert samples.headers["x-usac-storage"] == "TRANSIENT"
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM configuration_contexts").fetchone()[0] == 0
+
+
 def test_infinite_periodic_session_can_be_stopped_without_waiting_for_capture(
     tmp_path: Path,
 ) -> None:
@@ -362,6 +580,38 @@ def test_sweep_persists_each_step_context_and_restores_baseline(tmp_path: Path) 
     assert all(item["readback_config"]["sample_interval_ticks"] == 120 for item in captures)
     assert [item["run_plan"]["sweep_index"] for item in captures] == [0, 0, 1, 1]
     assert api.get("/api/v1/config").json()["requested"]["BURST_PULSE"] == 1
+
+
+def test_sweep_save_last_archives_only_the_final_step(tmp_path: Path) -> None:
+    api = client(tmp_path / "captures.sqlite3")
+    applied = api.put(
+        "/api/v1/config", headers={"If-Match": ZERO_ETAG}, json={"changes": {}}
+    ).json()
+    started = api.post(
+        "/api/v1/sweeps",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+            "field": "BURST_PULSE",
+            "values": [1, 2, 3],
+            "loops": 1,
+            "save_policy": "SAVE_LAST",
+        },
+    ).json()
+
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        session = api.get(f"/api/v1/sweeps/{started['session_id']}").json()
+        if session["state"] == "COMPLETED":
+            break
+        time.sleep(0.01)
+
+    assert session["state"] == "COMPLETED"
+    assert session["acquired_count"] == 3
+    assert session["saved_count"] == 1
+    assert session["discarded_by_policy_count"] == 2
+    archived = api.get(f"/api/v1/captures/{session['last_saved_capture_id']}").json()
+    assert archived["requested_config"]["BURST_PULSE"] == 3
 
 
 def test_sweep_stop_interrupts_start_delay_without_capture(tmp_path: Path) -> None:
@@ -522,7 +772,7 @@ def test_capture_history_can_be_filtered_by_session(tmp_path: Path) -> None:
     }
 
 
-def test_finished_session_cache_is_bounded(tmp_path: Path) -> None:
+def test_finished_sessions_remain_queryable_after_memory_cache_pruning(tmp_path: Path) -> None:
     api = client(tmp_path / "captures.sqlite3", session_history_limit=1)
     applied = api.put(
         "/api/v1/config",
@@ -555,5 +805,9 @@ def test_finished_session_cache_is_bounded(tmp_path: Path) -> None:
             time.sleep(0.01)
         assert session["state"] == "STOPPED"
 
-    assert api.get(f"/api/v1/sessions/{session_ids[0]}").status_code == 404
-    assert api.get(f"/api/v1/sessions/{session_ids[1]}").status_code == 200
+    first = api.get(f"/api/v1/sessions/{session_ids[0]}")
+    second = api.get(f"/api/v1/sessions/{session_ids[1]}")
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["state"] == "STOPPED"
+    assert second.json()["state"] == "STOPPED"

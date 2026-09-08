@@ -103,6 +103,7 @@ def test_capture_binds_request_to_applied_config(capsys) -> None:
             "expected_device_config_crc32": 7,
             "trigger_source": "SOFTWARE",
             "sync_timeout_ms": 0,
+            "save_policy": "SAVE_ALL",
         },
         None,
     )
@@ -130,7 +131,42 @@ def test_sweep_parses_values_as_one_json_array(capsys) -> None:
     assert client.calls[-1][1] == "/api/v1/sweeps"
     assert client.calls[-1][2]["values"] == [1, 2, 3]
     assert client.calls[-1][2]["loops"] == 2
+    assert client.calls[-1][2]["save_policy"] == "SAVE_ALL"
     assert json.loads(capsys.readouterr().out) == {"ok": True}
+
+
+def test_all_capture_modes_forward_selected_save_policy(capsys) -> None:
+    client = FakeApiClient()
+
+    assert main(["capture", "--save-policy", "SAVE_NONE"], client=client) == 0
+    assert main(
+        [
+            "periodic-start",
+            "--period-us",
+            "100000",
+            "--save-policy",
+            "SAVE_LAST",
+        ],
+        client=client,
+    ) == 0
+    assert main(
+        [
+            "sweep",
+            "BURST_PULSE",
+            "[1,2]",
+            "--save-policy",
+            "SAVE_NONE",
+        ],
+        client=client,
+    ) == 0
+
+    posts = [call for call in client.calls if call[0] == "POST"]
+    assert [call[2]["save_policy"] for call in posts] == [
+        "SAVE_NONE",
+        "SAVE_LAST",
+        "SAVE_NONE",
+    ]
+    capsys.readouterr()
 
 
 def test_history_requests_one_bounded_cursor_page(capsys) -> None:
