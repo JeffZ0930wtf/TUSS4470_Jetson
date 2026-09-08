@@ -12,7 +12,7 @@ gates are all complete.
 
 ## Status
 
-**Open — ARM64 and Git closure remain.** The reviewed M5 candidate
+**Open — Git closure remains.** The reviewed M5 candidate
 using the Timer_B0 CCR2 DMA trigger has passed the default D10x4 two-frame,
 parameter endpoint, finite run-plan, periodic/STOP, renewal, lease-expiry,
 OUT3/OUT4 event, and Master/Slave synchronization gates through COM9, bridge,
@@ -21,8 +21,8 @@ also pass without restarting either host service. The 100, 1000, and all three
 seeded-random long-sequence normal-path gates now pass their count, raw-data,
 SQLite, spool, and bounded-resource criteria. The first-version host-interface/
 persistence checklist and final offline regression are now complete. M5 remains
-open only for the native ARM64 image check, final documentation reconciliation,
-and required Git milestone closure.
+open only for final documentation reconciliation and the required Git milestone
+closure.
 The 10000 ms lease and non-lossless 5 Hz scheduling limitations remain explicit
 M7 work and are not presented as product readiness.
 
@@ -84,6 +84,16 @@ M7 work and are not presented as product readiness.
   M0/M2/M3/M3-diagnostic builds and static audits, and all three M5 firmware
   tests. The M5 ELF size and SHA-256 remained exactly unchanged, confirming
   that the build-only guard did not alter the hardware-tested M5 image.
+
+## Jetson ARM64 build evidence
+
+On the Jetson host, commit `2bb77e8` was checked out in the organized temporary
+worktree `/home/yizhouzhao/workspace/TUSS4470_verification/worktrees/m5-arm64`.
+`deploy/Dockerfile.core` built natively with `docker buildx --platform
+linux/arm64 --load`; the resulting `tuss4470-acquisition-core:m5-verify` image
+reported `arm64 linux`. `docker compose -f deploy/compose.jetson.yaml config
+--quiet` also passed. No container was started, no `/dev/ttyACM*` device was
+mapped, and this build check produced no hardware access or Burst.
 
 ## Two-frame repeatability evidence
 
