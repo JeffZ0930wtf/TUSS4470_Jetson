@@ -751,7 +751,7 @@ git status --short
 Expected: repository worktree is clean. The external controlled roadmap is
 verified separately because it is outside this Git repository.
 
-- [ ] **Step 5: Integrate and push after final review**
+- [x] **Step 5: Integrate and push after final review**
 
 From the clean main checkout:
 
@@ -768,7 +768,7 @@ git ls-remote origin refs/heads/main
 Expected: merged tests pass and local/remote 40-character SHAs match. Do not
 force-push.
 
-- [ ] **Step 6: Sync and run bounded Jetson verification**
+- [x] **Step 6: Sync and run bounded Jetson verification**
 
 On the Jetson formal checkout:
 

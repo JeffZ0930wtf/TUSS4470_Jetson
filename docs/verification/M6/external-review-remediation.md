@@ -53,3 +53,30 @@ not mark M7 complete, and does not replace the real-hardware evidence already
 recorded in `summary.md` and `jetson-validation.md`. Instrument-calibrated
 timing, long unattended reliability, security hardening, and the accepted
 lease/scheduling limitations remain M7 work.
+
+## Jetson synchronization check
+
+The Jetson formal checkout was clean and was fast-forwarded from
+`890240306619d1de788b189c919baf9c35a67ce8` to
+`35b3410fb6b750955bafed0c5a1d8620dabff264`. Direct Jetson-to-GitHub HTTPS did
+not respond within the bounded check, so the exact already-pushed `main`
+history was transferred as a verified Git bundle and fetched locally. Commit
+identity and history were preserved.
+
+The native `linux/arm64` image rebuilt successfully and the corrected
+entrypoint-override protocol smoke exited successfully. No container mapped a
+USB device and no acquisition command was sent. Three environment limitations
+were observed and were not concealed as passes:
+
+- the formal checkout's host `.venv` lacks the development dependency
+  `fastapi`, so pytest stopped during collection;
+- Node is not installed on the Jetson host, so the Node VM regression could
+  not run there;
+- the active Docker builder advertises only `linux/arm64` and
+  `/proc/sys/fs/binfmt_misc/qemu-x86_64` is absent, so the bounded AMD64 export
+  stopped with `exec format error` at the first target-architecture `RUN`.
+
+Windows remains the complete offline source/firmware gate for this patch. The
+Jetson result proves the R7 ARM64 smoke no longer launches a persistent server;
+it does not claim that missing host development tools or AMD64 emulation were
+restored.
