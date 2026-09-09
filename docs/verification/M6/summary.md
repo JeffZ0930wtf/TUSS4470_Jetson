@@ -10,11 +10,11 @@ controlled roadmap remains authoritative for scope and milestone state.
 
 ## Status
 
-**Closure candidate — 2026-09-09.** All M6 functional, cross-platform, and
-real-hardware checks are complete. The status becomes **Closed** only after the
-full regressions pass, the prescribed `milestone(M6)` commit reaches
-`origin/main`, local/remote SHA values match, Jetson main is synchronized, and
-the completed worktrees are cleaned up.
+**Repository closure in progress — 2026-09-09.** All M6 functional,
+cross-platform, real-hardware, and final regression checks are complete. The
+status becomes **Closed** only after the prescribed `milestone(M6)` commit
+reaches `origin/main`, local/remote SHA values match, Jetson main is
+synchronized, and the completed worktrees are cleaned up.
 
 ## Host 3.0 increment
 

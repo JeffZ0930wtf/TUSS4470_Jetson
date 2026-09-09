@@ -17,11 +17,12 @@ features and does not predict SOC or SOH.
 - M0 builds tools and a non-flashed firmware skeleton only. It must not trigger
   TUSS4470 transmission.
 - USB-only operation is limited to development and no-Burst diagnostics.
-- Transmission is limited to the M3 controlled path: approved Standard power,
-  external VPWR 7.0 V, internal VDRV 5 V, SPI readback, VDRV_READY, fault
-  checks, the pin-40-to-pin-38 loopback gate, `d10x4_v1`, and one explicitly
-  authorized `Pulse=1` capture. M2 still authorizes no transmission, and M4
-  must not bypass the M3 gate.
+- Transmission always requires approved Standard power, external VPWR 7.0 V,
+  internal VDRV 5 V, SPI readback, VDRV_READY, fault checks, an applied safe
+  profile, and explicit operator authorization. M3 established the first
+  `d10x4_v1` Pulse=1 gate; M5/M6 extend it to the validated finite parameter,
+  periodic, synchronization, and event paths without permitting continuous or
+  unbounded driver activation. M2 still authorizes no transmission.
 - Never commit captures, spool files, SQLite databases, credentials, firmware
   binaries, or large instrument exports.
 
