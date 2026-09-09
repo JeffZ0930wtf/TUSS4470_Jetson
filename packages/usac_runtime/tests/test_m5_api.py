@@ -390,6 +390,50 @@ def test_single_capture_save_none_is_transient_and_not_in_history(tmp_path: Path
     assert len(samples.content) == 4096
 
 
+def test_archived_and_transient_capture_metadata_have_the_same_contract(
+    tmp_path: Path,
+) -> None:
+    def capture_with_policy(name: str, policy: str) -> dict[str, object]:
+        api = client(tmp_path / f"{name}.sqlite3")
+        applied = api.put(
+            "/api/v1/config",
+            headers={"If-Match": ZERO_ETAG},
+            json={"changes": {}},
+        ).json()
+        response = api.post(
+            "/api/v1/captures",
+            json={
+                "expected_profile_sha256": applied["actual"]["profile_sha256"],
+                "expected_device_config_crc32": applied["actual"][
+                    "device_config_crc32"
+                ],
+                "save_policy": policy,
+            },
+        )
+        assert response.status_code == 201
+        return response.json()
+
+    archived = capture_with_policy("archived", "SAVE_ALL")
+    transient = capture_with_policy("transient", "SAVE_NONE")
+    for name in (
+        "adc_bits",
+        "sample_encoding",
+        "vref_mv",
+        "smclk_nominal_hz",
+        "smclk_calibrated_hz",
+        "frame_start_tick48",
+        "t_trigger_offset_ticks",
+        "adc0_hold_offset_ticks",
+        "adc_aperture_ns",
+        "trigger_to_tx_output_ns",
+        "calibration_version",
+        "out3_start_level",
+        "out4_start_level",
+        "quality_flags",
+    ):
+        assert archived[name] == transient[name]
+
+
 def test_single_capture_save_last_is_archived_like_save_all(tmp_path: Path) -> None:
     api = client(tmp_path / "captures.sqlite3")
     applied = api.put(

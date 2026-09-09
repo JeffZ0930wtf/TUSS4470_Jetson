@@ -153,6 +153,41 @@ def test_core_store_commits_raw_frame_samples_and_metadata(tmp_path: Path) -> No
     assert record.interpolated is False
 
 
+def test_capture_record_metadata_comes_from_authoritative_wire_frame(tmp_path: Path) -> None:
+    frame = decode_frame(_raw_capture())
+    capture = replace(decode_capture_data(frame.payload), smclk_calibrated_hz=0)
+    raw_frame = encode_frame(
+        Frame(
+            MessageType.CAPTURE_DATA,
+            frame.sequence,
+            encode_capture_data(capture),
+            frame.flags,
+        )
+    )
+    store = CaptureStore(tmp_path / "frame-metadata.sqlite3")
+
+    result = store.commit_delivery(_delivery(raw_frame))
+    record = store.get_capture(result.receipt.capture_id)
+
+    for name in (
+        "adc_bits",
+        "sample_encoding",
+        "vref_mv",
+        "smclk_nominal_hz",
+        "smclk_calibrated_hz",
+        "frame_start_tick48",
+        "t_trigger_offset_ticks",
+        "adc0_hold_offset_ticks",
+        "adc_aperture_ns",
+        "trigger_to_tx_output_ns",
+        "calibration_version",
+        "out3_start_level",
+        "out4_start_level",
+    ):
+        assert getattr(record, name) == getattr(capture, name)
+    assert record.smclk_calibrated_hz == 0
+
+
 def test_core_store_is_idempotent_for_identical_delivery(tmp_path: Path) -> None:
     store = CaptureStore(tmp_path / "acquisition.sqlite3")
 

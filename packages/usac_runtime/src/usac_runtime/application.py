@@ -283,6 +283,26 @@ class AcquisitionApplication:
             raise DeviceUnavailable("device is not connected")
 
     @staticmethod
+    def _frame_metadata(capture: CaptureData | CaptureRecord) -> dict[str, int]:
+        """Expose acquisition metadata exactly as encoded by the device frame."""
+
+        return {
+            "adc_bits": capture.adc_bits,
+            "sample_encoding": capture.sample_encoding,
+            "vref_mv": capture.vref_mv,
+            "smclk_nominal_hz": capture.smclk_nominal_hz,
+            "smclk_calibrated_hz": capture.smclk_calibrated_hz,
+            "frame_start_tick48": capture.frame_start_tick48,
+            "t_trigger_offset_ticks": capture.t_trigger_offset_ticks,
+            "adc0_hold_offset_ticks": capture.adc0_hold_offset_ticks,
+            "adc_aperture_ns": capture.adc_aperture_ns,
+            "trigger_to_tx_output_ns": capture.trigger_to_tx_output_ns,
+            "calibration_version": capture.calibration_version,
+            "out3_start_level": capture.out3_start_level,
+            "out4_start_level": capture.out4_start_level,
+        }
+
+    @staticmethod
     def _capture_payload(
         record: CaptureRecord,
         *,
@@ -300,6 +320,7 @@ class AcquisitionApplication:
             "burst_period_ticks": record.burst_period_ticks,
             "sample_count": record.sample_count,
             "pretrigger_count": record.pretrigger_count,
+            **AcquisitionApplication._frame_metadata(record),
             "quality_flags": record.quality_flags,
             "tuss_dev_stat": record.tuss_dev_stat,
             "transport_crc32": record.transport_crc32,
@@ -400,6 +421,7 @@ class AcquisitionApplication:
                 "burst_period_ticks": capture.burst_period_ticks,
                 "sample_count": capture.sample_count,
                 "pretrigger_count": capture.pretrigger_count,
+                **self._frame_metadata(capture),
                 "quality_flags": capture.quality_flags,
                 "tuss_dev_stat": capture.tuss_dev_stat,
                 "transport_crc32": result.receipt.inner_frame_crc32,

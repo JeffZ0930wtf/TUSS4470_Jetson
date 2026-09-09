@@ -61,8 +61,21 @@ class CaptureRecord:
     burst_period_ticks: int
     sample_count: int
     pretrigger_count: int
+    adc_bits: int
+    sample_encoding: int
+    vref_mv: int
+    smclk_nominal_hz: int
+    smclk_calibrated_hz: int
+    frame_start_tick48: int
+    t_trigger_offset_ticks: int
+    adc0_hold_offset_ticks: int
+    adc_aperture_ns: int
+    trigger_to_tx_output_ns: int
+    calibration_version: int
     quality_flags: int
     tuss_dev_stat: int
+    out3_start_level: int
+    out4_start_level: int
     transport_crc32: int
     wire_frame: bytes
     sample_blob: bytes
@@ -1250,6 +1263,8 @@ class CaptureStore:
         if len(rows) != 1:
             raise KeyError(f"capture_id {capture_id.hex()} was not found uniquely")
         row = rows[0]
+        wire_frame = bytes(row[14])
+        capture = decode_capture_data(decode_frame(wire_frame).payload)
         return CaptureRecord(
             capture_id=bytes(row[0]),
             device_id=bytes(row[1]),
@@ -1262,10 +1277,23 @@ class CaptureStore:
             burst_period_ticks=int(row[8]),
             sample_count=int(row[9]),
             pretrigger_count=int(row[10]),
+            adc_bits=capture.adc_bits,
+            sample_encoding=capture.sample_encoding,
+            vref_mv=capture.vref_mv,
+            smclk_nominal_hz=capture.smclk_nominal_hz,
+            smclk_calibrated_hz=capture.smclk_calibrated_hz,
+            frame_start_tick48=capture.frame_start_tick48,
+            t_trigger_offset_ticks=capture.t_trigger_offset_ticks,
+            adc0_hold_offset_ticks=capture.adc0_hold_offset_ticks,
+            adc_aperture_ns=capture.adc_aperture_ns,
+            trigger_to_tx_output_ns=capture.trigger_to_tx_output_ns,
+            calibration_version=capture.calibration_version,
             quality_flags=int(row[11]),
             tuss_dev_stat=int(row[12]),
+            out3_start_level=capture.out3_start_level,
+            out4_start_level=capture.out4_start_level,
             transport_crc32=int(row[13]),
-            wire_frame=bytes(row[14]),
+            wire_frame=wire_frame,
             sample_blob=bytes(row[15]),
             requested_config=json.loads(row[16]),
             encoded_config=json.loads(row[17]),

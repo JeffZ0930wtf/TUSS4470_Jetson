@@ -415,7 +415,7 @@ Expected: wrapper/session invalidation and Sweep response tests pass.
 - Produces: the same additive metadata fields for archived and transient capture
   payloads.
 
-- [ ] **Step 1: Write SAVE_ALL/SAVE_NONE metadata parity tests**
+- [x] **Step 1: Write SAVE_ALL/SAVE_NONE metadata parity tests**
 
 For one deterministic simulated frame, assert both payloads expose:
 
@@ -435,7 +435,7 @@ assert save_all["quality_flags"] == save_none["quality_flags"]
 Also assert `smclk_calibrated_hz == 0` remains zero when the input frame says it
 is unknown.
 
-- [ ] **Step 2: Run the metadata tests and verify RED**
+- [x] **Step 2: Run the metadata tests and verify RED**
 
 Run:
 
@@ -445,7 +445,7 @@ Run:
 
 Expected: at least the 13 additive public fields are missing.
 
-- [ ] **Step 3: Populate CaptureRecord from its authoritative wire frame**
+- [x] **Step 3: Populate CaptureRecord from its authoritative wire frame**
 
 Add the 13 fields to `CaptureRecord`. In `get_capture`, decode once and populate
 them exactly:
@@ -471,13 +471,13 @@ return CaptureRecord(
 )
 ```
 
-- [ ] **Step 4: Use one serializer for archived and transient metadata**
+- [x] **Step 4: Use one serializer for archived and transient metadata**
 
 Add a helper whose keys exactly match `PUBLIC_FRAME_FIELDS`, use it from
 `_capture_payload`, and merge the same keys into transient payloads. Do not
 derive, normalize, or substitute any calibration value.
 
-- [ ] **Step 5: Verify GREEN and commit R4**
+- [x] **Step 5: Verify GREEN and commit R4**
 
 Run:
 
