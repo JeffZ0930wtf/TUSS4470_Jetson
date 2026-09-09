@@ -502,20 +502,24 @@ class AcquisitionApplication:
         with self._session_lock:
             self._operation_activity = "CAPTURING_SINGLE"
         try:
-            capture = self._executor.capture_once(
+            def resolve(executed: ExecutedCapture) -> _PersistedCapture:
+                if not isinstance(executed.capture, CaptureData):
+                    raise TypeError("device client returned an unsupported capture object")
+                return self._persist_capture(
+                    executed.capture,
+                    run_plan=run_plan,
+                    snapshot=executed.snapshot,
+                    save_policy=storage_policy,
+                    session_id=session_id,
+                    on_resolved=record_resolved,
+                )
+
+            persisted = self._executor.capture_once(
                 expected_profile_sha256=expected_profile_sha256,
                 expected_device_config_crc32=expected_device_config_crc32,
                 trigger_source=trigger_source,
                 sync_timeout_ms=sync_timeout_ms,
-            )
-            if not isinstance(capture, CaptureData):
-                raise TypeError("device client returned an unsupported capture object")
-            persisted = self._persist_capture(
-                capture,
-                run_plan=run_plan,
-                save_policy=storage_policy,
-                session_id=session_id,
-                on_resolved=record_resolved,
+                on_capture=resolve,
             )
         except Exception as error:
             summary.update(
@@ -544,9 +548,9 @@ class AcquisitionApplication:
                 "discarded_by_policy_count": int(
                     persisted.resolution is CaptureResolution.DISCARDED_BY_POLICY
                 ),
-                "last_capture_id": capture.capture_id.hex(),
+                "last_capture_id": str(persisted.payload["capture_id"]),
                 "last_saved_capture_id": (
-                    capture.capture_id.hex()
+                    str(persisted.payload["capture_id"])
                     if persisted.resolution is CaptureResolution.RAW_ARCHIVED
                     else None
                 ),

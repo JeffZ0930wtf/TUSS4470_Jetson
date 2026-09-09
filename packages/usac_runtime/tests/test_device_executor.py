@@ -179,6 +179,64 @@ def test_periodic_delivery_callback_remains_inside_device_serialization(executor
     assert client.status_started.is_set()
 
 
+def test_single_capture_resolution_callback_remains_inside_device_serialization(
+    executor,
+) -> None:
+    worker, client = executor
+    applied = worker.apply_draft()
+    callback_started = threading.Event()
+    release_callback = threading.Event()
+    result = []
+
+    def resolve(executed):
+        callback_started.set()
+        assert release_callback.wait(timeout=1)
+        return executed
+
+    capture_thread = threading.Thread(
+        target=lambda: result.append(
+            worker.capture_once(
+                expected_profile_sha256=str(applied.actual["profile_sha256"]),
+                expected_device_config_crc32=int(
+                    applied.actual["device_config_crc32"]
+                ),
+                trigger_source="SOFTWARE",
+                sync_timeout_ms=0,
+                on_capture=resolve,
+            )
+        )
+    )
+    capture_thread.start()
+    assert callback_started.wait(timeout=1)
+
+    status_thread = threading.Thread(target=worker.status)
+    status_thread.start()
+    assert client.status_started.wait(timeout=0.05) is False
+
+    release_callback.set()
+    capture_thread.join(timeout=1)
+    status_thread.join(timeout=1)
+    assert result[0].snapshot == applied
+    assert client.status_started.is_set()
+
+
+def test_single_capture_snapshot_deep_copies_nested_configuration(executor) -> None:
+    worker, _client = executor
+    applied = worker.apply_draft()
+    applied.actual["nested_probe"] = {"values": [1]}
+
+    executed = worker.capture_once(
+        expected_profile_sha256=str(applied.actual["profile_sha256"]),
+        expected_device_config_crc32=int(applied.actual["device_config_crc32"]),
+        trigger_source="SOFTWARE",
+        sync_timeout_ms=0,
+        on_capture=lambda item: item,
+    )
+    applied.actual["nested_probe"]["values"].append(2)
+
+    assert executed.snapshot.actual["nested_probe"] == {"values": [1]}
+
+
 def test_run_plan_executes_sweep_under_one_lock_and_restores_baseline(executor) -> None:
     worker, client = executor
     baseline = worker.apply_draft()

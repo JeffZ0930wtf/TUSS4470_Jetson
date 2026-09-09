@@ -38,7 +38,7 @@ def test_semantic_configuration_round_trips_through_protocol_before_capture() ->
     )
 
     applied = executor.apply_draft()
-    capture = executor.capture_once(
+    executed = executor.capture_once(
         expected_profile_sha256=str(applied.actual["profile_sha256"]),
         expected_device_config_crc32=int(applied.actual["device_config_crc32"]),
         trigger_source="SOFTWARE",
@@ -48,10 +48,10 @@ def test_semantic_configuration_round_trips_through_protocol_before_capture() ->
     assert applied.state is ConfigState.APPLIED
     assert applied.readback["sample_interval_ticks"] == 731
     assert applied.readback["burst_period_ticks"] == 347
-    assert capture.sample_interval_ticks == 731
-    assert capture.burst_period_ticks == 347
-    assert len(capture.samples) == 2048
-    assert [event.channel for event in capture.events] == [3, 4]
+    assert executed.capture.sample_interval_ticks == 731
+    assert executed.capture.burst_period_ticks == 347
+    assert len(executed.capture.samples) == 2048
+    assert [event.channel for event in executed.capture.events] == [3, 4]
     assert client.last_acked_type is MessageType.CAPTURE_ONCE
 
 

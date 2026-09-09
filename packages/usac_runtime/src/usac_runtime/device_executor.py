@@ -7,10 +7,12 @@ second interface from inserting another configuration into that transaction.
 
 from __future__ import annotations
 
+from copy import deepcopy
 import threading
 from dataclasses import dataclass
 from typing import Callable
 from typing import Protocol
+from typing import TypeVar
 
 from usac_protocol.bridge_messages import BridgeCaptureDelivery, CaptureCommittedRequest
 from usac_protocol.config_v2 import AcquisitionConfigV2
@@ -24,6 +26,9 @@ from .parameter_service import (
 )
 from .periodic_lease import LeaseRenewal, PeriodicSchedule
 from .run_plan import RunPlanV1, compile_run_steps
+
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +58,17 @@ class ExecutedCapture:
     sweep_index: int | None
     loop_index: int
     snapshot: ConfigurationSnapshot
+
+
+def _deep_snapshot(snapshot: ConfigurationSnapshot) -> ConfigurationSnapshot:
+    """Detach capture metadata from every mutable value in shared config state."""
+
+    return ConfigurationSnapshot(
+        state=snapshot.state,
+        requested=deepcopy(snapshot.requested),
+        actual=deepcopy(snapshot.actual),
+        readback=deepcopy(snapshot.readback),
+    )
 
 
 class DeviceClient(Protocol):
@@ -230,23 +246,28 @@ class SingleDeviceExecutor:
         expected_device_config_crc32: int,
         trigger_source: str,
         sync_timeout_ms: int,
-    ) -> object:
-        """Run one capture only when the caller is bound to current APPLIED state."""
+        on_capture: Callable[[ExecutedCapture], T] | None = None,
+    ) -> ExecutedCapture | T:
+        """Capture and resolve its delivery before another device command enters."""
 
         with self._lock:
             self._refresh_session_unlocked()
-            if self._snapshot.state is not ConfigState.APPLIED or self._applied_config is None:
-                raise ConfigConflictError("no APPLIED configuration is available")
-            if self._applied_config.profile_sha256.hex() != expected_profile_sha256:
-                raise ConfigConflictError("expected profile does not match APPLIED profile")
-            if self._applied_config.device_config_crc32 != expected_device_config_crc32:
-                raise ConfigConflictError("expected configuration CRC does not match APPLIED profile")
-            self._validate_trigger(trigger_source, sync_timeout_ms)
-            return self._client.capture_once(
-                config=self._applied_config,
-                trigger_source=trigger_source,
-                sync_timeout_ms=sync_timeout_ms,
+            self._require_applied_identity_unlocked(
+                expected_profile_sha256,
+                expected_device_config_crc32,
             )
+            self._validate_trigger(trigger_source, sync_timeout_ms)
+            executed = ExecutedCapture(
+                capture=self._client.capture_once(
+                    config=self._applied_config,
+                    trigger_source=trigger_source,
+                    sync_timeout_ms=sync_timeout_ms,
+                ),
+                sweep_index=None,
+                loop_index=0,
+                snapshot=_deep_snapshot(self._snapshot),
+            )
+            return executed if on_capture is None else on_capture(executed)
 
     def capabilities(self) -> object:
         with self._lock:

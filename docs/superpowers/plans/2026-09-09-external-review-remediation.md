@@ -32,7 +32,7 @@
 - Consumes: locked Python dependencies from `uv.lock`.
 - Produces: repository-local `.venv` used by every later command.
 
-- [ ] **Step 1: Build the worktree environment**
+- [x] **Step 1: Build the worktree environment**
 
 Run:
 
@@ -44,7 +44,7 @@ Run:
 Expected: `Development environment is synchronized.` and `$env:VIRTUAL_ENV`
 resolves below this worktree.
 
-- [ ] **Step 2: Verify the untouched baseline**
+- [x] **Step 2: Verify the untouched baseline**
 
 Run:
 
@@ -64,7 +64,8 @@ baseline differs, stop before product edits and record the actual result.
 - Modify: `packages/usac_runtime/src/usac_runtime/device_executor.py`
 - Modify: `packages/usac_runtime/src/usac_runtime/application.py`
 - Modify: `packages/usac_runtime/tests/test_device_executor.py`
-- Create: `packages/usac_runtime/tests/test_capture_transaction.py`
+- Modify: `packages/usac_runtime/tests/test_simulated_device_client.py`
+- Modify: `packages/usac_runtime/tests/test_bridge_device_client.py`
 
 **Interfaces:**
 - Consumes: `ConfigurationSnapshot`, `ExecutedCapture`, and
@@ -72,7 +73,7 @@ baseline differs, stop before product edits and record the actual result.
 - Produces: `SingleDeviceExecutor.capture_once(..., on_capture)` returning the
   callback result only after the frame is durably resolved.
 
-- [ ] **Step 1: Write executor tests that require an in-lock callback and deep snapshot**
+- [x] **Step 1: Write executor tests that require an in-lock callback and deep snapshot**
 
 Add tests equivalent to:
 
@@ -126,7 +127,7 @@ def test_single_capture_snapshot_has_no_shared_nested_mutable_values(executor) -
     assert executed.snapshot.actual["nested_probe"] == {"values": [1]}
 ```
 
-- [ ] **Step 2: Run the executor tests and verify RED**
+- [x] **Step 2: Run the executor tests and verify RED**
 
 Run:
 
@@ -137,7 +138,7 @@ Run:
 Expected: failure because `capture_once` does not accept `on_capture` and does
 not deep-copy nested snapshot data.
 
-- [ ] **Step 3: Implement the minimal executor transaction**
+- [x] **Step 3: Implement the minimal executor transaction**
 
 Add `copy.deepcopy` and change the executor operation to this contract:
 
@@ -188,10 +189,10 @@ def capture_once(
 Update existing tests that inspect the old raw return value to read
 `result.capture`.
 
-- [ ] **Step 4: Write the BridgeDeviceClient interleaving regression**
+- [x] **Step 4: Write the BridgeDeviceClient interleaving regression**
 
-In `test_capture_transaction.py`, use `socket.socketpair`, the existing bridge
-test server helper, `ReconnectableBridgeDeviceClient`, and a persistence
+In `test_bridge_device_client.py`, use `socket.socketpair`, the existing bridge
+test server helper, `BridgeDeviceClient`, and a persistence
 barrier. Start the draft request while persistence is paused, release the
 barrier, and assert:
 
@@ -208,18 +209,18 @@ The fixture must use temporary SQLite/spool paths and must close both sockets in
 tested in Task 2 because its non-blocking behavior depends on the R5 published
 view rather than the R1 capture identity transaction.
 
-- [ ] **Step 5: Run the interleaving test and verify RED**
+- [x] **Step 5: Run the interleaving test and verify RED**
 
 Run:
 
 ```powershell
-& .\.venv\Scripts\python.exe -m pytest packages/usac_runtime/tests/test_capture_transaction.py -vv
+& .\.venv\Scripts\python.exe -m pytest packages/usac_runtime/tests/test_bridge_device_client.py::test_single_capture_keeps_applied_context_until_delivery_is_resolved -vv
 ```
 
 Expected before the application change: the capture result is not resolved
 inside the callback contract or stored metadata follows the later draft.
 
-- [ ] **Step 6: Route application persistence through the callback**
+- [x] **Step 6: Route application persistence through the callback**
 
 Replace the post-executor persistence sequence with:
 
@@ -248,14 +249,14 @@ persisted = self._executor.capture_once(
 Derive `capture_id` from `persisted.payload` after the callback returns; do not
 read a second configuration snapshot in `_persist_capture`.
 
-- [ ] **Step 7: Verify GREEN and commit R1**
+- [x] **Step 7: Verify GREEN and commit R1**
 
 Run:
 
 ```powershell
-& .\.venv\Scripts\python.exe -m pytest packages/usac_runtime/tests/test_device_executor.py packages/usac_runtime/tests/test_capture_transaction.py packages/usac_runtime/tests/test_m5_api.py -q
+& .\.venv\Scripts\python.exe -m pytest packages/usac_runtime/tests/test_device_executor.py packages/usac_runtime/tests/test_simulated_device_client.py packages/usac_runtime/tests/test_bridge_device_client.py::test_single_capture_keeps_applied_context_until_delivery_is_resolved packages/usac_runtime/tests/test_m5_api.py -q
 git diff --check
-git add -- packages/usac_runtime/src/usac_runtime/device_executor.py packages/usac_runtime/src/usac_runtime/application.py packages/usac_runtime/tests/test_device_executor.py packages/usac_runtime/tests/test_capture_transaction.py
+git add -- packages/usac_runtime/src/usac_runtime/device_executor.py packages/usac_runtime/src/usac_runtime/application.py packages/usac_runtime/tests/test_device_executor.py packages/usac_runtime/tests/test_simulated_device_client.py packages/usac_runtime/tests/test_bridge_device_client.py
 git commit -m "fix: bind single capture to durable configuration context"
 ```
 

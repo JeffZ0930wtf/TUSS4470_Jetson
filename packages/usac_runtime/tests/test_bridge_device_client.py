@@ -355,6 +355,86 @@ def test_bridge_device_client_commits_before_releasing_spool(tmp_path: Path) -> 
     assert application.captures(limit=10, cursor=None)["items"][0]["capture_id"] == capture["capture_id"]
 
 
+def test_single_capture_keeps_applied_context_until_delivery_is_resolved(
+    tmp_path: Path,
+) -> None:
+    core_socket, bridge_socket = socket.socketpair()
+    spool = CaptureSpool(tmp_path / "single-transaction-spool.sqlite3")
+    bridge_worker = threading.Thread(
+        target=_serve_device_through_bridge,
+        args=(bridge_socket, spool),
+        daemon=True,
+    )
+    bridge_worker.start()
+    entered_persistence = threading.Event()
+    release_persistence = threading.Event()
+
+    class PausedApplication(AcquisitionApplication):
+        def _persist_capture(self, *args, **kwargs):
+            entered_persistence.set()
+            assert release_persistence.wait(timeout=1)
+            return super()._persist_capture(*args, **kwargs)
+
+    device = BridgeDeviceClient(core_socket, timeout_s=1.0)
+    service = ParameterService.from_schema_file(SCHEMA_PATH, smclk_hz=24_000_000)
+    store = CaptureStore(tmp_path / "single-transaction-core.sqlite3")
+    application = PausedApplication(
+        service,
+        SingleDeviceExecutor(service, device),
+        device,
+        store=store,
+    )
+    applied = application.apply_config({}, expected_etag='"' + "0" * 64 + '"')
+    captures = []
+    capture_errors = []
+
+    def capture_once() -> None:
+        try:
+            captures.append(
+                application.capture_once(
+                    expected_profile_sha256=str(applied["actual"]["profile_sha256"]),
+                    expected_device_config_crc32=int(
+                        applied["actual"]["device_config_crc32"]
+                    ),
+                    trigger_source="SOFTWARE",
+                    sync_timeout_ms=0,
+                )
+            )
+        except Exception as error:  # pragma: no cover - asserted below
+            capture_errors.append(error)
+
+    capture_worker = threading.Thread(target=capture_once)
+    capture_worker.start()
+    assert entered_persistence.wait(timeout=1)
+
+    drafts = []
+    draft_finished = threading.Event()
+
+    def save_later_draft() -> None:
+        drafts.append(application.save_draft({"sample_interval_ticks": 240}))
+        draft_finished.set()
+
+    draft_worker = threading.Thread(target=save_later_draft)
+    draft_worker.start()
+    assert draft_finished.wait(timeout=0.05) is False
+
+    release_persistence.set()
+    capture_worker.join(timeout=1)
+    draft_worker.join(timeout=1)
+    device.close()
+    bridge_worker.join(timeout=1)
+
+    assert capture_errors == []
+    assert len(captures) == 1
+    assert drafts[0]["requested"]["sample_interval_ticks"] == 240
+    archived = store.get_capture(bytes.fromhex(captures[0]["capture_id"]))
+    assert archived.sample_interval_ticks == 120
+    assert archived.requested_config["sample_interval_ticks"] == 120
+    assert archived.readback_config["sample_interval_ticks"] == 120
+    assert archived.actual_config["sample_rate_hz"] == 200_000.0
+    assert spool.pending_records() == []
+
+
 class _SimulatedSerial:
     """Small blocking serial double driven by the real protocol simulator."""
 
