@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable
 from typing import Protocol
@@ -60,6 +61,28 @@ class ExecutedCapture:
     snapshot: ConfigurationSnapshot
 
 
+@dataclass(frozen=True, slots=True)
+class PublishedDeviceSession:
+    """Lock-free identity published after a complete HELLO session is ready."""
+
+    connected: bool
+    backend: str
+    session_generation: int
+    hello: object | None
+    device_id: bytes | None
+    boot_id: bytes | None
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceViewSnapshot:
+    """Latest complete device view safe to return without transport access."""
+
+    session: PublishedDeviceSession
+    status: object | None
+    capabilities: object | None
+    diagnostics_observed_utc_ns: int | None
+
+
 def _deep_snapshot(snapshot: ConfigurationSnapshot) -> ConfigurationSnapshot:
     """Detach capture metadata from every mutable value in shared config state."""
 
@@ -77,6 +100,7 @@ class DeviceClient(Protocol):
     hello: object
     boot_id: bytes | None
     device_id: bytes | None
+    published_session: PublishedDeviceSession
 
     def apply_config(self, config: AcquisitionConfigV2) -> DeviceReadback: ...
 
@@ -132,12 +156,42 @@ class SingleDeviceExecutor:
         self._lock = threading.RLock()
         self._snapshot = service.new_draft()
         self._applied_config: AcquisitionConfigV2 | None = None
-        self._session_generation = int(getattr(client, "session_generation", 0))
+        published = self._published_session()
+        self._session_generation = published.session_generation
+        self._device_view = DeviceViewSnapshot(published, None, None, None)
+
+    def _published_session(self) -> PublishedDeviceSession:
+        """Read the client's immutable session identity without a device call."""
+
+        published = getattr(self._client, "published_session", None)
+        if isinstance(published, PublishedDeviceSession):
+            return published
+        # Test doubles created before the published-view contract have no
+        # transport lock, so a one-time compatibility snapshot is safe.
+        connected = bool(getattr(self._client, "connected", True))
+        hello = getattr(self._client, "hello", None) if connected else None
+        return PublishedDeviceSession(
+            connected=connected,
+            backend=str(getattr(self._client, "backend_kind", "UNKNOWN")),
+            session_generation=int(getattr(self._client, "session_generation", 0)),
+            hello=hello,
+            device_id=getattr(self._client, "device_id", None) if connected else None,
+            boot_id=getattr(self._client, "boot_id", None) if connected else None,
+        )
+
+    def _merge_published_session(
+        self,
+        published: PublishedDeviceSession,
+    ) -> DeviceViewSnapshot:
+        current = self._device_view
+        if current.session == published:
+            return current
+        return DeviceViewSnapshot(published, None, None, None)
 
     def _refresh_session_unlocked(self) -> None:
         """Invalidate APPLIED state when bridge publishes a new HELLO session."""
 
-        generation = int(getattr(self._client, "session_generation", 0))
+        generation = self._published_session().session_generation
         if generation == self._session_generation:
             return
         # Preserve the operator's semantic choices as a draft, but require a
@@ -221,7 +275,7 @@ class SingleDeviceExecutor:
             config_readback=readback.config,
         )
         self._applied_config = config
-        self._session_generation = int(getattr(self._client, "session_generation", 0))
+        self._session_generation = self._published_session().session_generation
         self._snapshot = applied
         return applied
 
@@ -272,12 +326,51 @@ class SingleDeviceExecutor:
     def capabilities(self) -> object:
         with self._lock:
             self._refresh_session_unlocked()
-            return self._client.capabilities()
+            capabilities = self._client.capabilities()
+            self._device_view = DeviceViewSnapshot(
+                self._published_session(),
+                self._device_view.status,
+                capabilities,
+                self._device_view.diagnostics_observed_utc_ns,
+            )
+            return capabilities
 
     def status(self) -> object:
         with self._lock:
             self._refresh_session_unlocked()
-            return self._client.status()
+            status = self._client.status()
+            self._device_view = DeviceViewSnapshot(
+                self._published_session(),
+                status,
+                self._device_view.capabilities,
+                time.time_ns(),
+            )
+            return status
+
+    def try_device_view(self, *, refresh: bool) -> DeviceViewSnapshot:
+        """Return immediately when a capture/plan owns the device executor."""
+
+        published = self._published_session()
+        self._device_view = self._merge_published_session(published)
+        if not refresh or not self._lock.acquire(blocking=False):
+            return self._device_view
+        try:
+            self._refresh_session_unlocked()
+            published = self._published_session()
+            self._device_view = self._merge_published_session(published)
+            if not published.connected:
+                return self._device_view
+            status = self._client.status()
+            capabilities = self._client.capabilities()
+            self._device_view = DeviceViewSnapshot(
+                published,
+                status,
+                capabilities,
+                time.time_ns(),
+            )
+            return self._device_view
+        finally:
+            self._lock.release()
 
     def start_periodic(self, schedule: PeriodicSchedule) -> None:
         with self._lock:

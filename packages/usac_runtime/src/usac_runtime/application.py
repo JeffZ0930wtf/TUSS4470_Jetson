@@ -177,26 +177,6 @@ class AcquisitionApplication:
         return {"status": "ok"}
 
     def device(self) -> dict[str, object]:
-        def unavailable() -> dict[str, object]:
-            return {
-                "connected": False,
-                "health": "NOT_DETECTED",
-                "activity": "IDLE",
-                "backend": str(getattr(self._device, "backend_kind", "BRIDGE")),
-                "device_id": None,
-                "boot_id": None,
-                "firmware": None,
-                "capabilities": None,
-                "status": None,
-            }
-        if not bool(getattr(self._device, "connected", True)):
-            return unavailable()
-        try:
-            hello = self._device.hello
-            status = self._executor.status()
-        except DeviceUnavailable:
-            return unavailable()
-        abnormal = bool(getattr(status, "last_error", 0))
         with self._session_lock:
             operation_activity = self._operation_activity
             active = next(
@@ -207,9 +187,7 @@ class AcquisitionApplication:
                 ),
                 None,
             )
-        if abnormal:
-            activity = "FAULT"
-        elif operation_activity is not None:
+        if operation_activity is not None:
             activity = operation_activity
         elif isinstance(active, _PeriodicSession):
             activity = "CAPTURING_PERIODIC"
@@ -217,11 +195,40 @@ class AcquisitionApplication:
             activity = "SWEEPING"
         else:
             activity = "IDLE"
+
+        view = self._executor.try_device_view(refresh=activity == "IDLE")
+        session = view.session
+
+        def unavailable() -> dict[str, object]:
+            return {
+                "connected": False,
+                "health": "NOT_DETECTED",
+                "activity": activity,
+                "backend": session.backend,
+                "session_generation": session.session_generation,
+                "device_id": None,
+                "boot_id": None,
+                "firmware": None,
+                "capabilities": None,
+                "status": None,
+                "diagnostics_observed_utc_ns": None,
+            }
+
+        if not session.connected or session.hello is None:
+            return unavailable()
+        hello = session.hello
+        status = view.status
+        abnormal = bool(getattr(status, "last_error", 0))
+        if abnormal:
+            activity = "FAULT"
         return {
             "connected": True,
-            "health": "ABNORMAL" if abnormal else "NORMAL",
+            "health": (
+                "ABNORMAL" if abnormal else "NORMAL" if status is not None else "UNKNOWN"
+            ),
             "activity": activity,
-            "backend": str(getattr(self._device, "backend_kind", "BRIDGE")),
+            "backend": session.backend,
+            "session_generation": session.session_generation,
             "device_id": hello.device_id.hex(),
             "boot_id": hello.boot_id.hex(),
             "firmware": {
@@ -230,8 +237,9 @@ class AcquisitionApplication:
                 "patch": hello.fw_patch,
                 "build": hello.fw_build,
             },
-            "capabilities": _json_value(self._executor.capabilities()),
+            "capabilities": _json_value(view.capabilities),
             "status": _json_value(status),
+            "diagnostics_observed_utc_ns": view.diagnostics_observed_utc_ns,
         }
 
     def schema(self) -> dict[str, object]:
@@ -271,7 +279,7 @@ class AcquisitionApplication:
                 self._operation_activity = None
 
     def _require_device(self) -> None:
-        if not bool(getattr(self._device, "connected", True)):
+        if not self._executor.try_device_view(refresh=False).session.connected:
             raise DeviceUnavailable("device is not connected")
 
     @staticmethod
@@ -319,8 +327,9 @@ class AcquisitionApplication:
         """Persist host-only replay context before any capture can be emitted."""
 
         self._require_device()
-        device_id = self._device.device_id
-        boot_id = self._device.boot_id
+        session = self._executor.try_device_view(refresh=False).session
+        device_id = session.device_id
+        boot_id = session.boot_id
         if device_id is None or boot_id is None:
             raise DeviceUnavailable("device HELLO identity is unavailable")
         self._require_store().register_delivery_policy(

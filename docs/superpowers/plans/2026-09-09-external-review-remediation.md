@@ -271,7 +271,7 @@ Expected: focused tests pass and the commit contains only R1 behavior/tests.
 - Modify: `packages/usac_runtime/src/usac_runtime/bridge_device_client.py`
 - Modify: `packages/usac_runtime/src/usac_runtime/application.py`
 - Modify: `packages/usac_runtime/tests/test_bridge_device_client.py`
-- Create: `packages/usac_runtime/tests/test_device_view.py`
+- Modify: `packages/usac_runtime/tests/test_m5_api.py`
 - Modify: `packages/usac_runtime/tests/test_m5_server.py`
 
 **Interfaces:**
@@ -279,7 +279,7 @@ Expected: focused tests pass and the commit contains only R1 behavior/tests.
 - Produces: immutable `PublishedDeviceSession`, `DeviceViewSnapshot`, and
   `SingleDeviceExecutor.try_device_view()` with non-blocking refresh.
 
-- [ ] **Step 1: Write real-wrapper cache and lock-race tests**
+- [x] **Step 1: Write real-wrapper cache and lock-race tests**
 
 Cover these behaviors using a real `ReconnectableBridgeDeviceClient` wrapping
 the socketpair-backed `BridgeDeviceClient`:
@@ -305,7 +305,7 @@ assert payload["device_id"] == expected_device_id.hex()
 Also replace the bridge session while the old view exists and assert the new
 boot/device/generation replace the old identity atomically.
 
-- [ ] **Step 2: Run the new tests and verify RED**
+- [x] **Step 2: Run the new tests and verify RED**
 
 Run:
 
@@ -316,7 +316,7 @@ Run:
 Expected: current `/device` blocks or the wrapper has no non-blocking published
 session view.
 
-- [ ] **Step 3: Add immutable published view types**
+- [x] **Step 3: Add immutable published view types**
 
 Define the executor-facing values without mutable dictionaries:
 
@@ -344,7 +344,7 @@ and returns it without acquiring `_lock`. `replace`, `close`, and transport-loss
 handling assign a complete new value after changing `_client`; they never edit
 the published object in place.
 
-- [ ] **Step 4: Implement non-blocking executor refresh**
+- [x] **Step 4: Implement non-blocking executor refresh**
 
 Add a cached `DeviceViewSnapshot` and use an immediate lock attempt:
 
@@ -374,7 +374,7 @@ For the simulator, publish the same session interface from in-memory values.
 No `/device` response path may directly access live `connected`, `hello`,
 `session_generation`, `status`, or `capabilities` properties.
 
-- [ ] **Step 5: Make `/device` publish activity before optional refresh**
+- [x] **Step 5: Make `/device` publish activity before optional refresh**
 
 Compute activity under `_session_lock`, then call:
 
@@ -387,14 +387,14 @@ The unavailable payload gains `session_generation` and
 `diagnostics_observed_utc_ns` with `None` values. Update exact API assertions in
 `test_m5_server.py`.
 
-- [ ] **Step 6: Verify GREEN and commit R5**
+- [x] **Step 6: Verify GREEN and commit R5**
 
 Run:
 
 ```powershell
-& .\.venv\Scripts\python.exe -m pytest packages/usac_runtime/tests/test_device_view.py packages/usac_runtime/tests/test_bridge_device_client.py packages/usac_runtime/tests/test_m5_server.py packages/usac_runtime/tests/test_m5_api.py -q
+& .\.venv\Scripts\python.exe -m pytest packages/usac_runtime/tests/test_bridge_device_client.py packages/usac_runtime/tests/test_m5_server.py packages/usac_runtime/tests/test_m5_api.py -q
 git diff --check
-git add -- packages/usac_runtime/src/usac_runtime/device_executor.py packages/usac_runtime/src/usac_runtime/bridge_device_client.py packages/usac_runtime/src/usac_runtime/application.py packages/usac_runtime/tests/test_bridge_device_client.py packages/usac_runtime/tests/test_device_view.py packages/usac_runtime/tests/test_m5_server.py packages/usac_runtime/tests/test_m5_api.py
+git add -- packages/usac_runtime/src/usac_runtime/device_executor.py packages/usac_runtime/src/usac_runtime/bridge_device_client.py packages/usac_runtime/src/usac_runtime/application.py packages/usac_runtime/src/usac_runtime/simulated_device_client.py packages/usac_runtime/tests/test_bridge_device_client.py packages/usac_runtime/tests/test_m5_server.py packages/usac_runtime/tests/test_m5_api.py
 git commit -m "fix: publish nonblocking device status snapshots"
 ```
 

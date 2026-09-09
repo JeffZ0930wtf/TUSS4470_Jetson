@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from pathlib import Path
 import sqlite3
 import time
@@ -10,6 +11,7 @@ import pytest
 
 from usac_protocol.simulator import SimulatedDevice
 from usac_runtime.application import AcquisitionApplication
+from usac_runtime.bridge_device_client import ReconnectableBridgeDeviceClient
 from usac_runtime.core_store import CaptureStore, SavePolicy
 from usac_runtime.device_executor import SingleDeviceExecutor
 from usac_runtime.m5_api import create_api
@@ -115,6 +117,67 @@ def test_device_endpoint_includes_session_identity_and_firmware() -> None:
         "patch": 0,
         "build": 1,
     }
+
+
+def test_device_endpoint_does_not_wait_for_sweep_executor_lock(tmp_path: Path) -> None:
+    class ClosableSimulatedDeviceClient(SimulatedDeviceClient):
+        def close(self) -> None:
+            pass
+
+    service = ParameterService.from_schema_file(SCHEMA_PATH, smclk_hz=24_000_000)
+    session = ClosableSimulatedDeviceClient(SimulatedDevice())
+    device = ReconnectableBridgeDeviceClient(session)
+    executor = SingleDeviceExecutor(service, device)
+    application = AcquisitionApplication(
+        service,
+        executor,
+        device,
+        store=CaptureStore(tmp_path / "device-view.sqlite3"),
+    )
+    applied = application.apply_config({}, expected_etag=application.etag())
+    initial = application.device()
+    started = application.start_sweep(
+        expected_profile_sha256=str(applied["actual"]["profile_sha256"]),
+        expected_device_config_crc32=int(applied["actual"]["device_config_crc32"]),
+        field_name="BPF_HPF_FREQ",
+        values=(46, 47),
+        loops=1,
+        start_delay_ms=10_000,
+        loop_delay_ms=0,
+        trigger_source="SOFTWARE",
+        sync_timeout_ms=0,
+    )
+    running = application._sessions[bytes.fromhex(started["session_id"])]
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline:
+        if not executor._lock.acquire(blocking=False):
+            break
+        executor._lock.release()
+        time.sleep(0.001)
+
+    payload = None
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        query = pool.submit(application.device)
+        try:
+            payload = query.result(timeout=0.25)
+        except FutureTimeout:
+            pass
+        finally:
+            application.stop_sweep(started["session_id"])
+            running.thread.join(timeout=1)
+
+    assert payload is not None
+    assert payload["activity"] == "SWEEPING"
+    assert payload["device_id"] == initial["device_id"]
+    assert payload["boot_id"] == initial["boot_id"]
+
+    device.close()
+    disconnected = application.device()
+    assert disconnected["connected"] is False
+    assert disconnected["device_id"] is None
+    assert disconnected["boot_id"] is None
+    assert disconnected["status"] is None
+    assert disconnected["session_generation"] == 1
 
 
 def test_interrupted_session_remains_queryable_after_core_restart(tmp_path: Path) -> None:

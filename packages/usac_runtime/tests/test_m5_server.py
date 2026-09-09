@@ -90,6 +90,8 @@ def test_bridge_api_starts_before_a_bridge_or_device_is_connected(tmp_path: Path
         "firmware": None,
         "capabilities": None,
         "status": None,
+        "session_generation": 0,
+        "diagnostics_observed_utc_ns": None,
     }
     assert len(schema.json()["fields"]) == 47
     assert draft.status_code == 200

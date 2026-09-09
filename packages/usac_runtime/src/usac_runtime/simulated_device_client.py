@@ -36,7 +36,7 @@ from usac_protocol.messages import (
 )
 from usac_protocol.simulator import SimulatedDevice
 
-from .device_executor import DeviceReadback
+from .device_executor import DeviceReadback, PublishedDeviceSession
 from .periodic_lease import LeaseRenewal, PeriodicSchedule
 
 
@@ -59,6 +59,20 @@ class SimulatedDeviceClient:
         self.last_acked_type: MessageType | None = None
         self._capture_wire_frames: dict[bytes, bytes] = {}
         self._hello()
+        self._published_session = PublishedDeviceSession(
+            True,
+            "SIMULATOR",
+            0,
+            self.hello,
+            self.device_id,
+            self.boot_id,
+        )
+
+    @property
+    def published_session(self) -> PublishedDeviceSession:
+        """Expose simulator identity through the same non-blocking host contract."""
+
+        return self._published_session
 
     @property
     def connected(self) -> bool:

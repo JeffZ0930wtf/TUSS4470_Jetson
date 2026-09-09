@@ -115,6 +115,19 @@ def _serve_device_through_bridge(connection: socket.socket, spool: CaptureSpool)
         connection.close()
 
 
+def _serve_bridge_initialization(connection: socket.socket) -> None:
+    """Serve the HELLO and capabilities requests needed to publish a session."""
+
+    device = SimulatedDevice()
+    try:
+        for _ in range(2):
+            request = _read_frame(connection)
+            for response in device.handle(request):
+                connection.sendall(encode_frame(response))
+    finally:
+        connection.close()
+
+
 def _baseline_config() -> AcquisitionConfigV2:
     return AcquisitionConfigV2.create(
         sample_interval_ticks=120,
@@ -665,6 +678,9 @@ def test_reconnectable_device_switches_sessions_without_retrying_failed_command(
     old = Session("old", fails=True)
     new = Session("new")
     device = ReconnectableBridgeDeviceClient(old)
+    assert device.published_session.connected is True
+    assert device.published_session.hello == "old"
+    assert device.published_session.session_generation == 0
 
     with pytest.raises(DeviceUnavailable, match="bridge session was lost"):
         device.status()
@@ -672,12 +688,19 @@ def test_reconnectable_device_switches_sessions_without_retrying_failed_command(
     assert old.close_calls == 1
     assert device.connected is False
     assert device.session_generation == 1
+    assert device.published_session.connected is False
+    assert device.published_session.hello is None
+    assert device.published_session.session_generation == 1
 
     device.replace(new)
 
     assert old.close_calls == 1
     assert device.session_generation == 2
     assert device.hello == "new"
+    assert device.published_session.connected is True
+    assert device.published_session.hello == "new"
+    assert device.published_session.boot_id == new.boot_id
+    assert device.published_session.session_generation == 2
     assert device.status() == "new"
     assert new.status_calls == 1
 
@@ -698,6 +721,9 @@ def test_reconnectable_device_can_wait_without_an_initial_bridge() -> None:
 
     assert device.connected is False
     assert device.backend_kind == "BRIDGE"
+    assert device.published_session.connected is False
+    assert device.published_session.device_id is None
+    assert device.published_session.session_generation == 0
     with pytest.raises(DeviceUnavailable, match="bridge device is not connected"):
         device.status()
 
@@ -706,6 +732,28 @@ def test_reconnectable_device_can_wait_without_an_initial_bridge() -> None:
     assert device.connected is True
     assert device.status() == "connected"
     assert device.session_generation == 1
+
+
+def test_reconnectable_device_publishes_real_bridge_identity_without_locking() -> None:
+    core_socket, bridge_socket = socket.socketpair()
+    worker = threading.Thread(
+        target=_serve_bridge_initialization,
+        args=(bridge_socket,),
+        daemon=True,
+    )
+    worker.start()
+    client = BridgeDeviceClient(core_socket, timeout_s=1.0)
+    device = ReconnectableBridgeDeviceClient(client)
+
+    published = device.published_session
+    assert published.connected is True
+    assert published.device_id == client.device_id
+    assert published.boot_id == client.boot_id
+
+    device.close()
+    assert device.published_session.connected is False
+    assert device.published_session.device_id is None
+    worker.join(timeout=1)
 
 
 def test_periodic_capture_arriving_before_renew_response_is_not_lost(

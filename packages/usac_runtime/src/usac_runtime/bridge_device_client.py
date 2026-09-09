@@ -54,7 +54,7 @@ from usac_protocol.messages import (
     encode_stop_request,
 )
 
-from .device_executor import DeviceReadback, DeviceUnavailable
+from .device_executor import DeviceReadback, DeviceUnavailable, PublishedDeviceSession
 from .core_store import CaptureStore
 from .periodic_lease import LeaseRenewal, PeriodicSchedule
 
@@ -94,6 +94,20 @@ class BridgeDeviceClient:
         # Issue one real device request now so _response() drains and confirms
         # every replay before the connection is published to the application.
         self._capabilities = self._query_capabilities()
+        self._published_session = PublishedDeviceSession(
+            True,
+            "BRIDGE",
+            0,
+            self.hello,
+            self.device_id,
+            self.boot_id,
+        )
+
+    @property
+    def published_session(self) -> PublishedDeviceSession:
+        """Return the immutable identity without touching the protocol stream."""
+
+        return self._published_session
 
     def _next_sequence(self) -> int:
         self._sequence = (self._sequence + 1) & 0xFFFFFFFF
@@ -422,6 +436,9 @@ class BridgeDeviceClient:
         except OSError:
             pass
         self._connection.close()
+        self._published_session = PublishedDeviceSession(
+            False, "BRIDGE", 1, None, None, None
+        )
 
 
 class ReconnectableBridgeDeviceClient:
@@ -436,6 +453,26 @@ class ReconnectableBridgeDeviceClient:
         self._lock = threading.RLock()
         self._client = initial
         self._session_generation = 0
+        self._published_session = self._session_view(initial, 0)
+
+    @staticmethod
+    def _session_view(client: object | None, generation: int) -> PublishedDeviceSession:
+        if client is None:
+            return PublishedDeviceSession(False, "BRIDGE", generation, None, None, None)
+        return PublishedDeviceSession(
+            True,
+            "BRIDGE",
+            generation,
+            getattr(client, "hello", None),
+            getattr(client, "device_id", None),
+            getattr(client, "boot_id", None),
+        )
+
+    @property
+    def published_session(self) -> PublishedDeviceSession:
+        """Return one atomic reference without acquiring the command lock."""
+
+        return self._published_session
 
     @property
     def connected(self) -> bool:
@@ -460,6 +497,9 @@ class ReconnectableBridgeDeviceClient:
             previous = self._client
             self._client = replacement
             self._session_generation += 1
+            self._published_session = self._session_view(
+                replacement, self._session_generation
+            )
         if previous is not None:
             previous.close()
 
@@ -471,6 +511,9 @@ class ReconnectableBridgeDeviceClient:
             self._client = None
             if previous is not None:
                 self._session_generation += 1
+            self._published_session = self._session_view(
+                None, self._session_generation
+            )
         if previous is not None:
             previous.close()
 
@@ -500,6 +543,9 @@ class ReconnectableBridgeDeviceClient:
                     if self._client is client:
                         self._client = None
                         self._session_generation += 1
+                        self._published_session = self._session_view(
+                            None, self._session_generation
+                        )
                         failed_client = client
                     failure = error
             if failed_client is not None:
