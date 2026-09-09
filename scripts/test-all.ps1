@@ -19,6 +19,9 @@ New-Item -ItemType Directory -Path $pytestParent -Force | Out-Null
 & (Join-Path $expectedEnvironment 'Scripts\python.exe') -m pytest --basetemp $pytestBaseTemp
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+node (Join-Path $repositoryRoot 'packages\usac_runtime\tests\test_m5_app.cjs')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 & (Join-Path $PSScriptRoot 'build-firmware.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

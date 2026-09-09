@@ -50,9 +50,12 @@
         <div class="form-grid two">
           <label><span data-i18n="capture.mode">采集模式</span><select id="capture-mode"><option value="SINGLE" data-i18n="mode.single">单次采集</option><option value="PERIODIC" data-i18n="mode.periodic">周期采集</option><option value="SWEEP" data-i18n="mode.sweep">单参数扫描</option></select></label>
           <label><span data-i18n="capture.savePolicy">数据保存</span><select id="save-policy"><option value="SAVE_ALL" selected data-i18n="save.all">保存每一次</option><option value="SAVE_LAST" data-i18n="save.last">只保存最后一次</option><option value="SAVE_NONE" data-i18n="save.none">不保存</option></select></label>
+        </div>
+        <div id="trigger-fields" class="form-grid two">
           <label><span data-i18n="capture.trigger">触发方式</span><select id="trigger-source"><option value="SOFTWARE" data-i18n="trigger.software">软件触发</option><option value="EXTERNAL_SYNC_SLAVE" data-i18n="trigger.slave">外部同步从机</option><option value="EXTERNAL_SYNC_MASTER" data-i18n="trigger.master">外部同步主机</option></select></label>
           <label><span data-i18n="capture.syncTimeout">同步超时（ms）</span><input id="sync-timeout" type="number" min="0" max="60000" value="0"></label>
         </div>
+        <p id="periodic-trigger-hint" class="hint" data-i18n="periodic.triggerHint" hidden>周期采集由固件内部定时器触发，不使用外部同步设置。</p>
         <div id="periodic-fields" class="mode-fields form-grid two" hidden>
           <label><span data-i18n="periodic.period">周期（µs）</span><input id="period-us" type="number" min="100000" value="1000000"></label>
           <label><span data-i18n="periodic.count">次数（0 = 无限）</span><input id="periodic-count" type="number" min="0" value="1"></label>

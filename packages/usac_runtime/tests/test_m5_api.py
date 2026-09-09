@@ -78,6 +78,8 @@ def test_web_console_is_served_without_hardcoded_parameter_table() -> None:
     assert 'id="capture-start"' in page.text
     assert 'id="capture-stop"' in page.text
     assert 'id="periodic-fields"' in page.text
+    assert 'id="trigger-fields"' in page.text
+    assert 'id="periodic-trigger-hint"' in page.text
     assert 'id="sweep-fields"' in page.text
     assert 'id="periodic-start"' not in page.text
     assert 'id="sweep-start"' not in page.text
@@ -88,6 +90,7 @@ def test_web_console_is_served_without_hardcoded_parameter_table() -> None:
     assert 'save_policy: $("#save-policy").value' in script.text
     assert 'const DEVICE_HEALTH_LABELS' in script.text
     assert 'function startCapture()' in script.text
+    assert "function refreshLatestWaveform(payload)" in script.text
     assert "function loadBaseline()" in script.text
     assert 'className = "field-state"' in script.text
     assert 'id="capture-history"' in page.text

@@ -508,7 +508,7 @@ Expected: archived and transient contracts match without a schema migration.
 - Produces: mode-correct controls, resilient task ownership, and one-slot live
   waveform refresh.
 
-- [ ] **Step 1: Convert the external UI probe into repository regression tests**
+- [x] **Step 1: Convert the external UI probe into repository regression tests**
 
 Create a Node VM test that removes only the terminal `init()` invocation and
 executes the real functions. Its assertions shall include:
@@ -531,7 +531,7 @@ assert.equal(activeAfterSingleDisplayFailure, null);
 The stub stores only request paths, timeout callbacks, and the latest canvas
 values. It must assert that no frame/sample array is appended across polls.
 
-- [ ] **Step 2: Run the UI test and verify RED**
+- [x] **Step 2: Run the UI test and verify RED**
 
 Run:
 
@@ -542,7 +542,7 @@ node .\packages\usac_runtime\tests\test_m5_app.cjs
 Expected: current generic guard clears the active task, periodic controls remain
 visible, and RUNNING sessions do not request samples.
 
-- [ ] **Step 3: Separate generic errors from capture ownership**
+- [x] **Step 3: Separate generic errors from capture ownership**
 
 Replace the generic guard with:
 
@@ -558,7 +558,7 @@ and history refresh run after cleanup with independent error reporting. For a
 terminal periodic/Sweep payload, copy the capture ID, clear `state.active`,
 publish terminal controls, then attempt display/history refresh.
 
-- [ ] **Step 4: Keep polling independent of display failures**
+- [x] **Step 4: Keep polling independent of display failures**
 
 Use one scheduler and one latest-rendered ID:
 
@@ -578,7 +578,7 @@ async function refreshLatestWaveform(payload) {
 is still active. Waveform errors are toasted and do not escape through the
 session scheduler.
 
-- [ ] **Step 5: Hide and disable periodic trigger controls**
+- [x] **Step 5: Hide and disable periodic trigger controls**
 
 Wrap both controls in `id="trigger-fields"`. In `updateMode()`:
 
@@ -593,7 +593,7 @@ $("#periodic-trigger-hint").hidden = triggerApplies;
 Add Chinese and English text stating that PERIODIC uses the firmware internal
 timer. Keep PERIODIC request JSON unchanged.
 
-- [ ] **Step 6: Add the Node regression to both aggregate gates**
+- [x] **Step 6: Add the Node regression to both aggregate gates**
 
 After pytest and before firmware/Docker work, invoke:
 
@@ -608,7 +608,7 @@ and on Linux:
 node packages/usac_runtime/tests/test_m5_app.cjs
 ```
 
-- [ ] **Step 7: Verify GREEN and commit the Web fixes**
+- [x] **Step 7: Verify GREEN and commit the Web fixes**
 
 Run:
 

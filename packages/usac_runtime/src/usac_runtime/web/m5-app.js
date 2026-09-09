@@ -11,7 +11,7 @@ const I18N = {
     "bank.eyebrow": "设备 + 波形", "bank.title": "参数库", "bank.baseline": "载入 D10×4 基线", "bank.reset": "放弃编辑", "bank.saveDraft": "保存草稿", "bank.validate": "校验", "bank.apply": "应用并回读", "bank.hint": "这里只设置 TUSS4470 设备属性和单帧波形参数；运行次数、间隔和保存策略统一在右侧采集模块设置。",
     "capture.eyebrow": "统一运行入口", "capture.title": "采集", "capture.mode": "采集模式", "capture.savePolicy": "数据保存", "capture.trigger": "触发方式", "capture.syncTimeout": "同步超时（ms）", "capture.stop": "停止", "capture.start.single": "开始单次采集", "capture.start.periodic": "开始周期采集", "capture.start.sweep": "开始参数扫描",
     "mode.single": "单次采集", "mode.periodic": "周期采集", "mode.sweep": "单参数扫描", "save.all": "保存每一次", "save.last": "只保存最后一次", "save.none": "不保存", "trigger.software": "软件触发", "trigger.slave": "外部同步从机", "trigger.master": "外部同步主机",
-    "periodic.period": "周期（µs）", "periodic.count": "次数（0 = 无限）", "periodic.lease": "租约（ms）", "sweep.field": "扫描参数", "sweep.values": "扫描值（JSON 数组）", "sweep.loops": "每个值采集次数", "sweep.startDelay": "开始延时（ms）", "sweep.loopDelay": "循环间隔（ms）",
+    "periodic.period": "周期（µs）", "periodic.count": "次数（0 = 无限）", "periodic.lease": "租约（ms）", "periodic.triggerHint": "周期采集由固件内部定时器触发，不使用外部同步设置。", "sweep.field": "扫描参数", "sweep.values": "扫描值（JSON 数组）", "sweep.loops": "每个值采集次数", "sweep.startDelay": "开始延时（ms）", "sweep.loopDelay": "循环间隔（ms）",
     "counter.planned": "计划", "counter.acquired": "已采集", "counter.saved": "已保存", "counter.discarded": "按策略丢弃",
     "waveform.eyebrow": "最近一次", "waveform.title": "原始包络", "waveform.empty": "暂无波形", "waveform.aria": "原始 ADC 波形", "waveform.hint": "显示 2048 个原始 ADC 点；画布缩放不会改变采集值或已保存数据。", "waveform.summary": "{count} 点 · {id}", "waveform.downloadFailed": "原始采样下载失败",
     "history.eyebrow": "SQLite 数据库", "history.title": "已保存记录", "history.refresh": "刷新", "history.more": "加载更早记录", "history.empty": "数据库中暂无已保存采集。", "history.detail": "序号 {sequence} · {count} 点", "history.view": "查看", "history.download": "原始 .u16le",
@@ -29,7 +29,7 @@ const I18N = {
     "bank.eyebrow": "Device + waveform", "bank.title": "Parameter bank", "bank.baseline": "Load D10×4 baseline", "bank.reset": "Discard edits", "bank.saveDraft": "Save draft", "bank.validate": "Validate", "bank.apply": "Apply and read back", "bank.hint": "Set TUSS4470 device properties and single-frame waveform parameters here. Configure run count, timing, and save policy in the acquisition panel.",
     "capture.eyebrow": "Unified run control", "capture.title": "Acquisition", "capture.mode": "Acquisition mode", "capture.savePolicy": "Data retention", "capture.trigger": "Trigger source", "capture.syncTimeout": "Sync timeout (ms)", "capture.stop": "Stop", "capture.start.single": "Start single capture", "capture.start.periodic": "Start periodic capture", "capture.start.sweep": "Start parameter sweep",
     "mode.single": "Single capture", "mode.periodic": "Periodic capture", "mode.sweep": "Single-parameter sweep", "save.all": "Save every capture", "save.last": "Save last capture only", "save.none": "Do not save", "trigger.software": "Software trigger", "trigger.slave": "External sync slave", "trigger.master": "External sync master",
-    "periodic.period": "Period (µs)", "periodic.count": "Count (0 = unlimited)", "periodic.lease": "Lease (ms)", "sweep.field": "Sweep parameter", "sweep.values": "Sweep values (JSON array)", "sweep.loops": "Captures per value", "sweep.startDelay": "Start delay (ms)", "sweep.loopDelay": "Loop interval (ms)",
+    "periodic.period": "Period (µs)", "periodic.count": "Count (0 = unlimited)", "periodic.lease": "Lease (ms)", "periodic.triggerHint": "Periodic acquisition uses the firmware's internal timer; external synchronization does not apply.", "sweep.field": "Sweep parameter", "sweep.values": "Sweep values (JSON array)", "sweep.loops": "Captures per value", "sweep.startDelay": "Start delay (ms)", "sweep.loopDelay": "Loop interval (ms)",
     "counter.planned": "Planned", "counter.acquired": "Acquired", "counter.saved": "Saved", "counter.discarded": "Discarded by policy",
     "waveform.eyebrow": "Latest capture", "waveform.title": "Raw envelope", "waveform.empty": "No waveform", "waveform.aria": "Raw ADC waveform", "waveform.hint": "Displays all 2048 raw ADC samples. Canvas scaling does not alter acquired or stored values.", "waveform.summary": "{count} samples · {id}", "waveform.downloadFailed": "Raw sample download failed",
     "history.eyebrow": "SQLite database", "history.title": "Saved captures", "history.refresh": "Refresh", "history.more": "Load earlier records", "history.empty": "No saved captures in the database.", "history.detail": "Sequence {sequence} · {count} samples", "history.view": "View", "history.download": "Raw .u16le",
@@ -44,7 +44,7 @@ const ACTIVITY_LABELS = { IDLE: "activity.idle", CONFIGURING: "activity.configur
 const BACKEND_LABELS = { SIMULATOR: "backend.simulator", BRIDGE: "backend.bridge" };
 const SESSION_STATE_LABELS = { RUNNING: "session.running", STOPPING: "session.stopping", COMPLETED: "session.completed", STOPPED: "session.stopped", FAILED: "session.failed", INTERRUPTED: "session.interrupted" };
 const storedLanguage = localStorage.getItem("usac-language");
-const state = { schema: null, config: null, etag: null, edits: {}, connected: false, active: null, historyCursor: null, historyItems: [], language: storedLanguage === "en" ? "en" : "zh", devicePayload: null, counterPayload: {}, captureStatusKey: "capture.status.idle", captureStatusValues: {}, waveformSummary: null };
+const state = { schema: null, config: null, etag: null, edits: {}, connected: false, active: null, historyCursor: null, historyItems: [], language: storedLanguage === "en" ? "en" : "zh", devicePayload: null, counterPayload: {}, captureStatusKey: "capture.status.idle", captureStatusValues: {}, waveformSummary: null, lastRenderedCaptureId: null };
 const $ = (selector) => document.querySelector(selector);
 
 function t(key, values = {}) {
@@ -255,6 +255,11 @@ function updateMode() {
   const mode = $("#capture-mode").value;
   $("#periodic-fields").hidden = mode !== "PERIODIC";
   $("#sweep-fields").hidden = mode !== "SWEEP";
+  const triggerApplies = mode !== "PERIODIC";
+  $("#trigger-fields").hidden = !triggerApplies;
+  $("#trigger-source").disabled = !triggerApplies;
+  $("#sync-timeout").disabled = !triggerApplies;
+  $("#periodic-trigger-hint").hidden = triggerApplies;
   $("#capture-start").textContent = t({ SINGLE: "capture.start.single", PERIODIC: "capture.start.periodic", SWEEP: "capture.start.sweep" }[mode]);
 }
 
@@ -294,15 +299,41 @@ async function loadHistory(reset = true) {
   renderHistory(); $("#history-more").hidden = !state.historyCursor;
 }
 
-async function pollSession() {
-  if (!state.active) return;
-  const { payload } = await fetchJson(`/api/v1/sessions/${state.active.session_id}`);
-  renderCounters(payload); setCaptureStatus("capture.status.progress", { stateKey: SESSION_STATE_LABELS[payload.state] || payload.state, count: payload.acquired_count });
-  if (["COMPLETED", "STOPPED", "FAILED", "INTERRUPTED"].includes(payload.state)) {
-    if (payload.last_capture_id) await drawCapture(payload.last_capture_id);
-    await loadHistory(true); state.active = null; setHardwareActions(); return;
+function scheduleSessionPoll(sessionId) {
+  if (state.active?.session_id === sessionId) window.setTimeout(() => pollSession(), 250);
+}
+
+async function refreshLatestWaveform(payload) {
+  const captureId = payload.last_capture_id;
+  if (!captureId || captureId === state.lastRenderedCaptureId) return;
+  try {
+    await drawCapture(captureId);
+    state.lastRenderedCaptureId = captureId;
+  } catch (error) {
+    toast(error.message);
   }
-  window.setTimeout(() => pollSession().catch((error) => toast(error.message)), 250);
+}
+
+async function pollSession() {
+  const active = state.active;
+  if (!active?.session_id) return;
+  try {
+    const { payload } = await fetchJson(`/api/v1/sessions/${active.session_id}`);
+    if (state.active?.session_id !== active.session_id) return;
+    renderCounters(payload); setCaptureStatus("capture.status.progress", { stateKey: SESSION_STATE_LABELS[payload.state] || payload.state, count: payload.acquired_count });
+    if (["COMPLETED", "STOPPED", "FAILED", "INTERRUPTED"].includes(payload.state)) {
+      state.active = null;
+      setHardwareActions();
+      await refreshLatestWaveform(payload);
+      await loadHistory(true).catch((error) => toast(error.message));
+      return;
+    }
+    await refreshLatestWaveform(payload);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    scheduleSessionPoll(active.session_id);
+  }
 }
 
 async function startCapture() {
@@ -310,9 +341,17 @@ async function startCapture() {
   const common = { ...identity(), ...savePolicy() };
   if (mode === "SINGLE") {
     state.active = { mode: "SINGLE" }; setCaptureStatus("capture.status.singleRunning"); setHardwareActions();
-    const { payload } = await fetchJson("/api/v1/captures", { method: "POST", body: JSON.stringify({ ...common, ...triggerOptions() }) });
-    renderCounters(payload); await drawCapture(payload.capture_id); await loadHistory(true); stage("captured");
-    state.active = null; setHardwareActions(); setCaptureStatus("capture.status.singleComplete"); toast(t("capture.status.singleComplete")); return;
+    let payload;
+    try {
+      ({ payload } = await fetchJson("/api/v1/captures", { method: "POST", body: JSON.stringify({ ...common, ...triggerOptions() }) }));
+      renderCounters(payload);
+    } finally {
+      state.active = null;
+      setHardwareActions();
+    }
+    await refreshLatestWaveform({ last_capture_id: payload.capture_id });
+    await loadHistory(true).catch((error) => toast(error.message));
+    stage("captured"); setCaptureStatus("capture.status.singleComplete"); toast(t("capture.status.singleComplete")); return;
   }
   let endpoint; let body;
   if (mode === "PERIODIC") {
@@ -325,6 +364,7 @@ async function startCapture() {
     endpoint = "/api/v1/sweeps";
     body = { ...common, ...triggerOptions(), field: $("#sweep-field").value, values, loops: Number($("#sweep-loops").value), start_delay_ms: Number($("#sweep-start-delay").value), loop_delay_ms: Number($("#sweep-delay").value) };
   }
+  state.lastRenderedCaptureId = null;
   state.active = { mode, ...(await fetchJson(endpoint, { method: "POST", body: JSON.stringify(body) })).payload };
   renderCounters(state.active); setCaptureStatus(mode === "PERIODIC" ? "capture.status.periodicRunning" : "capture.status.sweepRunning"); setHardwareActions(); pollSession();
 }
@@ -340,7 +380,7 @@ async function stopCapture() {
 }
 
 function bindActions() {
-  const guarded = (operation) => () => operation().catch((error) => { state.active = null; setHardwareActions(); toast(error.message); });
+  const guarded = (operation) => () => operation().catch((error) => { setHardwareActions(); toast(error.message); });
   $("#baseline-button").addEventListener("click", loadBaseline); $("#reset-button").addEventListener("click", guarded(loadConfig));
   $("#save-draft-button").addEventListener("click", guarded(saveDraft)); $("#validate-button").addEventListener("click", guarded(validateConfig));
   $("#apply-button").addEventListener("click", guarded(applyConfig)); $("#capture-mode").addEventListener("change", updateMode);
