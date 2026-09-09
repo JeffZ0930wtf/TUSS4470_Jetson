@@ -192,10 +192,10 @@ Update existing tests that inspect the old raw return value to read
 
 In `test_capture_transaction.py`, use `socket.socketpair`, the existing bridge
 test server helper, `ReconnectableBridgeDeviceClient`, and a persistence
-barrier. Assert:
+barrier. Start the draft request while persistence is paused, release the
+barrier, and assert:
 
 ```python
-assert device_response.status_code == 200
 assert archived.sample_interval_ticks == 120
 assert archived.requested_config["sample_interval_ticks"] == 120
 assert archived.readback_config["sample_interval_ticks"] == 120
@@ -204,7 +204,9 @@ assert draft_result["requested"]["sample_interval_ticks"] == 240
 ```
 
 The fixture must use temporary SQLite/spool paths and must close both sockets in
-`finally`; it must not use a serial port.
+`finally`; it must not use a serial port. The concurrent `/device` response is
+tested in Task 2 because its non-blocking behavior depends on the R5 published
+view rather than the R1 capture identity transaction.
 
 - [ ] **Step 5: Run the interleaving test and verify RED**
 
