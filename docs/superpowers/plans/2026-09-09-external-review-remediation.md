@@ -786,7 +786,7 @@ fact and run the Docker ARM64 smoke plus AMD64 export steps individually with
 the same 60-second bound. These checks do not require USB, serial access, or
 external 7 V.
 
-- [ ] **Step 7: Clean the owned worktrees after successful integration**
+- [x] **Step 7: Clean the owned worktrees after successful integration**
 
 Verify the Windows and Jetson main checkouts are clean and at the pushed SHA,
 then remove only the `.worktrees/m6-external-review-fixes` worktree created for

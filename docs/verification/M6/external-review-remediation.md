@@ -80,3 +80,13 @@ Windows remains the complete offline source/firmware gate for this patch. The
 Jetson result proves the R7 ARM64 smoke no longer launches a persistent server;
 it does not claim that missing host development tools or AMD64 emulation were
 restored.
+
+## Cleanup
+
+The repair branch was deleted after its commits were fast-forwarded to `main`,
+and its Git worktree registration was pruned. Because the local environment and
+build outputs kept the physical directory non-empty, the unregistered remainder
+was retained for traceability under
+`.worktrees/archive/m6-external-review-fixes` instead of being force-deleted.
+The temporary Windows and Jetson Git bundles were deleted. The Windows and
+Jetson formal `main` checkouts were clean at the synchronized commit.
