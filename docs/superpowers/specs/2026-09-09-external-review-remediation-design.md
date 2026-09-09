@@ -363,7 +363,7 @@ The patch shall be test-driven and include:
    response, and that renewal is then rejected. While the original one-frame
    session is active, the test issues a duplicate start and observes
    `SessionConflict`; it proves the original callback and delivery policy are
-   unchanged, the session reaches `COMPLETED`, `captured_count` is exactly 1,
+   unchanged, the session reaches `COMPLETED`, `capture_count` is exactly 1,
    `last_capture_id` is valid, and the bridge pending count is 0;
 2. an API test using `ReconnectableBridgeDeviceClient` in which the first
    `/api/v1/device` request discovers the disconnect and still returns the
