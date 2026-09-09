@@ -3,13 +3,13 @@
 ## Document overview
 
 This document defines the bounded maintenance release that resolves findings
-R1 through R7 in the 2026-09-09 external review of the TUSS4470 ultrasonic
-acquisition submodule. It applies to the already closed M6 host, API, Web, and
-Linux verification paths. It refines implementation behavior without changing
-the M6 hardware protocol, firmware timing, electrical safety gates, or the M7
-production-hardening boundary. The staged roadmap remains authoritative for
-milestone scope; the external report remains the source of the reproduced
-defects.
+R1 through R7 and the two follow-up findings in the 2026-09-09 external review
+of the TUSS4470 ultrasonic acquisition submodule. It applies to the already
+closed M6 host, API, Web, and Linux verification paths. It refines
+implementation behavior without changing the M6 hardware protocol, firmware
+timing, electrical safety gates, or the M7 production-hardening boundary. The
+staged roadmap remains authoritative for milestone scope; the external report
+remains the source of the reproduced defects.
 
 ## 1. Objective and scope
 
@@ -289,3 +289,81 @@ the exact test-first tasks and commit sequence. When all checks pass, the
 branch is merged to `main`, pushed to GitHub, synchronized to the Jetson main
 checkout, and the owned worktrees are removed. The remote repair branch may be
 retained as traceable review history.
+
+## 11. Follow-up review: start ownership and first disconnect
+
+### 11.1 Confirmed defects and boundary
+
+The follow-up review reproduced two normal-operation defects:
+
+- a second periodic-start request can replace and then clear the callback of an
+  already-running periodic session before the conflict is rejected; and
+- the first device-status request that discovers a transport disconnect can
+  propagate `DeviceUnavailable` as HTTP 500 even though the reconnecting client
+  has already published a valid disconnected snapshot.
+
+This follow-up changes only host orchestration, the Web start control, and
+their tests. It does not change firmware, wire messages, SQLite schema,
+hardware configuration, capture parameters, or Burst behavior.
+
+### 11.2 Atomic periodic and Sweep start
+
+`AcquisitionApplication.start_periodic` shall make conflict detection and
+start ownership one serialized transition under `_session_lock`. The order is
+normative:
+
+1. reject any active periodic or Sweep session before modifying the device
+   callback, delivery policy, or session table;
+2. prune terminal sessions and register the new delivery policy;
+3. install the new session's asynchronous capture handler;
+4. start the controller and publish the returned session; and
+5. if startup fails, clear only the handler whose identity belongs to that
+   failed attempt and remove only that attempt's delivery-policy entry.
+
+A rejected duplicate start has no side effects on the running session. Its
+existing handler, delivery policy, counters, terminal transition, and
+`last_capture_id` remain intact. This is a per-device invariant and does not
+introduce a queue or multi-session scheduling.
+
+The Web page shall additionally publish a provisional `pending` active state
+before awaiting the PERIODIC or SWEEP start response. While pending, another
+start is ignored, all start controls are disabled, and STOP remains disabled
+because no server session ID exists yet. A successful response replaces the
+provisional state with the returned session. A failed response clears only the
+same provisional state and restores the controls. This UI guard reduces
+accidental duplicate requests; backend serialization remains the authority.
+
+### 11.3 Non-throwing first disconnect observation
+
+`SingleDeviceExecutor.try_device_view` shall preserve its bounded,
+non-blocking snapshot contract when `status()` or `capabilities()` is the call
+that first discovers a lost transport. It shall catch `DeviceUnavailable`,
+discard any stale successful diagnostic values, reread the immutable session
+snapshot published by `ReconnectableBridgeDeviceClient`, and return that
+disconnected view immediately after releasing the executor lock.
+
+The first and subsequent `/api/v1/device` responses after the same disconnect
+therefore return HTTP 200 with `connected=false`, the normal not-detected
+health label, the new session generation, and no stale device identity,
+status, or capability fields. This rule applies only to expected device
+unavailability; unrelated programming errors still propagate for diagnosis.
+
+### 11.4 Follow-up verification
+
+The patch shall be test-driven and include:
+
+1. a real socket-backed `BridgeDeviceClient` test that starts a one-frame
+   periodic session, immediately issues a duplicate start, observes
+   `SessionConflict`, and proves the original session reaches `COMPLETED` with
+   its persisted `last_capture_id`;
+2. an API test using `ReconnectableBridgeDeviceClient` in which the first
+   `/api/v1/device` request discovers the disconnect and still returns the
+   disconnected payload with HTTP 200;
+3. a Node Web test that holds the start response pending, issues a second start
+   action, and proves only one request is sent while start and stop controls
+   reflect the provisional state; and
+4. focused regression tests followed by the existing bounded Windows offline
+   aggregate gate, syntax/diff checks, and sensitive-literal scan.
+
+No COM port access, firmware flashing, external 7 V supply, or Burst is needed
+or permitted for this follow-up verification.
