@@ -60,7 +60,8 @@ Its single-capture operation shall:
 1. acquire the per-device lock;
 2. refresh the bridge session and validate the expected APPLIED identity;
 3. validate the trigger parameters;
-4. copy the current immutable APPLIED `ConfigurationSnapshot`;
+4. create an independent deep copy of the current APPLIED
+   `ConfigurationSnapshot`, including every nested mapping, list, and tuple;
 5. request exactly one capture;
 6. invoke the application-supplied resolution callback with an
    `ExecutedCapture` containing the raw decoded capture and copied snapshot;
@@ -69,7 +70,13 @@ Its single-capture operation shall:
 8. release the executor lock only after the callback returns or raises.
 
 The callback result becomes the operation result. No second read of shared
-DRAFT/APPLIED state is allowed when preparing capture metadata.
+DRAFT/APPLIED state is allowed when preparing capture metadata. A frozen
+dataclass alone is not considered immutable because its dictionary values can
+still be edited in place. `ParameterService` and the executor must never
+mutate a published snapshot in place, and the capture copy must share no
+mutable nested object with the current DRAFT/APPLIED state. A regression test
+shall mutate nested data after capture and prove that the stored capture
+context does not change.
 
 ### 3.2 Failure behavior
 
@@ -86,24 +93,44 @@ pending capture is resolved.
 
 ## 4. R5: non-blocking published device status
 
-The application shall publish a small immutable device-view cache containing:
+The host shall publish one small immutable `DeviceViewSnapshot` containing all
+information needed by `/api/v1/device`:
 
-- the most recently completed device status;
-- the most recently completed capability response; and
-- the host UTC nanosecond timestamp at which each value was observed.
+- connection state and backend kind;
+- device ID, boot ID, firmware identity, and session generation;
+- the most recently completed device status and capability response;
+- the host activity; and
+- the host UTC nanosecond timestamp at which device diagnostics were observed.
 
-When no host operation or session is active, `/api/v1/device` may refresh the
-cache through the executor and then publish it. While a single capture,
-periodic session, or Sweep is active, the endpoint shall not enter the locked
-device stream merely to refresh diagnostics. It shall immediately return the
-latest cached device values together with the authoritative host activity
-(`CAPTURING_SINGLE`, `CAPTURING_PERIODIC`, or `SWEEPING`) and an explicit
-observation timestamp. A cache that has not yet been populated is represented
-as an unavailable value, not as fabricated normal hardware state.
+The endpoint must not read `connected`, `hello`, `session_generation`,
+`status`, `capabilities`, or any other property from the live device wrapper
+while serving a cached response. In particular, those properties on
+`ReconnectableBridgeDeviceClient` use the same wrapper lock as device commands
+and are therefore treated as potentially blocking device access.
+
+`ReconnectableBridgeDeviceClient` shall publish an immutable session view when
+a completed HELLO session is installed. It shall replace that view with a
+disconnected view when the session is closed or lost, and a different
+device/boot/session generation shall replace rather than amend the old view.
+The executor/application device view is updated from this published session
+view and from completed diagnostic commands; no stale identity is presented as
+the current connected session after invalidation.
+
+`/api/v1/device` shall first obtain the current published snapshot without
+device I/O. When no host activity is known, it may ask the executor for a
+refresh only through a non-blocking lock acquisition. If the executor lock is
+not acquired immediately, including the race where an operation begins after
+the activity snapshot was read, the endpoint returns the published cache. It
+must not wait for a complete capture, Start Delay, Sweep, periodic callback, or
+pending-frame resolution. A cache that has not yet been populated is
+represented as an unavailable value, not as fabricated normal hardware state.
 
 This design preserves Sweep's exclusive configuration semantics. It does not
 split the executor lock between Sweep points and does not permit writes during
-an active plan.
+an active plan. Verification shall use the real
+`ReconnectableBridgeDeviceClient` around the test bridge client, not only the
+simulated-device implementation, and shall cover session replacement and
+disconnect invalidation.
 
 ## 5. R4: public capture metadata
 
@@ -149,11 +176,21 @@ The generic error wrapper shall only display the error and restore controls
 appropriate to the current state. It shall not clear `state.active`.
 
 The capture-start path owns cleanup for a start request that fails before a
-session is returned. Once a periodic or Sweep session ID has been accepted,
-only a backend terminal state (`COMPLETED`, `STOPPED`, `FAILED`, or
-`INTERRUPTED`) clears `state.active`. Failures from save draft, validate,
-history, waveform, refresh, or stop requests must preserve the active session
-and its stop control.
+session is returned. A SINGLE capture request shall release its busy/task state
+as soon as the capture request itself succeeds or fails; waveform rendering and
+history refresh happen afterward and cannot prevent that cleanup. Once a
+periodic or Sweep session ID has been accepted, only a backend terminal state
+(`COMPLETED`, `STOPPED`, `FAILED`, or `INTERRUPTED`) clears `state.active`.
+When a terminal response is received, the page shall first publish the terminal
+state and clear task ownership, then attempt waveform and history refresh.
+Failures from save draft, validate, history, waveform, refresh, or stop
+requests must preserve any still-active session and its stop control.
+
+Polling transport, session-query, or waveform-display failures are display
+errors rather than evidence that the backend task ended. If `state.active`
+still identifies a periodic or Sweep session after such an error, the page
+shall schedule the next bounded poll. Only a confirmed backend terminal state
+stops polling for that session.
 
 ### 6.2 Mode-specific controls
 
@@ -171,8 +208,10 @@ firmware periodic protocol is not expanded by this patch.
 
 During session polling, the page shall compare the returned
 `last_capture_id` with the ID most recently rendered. When a new non-null ID is
-observed, it shall fetch and draw that capture once. Polling continues even if
-one waveform request fails, and the active session remains stoppable.
+observed, it shall fetch and draw that capture once. Session polling is
+scheduled independently of waveform rendering, so a slow or failed waveform
+request cannot suppress the next status query. The active session remains
+stoppable.
 
 Only the latest rendered ID and waveform are retained. The page shall not
 append frame objects or samples to an in-memory history, and the refresh rate
@@ -211,18 +250,23 @@ the behavioral source:
 
 1. R1: place a barrier after frame receipt and before persistence; concurrently
    request device state and draft modification; assert no HTTP 500 and exact
-   frame/requested/actual/readback identity.
+   frame/requested/actual/readback identity. Mutate nested source snapshot data
+   after capture and assert the stored context remains unchanged.
 2. R2: reject draft, validation, history, waveform, and stop-related requests
    while a periodic session remains `RUNNING`; assert task ownership and stop
-   access remain.
+   access remain. For SINGLE and terminal session responses, fail waveform and
+   history loading and assert task cleanup still completes.
 3. R3: switch all three modes; assert only applicable trigger fields are
    enabled and every visible value is present in the emitted request.
 4. R4: compare every public metadata field for one identical input frame under
    `SAVE_ALL` and `SAVE_NONE`.
-5. R5: query `/device` during a long Sweep start delay; assert bounded response,
-   `SWEEPING`, and preserved write exclusion.
-6. R6: publish successive `last_capture_id` values; assert one waveform fetch
-   per new ID and no growth of waveform history.
+5. R5: query `/device` through a real `ReconnectableBridgeDeviceClient` during
+   a long Sweep start delay and executor-lock race; assert bounded response,
+   `SWEEPING`, preserved write exclusion, and correct cache invalidation after
+   session replacement/disconnect.
+6. R6: publish successive `last_capture_id` values and inject one session or
+   waveform request failure; assert one waveform fetch per new ID, continued
+   polling while active, and no growth of waveform history.
 7. R7: validate the script structure and, on Linux/Docker, execute the
    aggregate path through the ARM64 smoke and AMD64 export.
 
