@@ -46,6 +46,31 @@ The test worktree reused the repository's pinned MSP430 toolchain through local
 ignored directory junctions; no toolchain file or generated firmware artifact
 is part of the patch.
 
+## Follow-up review verification
+
+The subsequent review identified two additional normal-operation defects and
+both were closed on 2026-09-09 without expanding the maintenance boundary.
+
+| Finding | Corrected contract | Exact automated evidence | Result |
+|---|---|---|---|
+| Duplicate periodic start | A conflicting start is rejected before the active callback or replay-policy context can change. If a new start fails after registering its own context, cleanup uses the complete device/boot/session identity and cannot delete newer ownership. | `test_duplicate_start_preserves_final_capture_during_failed_renewal`; `test_failed_periodic_start_removes_only_its_delivery_policy` | Pass |
+| First disconnect and page recovery | The first status call that discovers transport loss returns the newly published disconnected snapshot as HTTP 200 with no stale diagnostics. The Web page keeps one refresh chain after failure, and PERIODIC/SWEEP use a provisional state to suppress a duplicate start while the response is pending. | `test_first_device_query_returns_disconnected_snapshot`; pending-start and first-failure/next-success scenarios in `packages/usac_runtime/tests/test_m5_app.cjs` | Pass |
+
+The duplicate-start regression fixes the critical interleaving rather than a
+simple completed-frame path: the original worker is gated before renewal, the
+duplicate is rejected, the final frame then arrives while the renewal response
+is pending, and firmware rejects that already-in-flight renewal. The original
+session still reaches `COMPLETED` with `capture_count=1`, a valid
+`last_capture_id`, the original delivery-policy session ID, and zero bridge
+pending records.
+
+The final Windows offline aggregate gate passed 245 Python tests, the Node Web
+behavior test, every existing firmware build/static audit, and the MSP430
+simulator tests. The added code is host-only: no serial port was opened, no
+firmware was flashed, external 7 V was not required, and no Burst occurred.
+Implementation commits are `f0f1675`, `41d23b3`, and `8c7c337` on the bounded
+follow-up branch.
+
 ## Acceptance boundary
 
 This record closes the reviewed host defects only. It does not reopen M6, does

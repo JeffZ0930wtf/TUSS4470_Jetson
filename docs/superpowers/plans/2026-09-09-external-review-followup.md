@@ -311,7 +311,7 @@ git commit -m "fix: keep web start and device polling state recoverable"
 - Produces: a traceable follow-up verification record and clean branch ready
   for review, push, Jetson synchronization, and worktree archival.
 
-- [ ] **Step 1: Run the bounded offline aggregate gate**
+- [x] **Step 1: Run the bounded offline aggregate gate**
 
 ```powershell
 & .\scripts\test-all.ps1
@@ -320,7 +320,7 @@ git commit -m "fix: keep web start and device polling state recoverable"
 Expected: Python, Node, firmware/static, and simulator checks pass within 60
 seconds without COM access, flashing, or Burst.
 
-- [ ] **Step 2: Run final source-scope checks**
+- [x] **Step 2: Run final source-scope checks**
 
 ```powershell
 node --check packages/usac_runtime/src/usac_runtime/web/m5-app.js
@@ -331,7 +331,7 @@ git diff --stat main...HEAD
 
 Expected: clean syntax/whitespace and only the approved follow-up scope.
 
-- [ ] **Step 3: Record evidence and commit closure**
+- [x] **Step 3: Record evidence and commit closure**
 
 Add a dated follow-up subsection mapping each reproduced defect to its focused
 test and result. State explicitly that no firmware/hardware behavior changed
