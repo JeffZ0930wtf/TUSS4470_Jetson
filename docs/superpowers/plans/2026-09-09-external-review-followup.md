@@ -226,7 +226,7 @@ git commit -m "fix: publish first device disconnect without HTTP 500"
 - Produces: one start request while its response is pending and exactly one
   subsequent refresh timer after either device-query success or failure.
 
-- [ ] **Step 1: Add two failing Node regressions**
+- [x] **Step 1: Add two failing Node regressions**
 
 Extend the harness with a deferred response. While the first PERIODIC start is
 unresolved, invoke the start action twice and assert:
@@ -242,7 +242,7 @@ In a separate harness, make the first device request fail, execute the one
 scheduled timer, then return a connected payload. Assert one timer is queued
 after each attempt and the successful payload updates `state.connected`.
 
-- [ ] **Step 2: Run the Node test and observe RED**
+- [x] **Step 2: Run the Node test and observe RED**
 
 Run:
 
@@ -253,7 +253,7 @@ node packages/usac_runtime/tests/test_m5_app.cjs
 Expected: no provisional active state and/or the initial failed refresh leaves
 no next timer. A harness syntax error is not an acceptable RED.
 
-- [ ] **Step 3: Implement the minimal Web state changes**
+- [x] **Step 3: Implement the minimal Web state changes**
 
 Make `startCapture()` return immediately when a task already owns the page.
 For PERIODIC/SWEEP, publish an identity-checked provisional object before the
@@ -281,7 +281,7 @@ async function refreshDevice() {
 
 Do not add exponential backoff, another scheduler, or a front-end framework.
 
-- [ ] **Step 4: Run Node syntax and behavior tests GREEN and commit**
+- [x] **Step 4: Run Node syntax and behavior tests GREEN and commit**
 
 Run:
 

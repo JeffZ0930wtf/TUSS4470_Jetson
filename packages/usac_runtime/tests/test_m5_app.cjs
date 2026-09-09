@@ -46,14 +46,14 @@ function makeHarness() {
     console,
     document: { querySelector: node, querySelectorAll: () => [] },
     localStorage: { getItem: () => null, setItem() {} },
-    window: { setTimeout(handler) { timers.push(handler); return timers.length; } },
+    window: { setTimeout(handler, delay) { timers.push({ handler, delay }); return timers.length; } },
     URLSearchParams,
     Uint8Array,
     Uint16Array,
     fetch: async (requestPath, options = {}) => {
       requests.push({ path: requestPath, ...options });
       assert.ok(responses.length, `unexpected request: ${requestPath}`);
-      const response = responses.shift();
+      const response = await responses.shift();
       return {
         ok: response.ok !== false,
         json: async () => response.payload ?? {},
@@ -70,6 +70,47 @@ function makeHarness() {
 }
 
 async function main() {
+  const pendingStart = makeHarness();
+  Object.entries({
+    "#capture-mode": "PERIODIC", "#save-policy": "SAVE_ALL",
+    "#period-us": "1000000", "#periodic-count": "2", "#lease-timeout": "3000",
+  }).forEach(([selector, value]) => { pendingStart.node(selector).value = value; });
+  pendingStart.run('state.connected = true; state.config = {state: "APPLIED", actual: {profile_sha256: "abc", device_config_crc32: 123}}; pollSession = async () => {};');
+  let finishStart;
+  pendingStart.responses.push(
+    new Promise((resolve) => { finishStart = resolve; }),
+    { payload: { session_id: "duplicate", schedule_id: "duplicate", acquired_count: 0 } },
+  );
+
+  const firstStart = pendingStart.run("startCapture()");
+  await Promise.resolve();
+  const secondStart = pendingStart.run("startCapture()");
+  assert.equal(pendingStart.run("Boolean(state.active && state.active.pending)"), true);
+  assert.equal(pendingStart.node("#capture-start").disabled, true);
+  assert.equal(pendingStart.node("#capture-stop").disabled, true);
+  assert.equal(
+    pendingStart.requests.filter((request) => request.path === "/api/v1/periodic/start").length,
+    1,
+  );
+  finishStart({ payload: { session_id: "session-pending", schedule_id: "schedule-pending", acquired_count: 0 } });
+  await Promise.all([firstStart, secondStart]);
+
+  const deviceRetry = makeHarness();
+  deviceRetry.responses.push({ ok: false, payload: { detail: "initial query failed" } });
+  await deviceRetry.run("refreshDevice()").catch(() => {});
+  let refreshTimers = deviceRetry.timers.filter((timer) => timer.delay === 1000);
+  assert.equal(refreshTimers.length, 1);
+  deviceRetry.responses.push({
+    payload: {
+      connected: true, health: "NORMAL", activity: "IDLE", backend: "SIMULATOR",
+      device_id: "11".repeat(16), firmware: { major: 0, minor: 1, patch: 0, build: 1 },
+    },
+  });
+  await refreshTimers[0].handler();
+  refreshTimers = deviceRetry.timers.filter((timer) => timer.delay === 1000);
+  assert.equal(refreshTimers.length, 2);
+  assert.equal(deviceRetry.run("state.connected"), true);
+
   const ui = makeHarness();
   ui.run("bindActions(); state.connected = true;");
 

@@ -104,7 +104,7 @@ function stage(name) {
 function setHardwareActions() {
   $("#apply-button").disabled = !state.connected || Boolean(state.active);
   $("#capture-start").disabled = !state.connected || Boolean(state.active);
-  $("#capture-stop").disabled = !state.active || state.active.mode === "SINGLE";
+  $("#capture-stop").disabled = !state.active || state.active.mode === "SINGLE" || Boolean(state.active.pending);
 }
 
 function updateDevice(payload) {
@@ -128,9 +128,16 @@ function updateDevice(payload) {
 }
 
 async function refreshDevice() {
-  const { payload } = await fetchJson("/api/v1/device");
-  updateDevice(payload);
-  window.setTimeout(() => refreshDevice().catch(() => window.setTimeout(refreshDevice, 1500)), 1000);
+  try {
+    const { payload } = await fetchJson("/api/v1/device");
+    updateDevice(payload);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    // One owner schedules the next observation after either outcome. An
+    // initial host failure therefore cannot permanently stop device detection.
+    window.setTimeout(refreshDevice, 1000);
+  }
 }
 
 function controlFor(field, value) {
@@ -337,6 +344,7 @@ async function pollSession() {
 }
 
 async function startCapture() {
+  if (state.active) return;
   const mode = $("#capture-mode").value;
   const common = { ...identity(), ...savePolicy() };
   if (mode === "SINGLE") {
@@ -365,7 +373,19 @@ async function startCapture() {
     body = { ...common, ...triggerOptions(), field: $("#sweep-field").value, values, loops: Number($("#sweep-loops").value), start_delay_ms: Number($("#sweep-start-delay").value), loop_delay_ms: Number($("#sweep-delay").value) };
   }
   state.lastRenderedCaptureId = null;
-  state.active = { mode, ...(await fetchJson(endpoint, { method: "POST", body: JSON.stringify(body) })).payload };
+  const pending = { mode, pending: true };
+  state.active = pending;
+  setCaptureStatus(mode === "PERIODIC" ? "capture.status.periodicRunning" : "capture.status.sweepRunning");
+  setHardwareActions();
+  try {
+    state.active = { mode, ...(await fetchJson(endpoint, { method: "POST", body: JSON.stringify(body) })).payload };
+  } catch (error) {
+    // Clear only the provisional owner created by this request. A future
+    // session state must not be erased by a late rejection.
+    if (state.active === pending) state.active = null;
+    setHardwareActions();
+    throw error;
+  }
   renderCounters(state.active); setCaptureStatus(mode === "PERIODIC" ? "capture.status.periodicRunning" : "capture.status.sweepRunning"); setHardwareActions(); pollSession();
 }
 
