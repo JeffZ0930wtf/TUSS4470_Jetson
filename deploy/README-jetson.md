@@ -18,6 +18,11 @@ bridge 和 core 不共享可写目录。bridge 只拥有串口、协议校验和
 
 ## 稳定设备名
 
+不得根据 `/dev/ttyACM0`、`ttyACM1` 或 `ttyACM2` 的编号推断哪个端口是采集
+固件。实机重启已经观察到 `MSP430-USB Example` 从 `ttyACM2` 变为
+`ttyACM0`，而两个 `MSP Tools Driver` 调试端口占用其余编号。必须同时核对
+产品名和本板 32 位小写十六进制序列号。
+
 先用 `udevadm info --attribute-walk --name=/dev/ttyACM0` 核对实际设备的 `idVendor` 和 32 位小写十六进制 USB 序列号。随后可创建 `/etc/udev/rules.d/99-tuss4470.rules`：
 
 ```udev
@@ -25,6 +30,16 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="0451", ATTRS{serial}=="替换为本板32位�
 ```
 
 不得照抄占位序列号。规则加载后重新插拔设备，并确认 `/dev/tuss4470` 指向预期的 `/dev/ttyACM*`。
+
+不创建 udev 别名时，也可把 Compose 变量直接设为经过核对的 `by-id` 路径：
+
+```sh
+export USAC_SERIAL_DEVICE=/dev/serial/by-id/usb-Texas_Instruments_MSP430-USB_Example_<本板32位小写十六进制序列号>-if00
+docker compose -f deploy/compose.jetson.yaml up -d --force-recreate bridge
+```
+
+`devices` 映射在容器创建时确定。修改变量或设备枚举顺序后，仅重启旧容器不会
+更新映射，必须重建 bridge 容器；core 和两个持久目录不需要因此重建或删除。
 
 ## 启动前提
 

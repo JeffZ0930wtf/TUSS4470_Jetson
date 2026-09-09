@@ -25,7 +25,7 @@ features and does not predict SOC or SOH.
 - Never commit captures, spool files, SQLite databases, credentials, firmware
   binaries, or large instrument exports.
 
-## Implemented through M5; M6 Jetson validation in progress
+## First version implemented through M6
 
 - Cross-platform runtime configuration and serial transport boundary.
 - USAC v1 little-endian frame codec, CRC-32/ISO-HDLC, bounded host stream
@@ -77,8 +77,12 @@ The accepted M6 host increment does not change firmware or the wire protocol.
 It adds offline-first bridge lifecycle handling, readable device/activity
 state, one unified acquisition panel, three explicit save policies, persistent
 session counters, and restart closure for an interrupted `SAVE_LAST` run. It
-passed Windows operator review on 2026-09-08. Jetson migration and physical-
-device validation remain open and are not yet claimed.
+passed Windows operator review on 2026-09-08. The same ARM64 core/bridge stack
+then passed real Jetson configuration, range, periodic/STOP/lease, Master/Slave,
+event, sweep, save-policy, offline-start, persistence, and byte-identity gates.
+Detailed evidence is recorded in `docs/verification/M6/summary.md` and
+`docs/verification/M6/jetson-validation.md`. This is a first-version result,
+not the M7 production-hardening claim.
 
 ## Review the M6 host increment without hardware
 
