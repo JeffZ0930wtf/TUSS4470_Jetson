@@ -10,11 +10,13 @@ controlled roadmap remains authoritative for scope and milestone state.
 
 ## Status
 
-**Repository closure in progress — 2026-09-09.** All M6 functional,
-cross-platform, real-hardware, and final regression checks are complete. The
-status becomes **Closed** only after the prescribed `milestone(M6)` commit
-reaches `origin/main`, local/remote SHA values match, Jetson main is
-synchronized, and the completed worktrees are cleaned up.
+**Closed — 2026-09-09.** All M6 functional, cross-platform, real-hardware, and
+final regression checks are complete. The prescribed
+`milestone(M6): complete host 3.0 and Jetson first version` commit is
+`9559ea7819489f5adc636202bcf3656996d25e6e`; it reached `origin/main` with
+matching local/remote SHA values. Jetson main was synchronized, its running
+containers were recreated from the formal main path with the stable USB
+identity, and both completed M6 worktrees were removed.
 
 ## Host 3.0 increment
 
@@ -95,5 +97,6 @@ experiments.
 - [x] Final Windows and Jetson regressions: 235 tests passed on each platform;
       the Windows full script also passed every firmware build and static/unit
       gate without flashing.
-- [ ] `milestone(M6)` integration and push to `origin/main` with matching SHA.
-- [ ] Jetson main synchronization and completed-worktree cleanup.
+- [x] `milestone(M6)` integration and push to `origin/main` with matching SHA.
+- [x] Jetson main synchronization, formal-main container migration, and
+      completed-worktree cleanup.

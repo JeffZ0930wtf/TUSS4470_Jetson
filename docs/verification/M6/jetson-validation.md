@@ -272,8 +272,14 @@ restored HELLO without flashing or a Burst. Deployment instructions now require
 the stable identity path and explicitly prohibit identifying the acquisition
 port by ordinal alone.
 
-## Remaining before M6/G3J closure
+## M6/G3J closure
 
 All functional and real-hardware items in roadmap section 9.2 are complete.
-Only the prescribed full regression, milestone summary, Git integration/push,
-Jetson main synchronization, and completed-worktree cleanup remain.
+Final Windows and Jetson regressions each passed 235 tests; the Windows full
+script also passed every firmware build and static/unit gate without flashing.
+Milestone commit `9559ea7819489f5adc636202bcf3656996d25e6e` reached
+`origin/main` with matching SHA values. Jetson main was synchronized to that
+commit, core and bridge were recreated from the formal main path, bridge used
+the stable `by-id` device source, both bind mounts remained valid, and the
+device returned `NORMAL/IDLE`. The completed Windows and Jetson M6 worktrees
+were then removed; the remote feature branch remains as historical provenance.
