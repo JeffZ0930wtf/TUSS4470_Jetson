@@ -85,6 +85,12 @@ Detailed evidence is recorded in `docs/verification/M6/summary.md` and
 `docs/verification/M6/jetson-validation.md`. This is a first-version result,
 not the M7 production-hardening claim.
 
+The bounded 2026-09-09 post-closure external-review fixes for capture
+atomicity, non-blocking device status, complete public frame metadata, Web task
+ownership/live waveform behavior, and terminating Jetson automation are
+recorded in `docs/verification/M6/external-review-remediation.md`. They do not
+change firmware, the wire protocol, or the M6 hardware acceptance boundary.
+
 ## Review the M6 host increment without hardware
 
 Activate this worktree's environment and start the deterministic simulator.

@@ -700,7 +700,7 @@ Jetson integration step.
 - Produces: traceable review resolution, merged/pushed main, Jetson sync, and
   cleaned owned worktrees.
 
-- [ ] **Step 1: Run the Windows aggregate gate**
+- [x] **Step 1: Run the Windows aggregate gate**
 
 Run from the activated worktree environment:
 
@@ -712,7 +712,7 @@ Expected: all Python, Node, firmware build, static, simulator, and scheduling
 checks pass; no COM port, flashing, or Burst occurs. Stop and report if the
 command remains active beyond the agreed bound.
 
-- [ ] **Step 2: Run source and staged-scope checks**
+- [x] **Step 2: Run source and staged-scope checks**
 
 Run:
 
@@ -726,7 +726,7 @@ git diff --stat main...HEAD
 Expected: syntax/whitespace pass and the branch contains only the approved
 review remediation.
 
-- [ ] **Step 3: Write the formal verification record**
+- [x] **Step 3: Write the formal verification record**
 
 The new document begins with `Document overview` and records a table with one
 row per R1–R7 containing: defect, changed contract, exact automated test,
@@ -737,7 +737,7 @@ README gains a short pointer to this maintenance record. The controlled roadmap
 records a dated post-M6 maintenance checkpoint without reopening M6 or marking
 M7 complete.
 
-- [ ] **Step 4: Commit documentation and final branch state**
+- [x] **Step 4: Commit documentation and final branch state**
 
 Run:
 
