@@ -90,6 +90,12 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn("linux/amd64", jetson_test)
         self.assertIn("m1-arm64", jetson_test)
         self.assertNotIn("make -C firmware", jetson_test)
+        arm64_run = "docker run --rm --platform linux/arm64 --entrypoint python"
+        amd64_export = "docker buildx build --platform linux/amd64"
+        protocol_smoke = "usac_protocol.frame"
+        self.assertIn(arm64_run, jetson_test)
+        self.assertIn(protocol_smoke, jetson_test)
+        self.assertLess(jetson_test.index(arm64_run), jetson_test.index(amd64_export))
 
     def test_windows_test_entrypoint_creates_pytest_build_parent(self) -> None:
         windows_test = (ROOT / "scripts/test-all.ps1").read_text(encoding="utf-8")

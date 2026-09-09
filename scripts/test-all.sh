@@ -19,7 +19,8 @@ node packages/usac_runtime/tests/test_m5_app.cjs
 docker build --platform linux/arm64 \
     -f deploy/Dockerfile.core \
     -t tuss4470-acquisition-core:m1-arm64 .
-docker run --rm --platform linux/arm64 tuss4470-acquisition-core:m1-arm64
+docker run --rm --platform linux/arm64 --entrypoint python tuss4470-acquisition-core:m1-arm64 -c \
+    'from usac_protocol.frame import Frame, MessageType, decode_frame, encode_frame; raw = encode_frame(Frame(MessageType.GET_STATUS, 1, b"")); assert decode_frame(raw).message_type is MessageType.GET_STATUS'
 
 mkdir -p .tools/buildx
 docker buildx build --platform linux/amd64 \

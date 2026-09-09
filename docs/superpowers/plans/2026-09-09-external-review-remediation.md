@@ -636,7 +636,7 @@ Expected: UI logic, syntax, and API static-contract tests pass.
 - Produces: terminating ARM64 import/protocol smoke followed by the existing
   AMD64 OCI export.
 
-- [ ] **Step 1: Write a static ordering and entrypoint-override regression**
+- [x] **Step 1: Write a static ordering and entrypoint-override regression**
 
 Extend `test_host_automation_matches_the_platform_split`:
 
@@ -649,7 +649,7 @@ assert protocol_smoke in jetson_test
 assert jetson_test.index(arm64_run) < jetson_test.index(amd64_export)
 ```
 
-- [ ] **Step 2: Run the layout test and verify RED**
+- [x] **Step 2: Run the layout test and verify RED**
 
 Run:
 
@@ -659,7 +659,7 @@ Run:
 
 Expected: current Docker run has no entrypoint override.
 
-- [ ] **Step 3: Replace the service launch with a terminating smoke**
+- [x] **Step 3: Replace the service launch with a terminating smoke**
 
 Use this shape in `test-all.sh`:
 
@@ -671,7 +671,7 @@ docker run --rm --platform linux/arm64 --entrypoint python \
 
 Do not add background services or arbitrary sleeps.
 
-- [ ] **Step 4: Verify GREEN and commit R7**
+- [x] **Step 4: Verify GREEN and commit R7**
 
 Run:
 
