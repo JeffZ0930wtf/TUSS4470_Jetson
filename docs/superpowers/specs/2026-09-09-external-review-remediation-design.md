@@ -348,20 +348,31 @@ health label, the new session generation, and no stale device identity,
 status, or capability fields. This rule applies only to expected device
 unavailability; unrelated programming errors still propagate for diagnosis.
 
+The Web `refreshDevice()` loop shall also survive a failed request. Success
+and failure paths both schedule exactly one next refresh, so an initial HTTP or
+transport failure cannot permanently stop device detection and a later
+successful response can update the page. The implementation shall keep one
+timer chain rather than adding concurrent retries.
+
 ### 11.4 Follow-up verification
 
 The patch shall be test-driven and include:
 
-1. a real socket-backed `BridgeDeviceClient` test that starts a one-frame
-   periodic session, immediately issues a duplicate start, observes
-   `SessionConflict`, and proves the original session reaches `COMPLETED` with
-   its persisted `last_capture_id`;
+1. a real socket-backed `BridgeDeviceClient` test that reproduces the critical
+   interleaving: the final frame arrives while the client awaits a lease-renew
+   response, and that renewal is then rejected. While the original one-frame
+   session is active, the test issues a duplicate start and observes
+   `SessionConflict`; it proves the original callback and delivery policy are
+   unchanged, the session reaches `COMPLETED`, `captured_count` is exactly 1,
+   `last_capture_id` is valid, and the bridge pending count is 0;
 2. an API test using `ReconnectableBridgeDeviceClient` in which the first
    `/api/v1/device` request discovers the disconnect and still returns the
    disconnected payload with HTTP 200;
-3. a Node Web test that holds the start response pending, issues a second start
-   action, and proves only one request is sent while start and stop controls
-   reflect the provisional state; and
+3. Node Web tests that hold the start response pending, issue a second start
+   action, and prove only one request is sent while start and stop controls
+   reflect the provisional state; and that make the first `refreshDevice()`
+   request fail and the next request succeed, proving the single polling chain
+   continues and updates the page;
 4. focused regression tests followed by the existing bounded Windows offline
    aggregate gate, syntax/diff checks, and sensitive-literal scan.
 
