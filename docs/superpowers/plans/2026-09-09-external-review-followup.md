@@ -344,7 +344,7 @@ git diff --cached --check
 git commit -m "docs: close external review follow-up"
 ```
 
-- [ ] **Step 4: Integrate only after final verification**
+- [x] **Step 4: Integrate only after final verification**
 
 Fast-forward `main`, rerun the bounded aggregate gate, push without rewriting
 history, synchronize the Jetson checkout to the exact pushed SHA, and archive
