@@ -183,6 +183,39 @@ def test_device_endpoint_does_not_wait_for_sweep_executor_lock(tmp_path: Path) -
     assert disconnected["session_generation"] == 1
 
 
+def test_first_device_query_returns_disconnected_snapshot(tmp_path: Path) -> None:
+    class DisconnectsOnStatus(SimulatedDeviceClient):
+        def status(self):
+            raise ConnectionError("injected bridge disconnect")
+
+        def close(self) -> None:
+            pass
+
+    service = ParameterService.from_schema_file(SCHEMA_PATH, smclk_hz=24_000_000)
+    device = ReconnectableBridgeDeviceClient(
+        DisconnectsOnStatus(SimulatedDevice())
+    )
+    application = AcquisitionApplication(
+        service,
+        SingleDeviceExecutor(service, device),
+        device,
+        store=CaptureStore(tmp_path / "first-disconnect.sqlite3"),
+    )
+    api = TestClient(create_api(application), raise_server_exceptions=False)
+
+    response = api.get("/api/v1/device")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["connected"] is False
+    assert payload["health"] == "NOT_DETECTED"
+    assert payload["session_generation"] == 1
+    assert payload["device_id"] is None
+    assert payload["boot_id"] is None
+    assert payload["status"] is None
+    assert payload["capabilities"] is None
+
+
 def test_interrupted_session_remains_queryable_after_core_restart(tmp_path: Path) -> None:
     path = tmp_path / "captures.sqlite3"
     session_id = "52" * 16

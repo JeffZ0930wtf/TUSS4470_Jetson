@@ -153,7 +153,7 @@ git commit -m "fix: preserve active periodic session on duplicate start"
 - Produces: the first `/api/v1/device` request that discovers a transport loss
   returns HTTP 200 with a disconnected, diagnostic-free snapshot.
 
-- [ ] **Step 1: Add the failing API regression**
+- [x] **Step 1: Add the failing API regression**
 
 Use a closable `SimulatedDeviceClient` whose first `status()` raises
 `ConnectionError`, wrap it in `ReconnectableBridgeDeviceClient`, and call the
@@ -171,7 +171,7 @@ assert response.json()["session_generation"] == 1
 Also assert device and boot identity plus capabilities are absent so cached
 diagnostics cannot leak across a generation change.
 
-- [ ] **Step 2: Run the focused test and observe RED**
+- [x] **Step 2: Run the focused test and observe RED**
 
 Run:
 
@@ -181,7 +181,7 @@ Run:
 
 Expected: HTTP 500 caused by propagated `DeviceUnavailable`.
 
-- [ ] **Step 3: Catch only expected device unavailability**
+- [x] **Step 3: Catch only expected device unavailability**
 
 In `try_device_view`, catch `DeviceUnavailable` around the refresh/status/
 capabilities sequence, reread the published session, and replace the cached
@@ -197,7 +197,7 @@ except DeviceUnavailable:
 
 Leave the `finally` lock release in place and do not catch broad exceptions.
 
-- [ ] **Step 4: Run API/device-view tests GREEN and commit**
+- [x] **Step 4: Run API/device-view tests GREEN and commit**
 
 Run:
 

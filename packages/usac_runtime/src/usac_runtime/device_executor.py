@@ -369,6 +369,17 @@ class SingleDeviceExecutor:
                 time.time_ns(),
             )
             return self._device_view
+        except DeviceUnavailable:
+            # The reconnecting wrapper publishes the disconnected generation
+            # before raising. Return that authoritative snapshot on the same
+            # HTTP request and never carry diagnostics across device sessions.
+            self._device_view = DeviceViewSnapshot(
+                self._published_session(),
+                None,
+                None,
+                None,
+            )
+            return self._device_view
         finally:
             self._lock.release()
 
