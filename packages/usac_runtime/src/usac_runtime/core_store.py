@@ -374,6 +374,31 @@ class CaptureStore:
                 """
             )
 
+    def unregister_delivery_policy(
+        self,
+        *,
+        device_id: bytes,
+        boot_id: bytes,
+        session_id: str,
+    ) -> None:
+        """Remove replay ownership only if it still belongs to this session.
+
+        The session predicate prevents cleanup from an older failed start from
+        deleting a policy that a newer successful start has already published.
+        """
+
+        if len(device_id) != 16 or len(boot_id) != 16:
+            raise ValueError("device_id and boot_id must encode exactly 16 bytes")
+        normalized_session = self._normalize_session_id(session_id)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                DELETE FROM delivery_policy_contexts
+                WHERE device_id=? AND boot_id=? AND session_id=?
+                """,
+                (device_id, boot_id, normalized_session),
+            )
+
     def commit_replayed_delivery(self, delivery: BridgeCaptureDelivery) -> CoreCommitResult:
         """Resolve a bridge-spooled frame using its pre-registered host policy."""
 

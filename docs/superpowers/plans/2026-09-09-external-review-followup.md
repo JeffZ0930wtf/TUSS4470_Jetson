@@ -56,7 +56,7 @@ Node VM tests.
   delivery policy; conditional cleanup through
   `CaptureStore.unregister_delivery_policy(device_id, boot_id, session_id)`.
 
-- [ ] **Step 1: Add the deterministic failing regression**
+- [x] **Step 1: Add the deterministic failing regression**
 
 Gate the original worker immediately before its first renewal, call
 `start_periodic` a second time, and then release the renewal. The assertion set
@@ -78,7 +78,7 @@ its `session_id` remains the original session ID. The injected socket peer must
 send the final frame while renewal waits for its response and must then reject
 that renewal.
 
-- [ ] **Step 2: Run the focused test and observe RED**
+- [x] **Step 2: Run the focused test and observe RED**
 
 Run:
 
@@ -89,7 +89,7 @@ Run:
 Expected: the original session is `FAILED`, its handler identity changes, or
 `last_capture_id` is absent. A setup/import error is not an acceptable RED.
 
-- [ ] **Step 3: Implement the minimal atomic transition**
+- [x] **Step 3: Implement the minimal atomic transition**
 
 Move periodic conflict detection ahead of snapshot, handler installation, and
 delivery-policy registration, and retain `_session_lock` through ownership
@@ -120,7 +120,7 @@ with self._session_lock:
 identity fields so a failed old attempt cannot remove newer ownership. Do not
 introduce a queue or new session state.
 
-- [ ] **Step 4: Run focused and neighboring periodic tests GREEN**
+- [x] **Step 4: Run focused and neighboring periodic tests GREEN**
 
 Run:
 
@@ -131,7 +131,7 @@ Run:
 Expected: all selected tests pass, including the new deterministic
 interleaving.
 
-- [ ] **Step 5: Commit the backend fix**
+- [x] **Step 5: Commit the backend fix**
 
 ```powershell
 git add -- packages/usac_runtime/src/usac_runtime/application.py packages/usac_runtime/src/usac_runtime/core_store.py packages/usac_runtime/tests/test_bridge_device_client.py

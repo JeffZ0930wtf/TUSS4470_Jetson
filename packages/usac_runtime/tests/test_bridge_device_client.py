@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import socket
+import sqlite3
 import struct
 import threading
 import time
@@ -20,7 +21,7 @@ from usac_protocol.capture_data import decode_capture_data
 from usac_protocol.frame import CRC_SIZE, HEADER_SIZE, Flags, Frame, MessageType, decode_frame, encode_frame
 from usac_protocol.messages import ErrorResponse, encode_error
 from usac_protocol.simulator import SimulatedDevice
-from usac_runtime.application import AcquisitionApplication
+from usac_runtime.application import AcquisitionApplication, SessionConflict
 from usac_runtime.bridge_session import proxy_bridge_session
 from usac_runtime.bridge_device_client import BridgeDeviceClient, ReconnectableBridgeDeviceClient
 from usac_runtime.device_executor import DeviceUnavailable
@@ -28,6 +29,7 @@ from usac_runtime.core_store import CaptureStore
 from usac_runtime.device_executor import SingleDeviceExecutor
 from usac_runtime.parameter_service import ParameterService
 from usac_runtime.periodic_lease import LeaseRenewal, PeriodicSchedule
+from usac_runtime.simulated_device_client import SimulatedDeviceClient
 from usac_runtime.spool import CaptureSpool
 
 
@@ -897,6 +899,117 @@ def test_application_completes_when_final_capture_precedes_failed_renewal(
     assert status["capture_count"] == 1
     assert store.capture_count() == 1
     assert spool.pending_records() == []
+
+
+def test_duplicate_start_preserves_final_capture_during_failed_renewal(
+    tmp_path: Path,
+) -> None:
+    """A rejected start must not detach the callback owned by the active run."""
+
+    core_socket, bridge_socket = socket.socketpair()
+    spool = CaptureSpool(tmp_path / "duplicate-start-spool.sqlite3")
+    worker = threading.Thread(
+        target=_serve_capture_before_renew_response,
+        args=(bridge_socket, spool, True),
+        daemon=True,
+    )
+    worker.start()
+    store = CaptureStore(tmp_path / "duplicate-start-core.sqlite3")
+    device = BridgeDeviceClient(core_socket, timeout_s=1.0, replay_store=store)
+    service = ParameterService.from_schema_file(SCHEMA_PATH, smclk_hz=24_000_000)
+    application = AcquisitionApplication(
+        service,
+        SingleDeviceExecutor(service, device),
+        device,
+        store=store,
+    )
+    applied = application.apply_config({}, expected_etag='"' + "0" * 64 + '"')
+    request = {
+        "expected_profile_sha256": str(applied["actual"]["profile_sha256"]),
+        "expected_device_config_crc32": int(
+            applied["actual"]["device_config_crc32"]
+        ),
+        "period_us": 100_000,
+        "capture_count": 1,
+        "lease_timeout_ms": 1_000,
+    }
+
+    # Hold the active worker before it can renew. This makes the duplicate
+    # request run after ownership is published but before the final frame is
+    # delivered inside the deliberately rejected renewal response.
+    worker_entered = threading.Event()
+    release_worker = threading.Event()
+    original_periodic_worker = application._periodic_worker
+
+    def gated_periodic_worker(session, controller, snapshot, async_handler) -> None:
+        worker_entered.set()
+        if not release_worker.wait(timeout=1.0):
+            raise TimeoutError("test did not release periodic worker")
+        original_periodic_worker(session, controller, snapshot, async_handler)
+
+    application._periodic_worker = gated_periodic_worker
+    started = application.start_periodic(**request)
+    assert worker_entered.wait(timeout=1.0)
+    original_handler = device._async_capture_handler
+
+    with pytest.raises(SessionConflict):
+        application.start_periodic(**request)
+    handler_after_duplicate = device._async_capture_handler
+    with sqlite3.connect(store.path) as connection:
+        policy_session_id = connection.execute(
+            "SELECT session_id FROM delivery_policy_contexts"
+        ).fetchone()[0]
+
+    release_worker.set()
+    deadline = time.monotonic() + 1.5
+    status = application.session(started["session_id"])
+    while status["state"] == "RUNNING" and time.monotonic() < deadline:
+        time.sleep(0.01)
+        status = application.session(started["session_id"])
+    device.close()
+    worker.join(timeout=1.0)
+
+    assert handler_after_duplicate is original_handler
+    assert policy_session_id == started["session_id"]
+    assert status["state"] == "COMPLETED", status
+    assert status["capture_count"] == 1
+    assert status["last_capture_id"] is not None
+    assert store.capture_count() == 1
+    assert spool.pending_records() == []
+
+
+def test_failed_periodic_start_removes_only_its_delivery_policy(tmp_path: Path) -> None:
+    class FailingPeriodicStart(SimulatedDeviceClient):
+        def start_periodic(self, schedule: PeriodicSchedule) -> None:
+            raise RuntimeError("injected START_PERIODIC rejection")
+
+    store = CaptureStore(tmp_path / "failed-start-core.sqlite3")
+    service = ParameterService.from_schema_file(SCHEMA_PATH, smclk_hz=24_000_000)
+    device = FailingPeriodicStart(SimulatedDevice())
+    application = AcquisitionApplication(
+        service,
+        SingleDeviceExecutor(service, device),
+        device,
+        store=store,
+    )
+    applied = application.apply_config({}, expected_etag='"' + "0" * 64 + '"')
+
+    with pytest.raises(RuntimeError, match="injected START_PERIODIC rejection"):
+        application.start_periodic(
+            expected_profile_sha256=str(applied["actual"]["profile_sha256"]),
+            expected_device_config_crc32=int(
+                applied["actual"]["device_config_crc32"]
+            ),
+            period_us=100_000,
+            capture_count=1,
+            lease_timeout_ms=1_000,
+        )
+
+    with sqlite3.connect(store.path) as connection:
+        policy_count = connection.execute(
+            "SELECT COUNT(*) FROM delivery_policy_contexts"
+        ).fetchone()[0]
+    assert policy_count == 0
 
 
 def test_application_stop_counts_capture_arriving_before_stop_ack(

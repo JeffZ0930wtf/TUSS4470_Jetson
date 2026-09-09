@@ -344,7 +344,7 @@ class AcquisitionApplication:
         *,
         session_id: str,
         save_policy: SavePolicy,
-    ) -> None:
+    ) -> tuple[bytes, bytes]:
         """Persist host-only replay context before any capture can be emitted."""
 
         self._require_device()
@@ -359,6 +359,7 @@ class AcquisitionApplication:
             session_id=session_id,
             save_policy=save_policy,
         )
+        return device_id, boot_id
 
     def _persist_capture(
         self,
@@ -767,62 +768,69 @@ class AcquisitionApplication:
             profile_sha256 = bytes.fromhex(expected_profile_sha256)
         except ValueError as error:
             raise ValueError("expected_profile_sha256 must be hexadecimal") from error
-        boot_id = self._device.boot_id
-        if boot_id is None:
-            raise RuntimeError("device HELLO boot session is unavailable")
-        schedule = PeriodicSchedule(
-            boot_id=boot_id,
-            schedule_id=uuid.uuid4().bytes,
-            profile_sha256=profile_sha256,
-            device_config_crc32=expected_device_config_crc32,
-            period_us=period_us,
-            capture_count=capture_count,
-            lease_timeout_ms=lease_timeout_ms,
-        )
-        schedule.validate()
-        session = _PeriodicSession(uuid.uuid4().bytes, schedule, save_policy)
-        controller = PeriodicLeaseController(self._executor)
-        snapshot = self._executor.snapshot()
-
-        def persist_interleaved(capture: CaptureData) -> bool:
-            if capture.schedule_id != schedule.schedule_id:
-                return False
-
-            def record_resolved(stored: _PersistedCapture) -> None:
-                with session.control_lock:
-                    self._record_capture(session, stored)
-                    self._save_session(session)
-
-            self._persist_capture(
-                capture,
-                run_plan=self._periodic_run_plan(session),
-                snapshot=snapshot,
-                save_policy=session.save_policy,
-                session_id=session.session_id.hex(),
-                on_resolved=record_resolved,
-            )
-            return True
-
-        session.async_handler = persist_interleaved
-        install_handler = getattr(self._device, "set_async_capture_handler", None)
-        if callable(install_handler):
-            install_handler(persist_interleaved)
         with self._session_lock:
             if any(
                 item.state in {"RUNNING", "STOPPING"}
                 for item in self._sessions.values()
             ):
-                self._clear_async_capture_handler(persist_interleaved)
                 raise SessionConflict("the device already has an active run session")
             self._prune_finished_sessions_locked()
-            self._register_delivery_policy(
+            # Ownership is checked before any callback or replay-policy
+            # mutation. A rejected duplicate must be a side-effect-free read of
+            # the current session state, even if its HTTP requests overlap.
+            boot_id = self._device.boot_id
+            if boot_id is None:
+                raise RuntimeError("device HELLO boot session is unavailable")
+            schedule = PeriodicSchedule(
+                boot_id=boot_id,
+                schedule_id=uuid.uuid4().bytes,
+                profile_sha256=profile_sha256,
+                device_config_crc32=expected_device_config_crc32,
+                period_us=period_us,
+                capture_count=capture_count,
+                lease_timeout_ms=lease_timeout_ms,
+            )
+            schedule.validate()
+            session = _PeriodicSession(uuid.uuid4().bytes, schedule, save_policy)
+            controller = PeriodicLeaseController(self._executor)
+            snapshot = self._executor.snapshot()
+
+            def persist_interleaved(capture: CaptureData) -> bool:
+                if capture.schedule_id != schedule.schedule_id:
+                    return False
+
+                def record_resolved(stored: _PersistedCapture) -> None:
+                    with session.control_lock:
+                        self._record_capture(session, stored)
+                        self._save_session(session)
+
+                self._persist_capture(
+                    capture,
+                    run_plan=self._periodic_run_plan(session),
+                    snapshot=snapshot,
+                    save_policy=session.save_policy,
+                    session_id=session.session_id.hex(),
+                    on_resolved=record_resolved,
+                )
+                return True
+
+            session.async_handler = persist_interleaved
+            policy_device_id, policy_boot_id = self._register_delivery_policy(
                 session_id=session.session_id.hex(),
                 save_policy=session.save_policy,
             )
+            install_handler = getattr(self._device, "set_async_capture_handler", None)
             try:
+                if callable(install_handler):
+                    install_handler(persist_interleaved)
                 controller.start(schedule, now_ms=time.monotonic_ns() // 1_000_000)
             except Exception:
                 self._clear_async_capture_handler(persist_interleaved)
+                self._require_store().unregister_delivery_policy(
+                    device_id=policy_device_id,
+                    boot_id=policy_boot_id,
+                    session_id=session.session_id.hex(),
+                )
                 raise
             self._sessions[session.session_id] = session
             self._save_session(session)
