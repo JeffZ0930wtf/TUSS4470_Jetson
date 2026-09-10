@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import unittest
-from pathlib import Path
 import os
 import re
 import subprocess
 import tempfile
 import tomllib
+import unittest
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -89,10 +89,30 @@ class ProjectLayoutTests(unittest.TestCase):
             "scripts/test-all.ps1",
             "scripts/test-all.sh",
             "docs/adr/0001-cross-platform-toolchain.md",
+            "docs/adr/0003-msp430-clock-and-tuss4470-spi.md",
+            "docs/adr/0006-adc-dma-timer-trigger.md",
+            "docs/release/v1.0.0-acceptance.md",
+            "docs/release/v1.0.0-known-limitations.md",
+            "docs/archive/pre-v1/README.md",
         ]
 
         missing = [path for path in required if not (ROOT / path).is_file()]
         self.assertEqual(missing, [])
+
+    def test_completed_milestone_documents_are_archived(self) -> None:
+        retired_active_paths = [
+            "docs/verification/M6/summary.md",
+            "docs/m3-capture-transport-design.md",
+            "docs/m3-host-capture-diagnostics-design.md",
+            "docs/adr/0003-m2-clock-and-spi-bringup.md",
+            "docs/adr/0006-m3-adc-timer-trigger.md",
+            "docs/adr/0007-m3-adc-dma-software-trigger-diagnostic.md",
+        ]
+
+        self.assertEqual(
+            [path for path in retired_active_paths if (ROOT / path).exists()],
+            [],
+        )
 
     def test_retired_firmware_wrappers_are_absent(self) -> None:
         retired = [
