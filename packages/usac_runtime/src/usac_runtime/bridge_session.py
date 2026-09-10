@@ -1,4 +1,4 @@
-"""One bounded, single-device bridge session for M5 laboratory operation.
+"""One bounded, single-device bridge session for V1 laboratory operation.
 
 The bridge forwards ordinary USAC command/response frames byte-for-byte. A
 CAPTURE_DATA frame is the sole exception: it is committed to the bridge spool
@@ -10,6 +10,7 @@ in flight and accumulated history cannot grow process RAM.
 from __future__ import annotations
 
 import socket
+import secrets
 import struct
 import threading
 import time
@@ -34,6 +35,17 @@ from usac_protocol.frame import (
 )
 
 from .spool import CaptureSpool
+
+
+def new_sqlite_integer_id() -> int:
+    """Return a nonzero random connection ID accepted by SQLite INTEGER.
+
+    The wire format permits an unsigned 64-bit value, but persisted connection
+    IDs use SQLite's signed INTEGER. Restricting locally generated values to
+    the positive 63-bit subset prevents data-dependent persistence failures.
+    """
+
+    return secrets.randbits(63) or 1
 
 
 class SerialByteStream(Protocol):
