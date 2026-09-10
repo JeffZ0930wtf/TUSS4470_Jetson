@@ -239,8 +239,9 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn("linux/arm64", jetson_test)
         self.assertIn("linux/amd64", jetson_test)
         self.assertIn("candidate_sha", jetson_test)
-        self.assertIn("1.0.0-${candidate_sha}-arm64", jetson_test)
-        self.assertIn("1.0.0-${candidate_sha}-amd64.oci.tar", jetson_test)
+        self.assertIn("candidate12", jetson_test)
+        self.assertIn("1.0.0-rc-${candidate12}-arm64", jetson_test)
+        self.assertIn("1.0.0-rc-${candidate12}-amd64.tar", jetson_test)
         self.assertNotIn("make -C firmware", jetson_test)
         arm64_run = "docker run --rm --platform linux/arm64 --entrypoint python"
         amd64_export = "docker buildx build --platform linux/amd64"

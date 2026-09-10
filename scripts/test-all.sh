@@ -17,8 +17,9 @@ node packages/usac_runtime/tests/test_web_app.cjs
 ./scripts/test-c-vectors.sh
 
 candidate_sha=$(git rev-parse --verify HEAD)
-arm64_image="tuss4470-acquisition-core:1.0.0-${candidate_sha}-arm64"
-amd64_oci=".tools/buildx/tuss4470-acquisition-core-1.0.0-${candidate_sha}-amd64.oci.tar"
+candidate12=$(printf '%.12s' "$candidate_sha")
+arm64_image="tuss4470-acquisition-core:1.0.0-rc-${candidate12}-arm64"
+amd64_oci=".tools/buildx/tuss4470-acquisition-core-1.0.0-rc-${candidate12}-amd64.tar"
 
 docker build --platform linux/arm64 \
     --build-arg VERSION=1.0.0 \
