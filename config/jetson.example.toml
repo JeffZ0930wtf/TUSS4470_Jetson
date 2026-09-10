@@ -1,9 +1,12 @@
+# /dev/tuss4470 is the container alias. USAC_SERIAL_DEVICE on the host must
+# resolve to the verified /dev/serial/by-id/... path or a verified udev alias.
 [serial]
 port = "/dev/tuss4470"
 baudrate = 115200
 timeout_ms = 2000
 
 [storage]
+# These are container paths backed by separate host bind mounts.
 data_dir = "/var/lib/usac"
 spool_dir = "/var/lib/usac/spool"
 sqlite_path = "/var/lib/usac/database/acquisition.sqlite3"

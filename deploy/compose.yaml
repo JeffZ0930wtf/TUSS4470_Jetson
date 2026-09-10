@@ -1,11 +1,11 @@
-# M5 Windows core. The native Windows bridge initiates the device connection;
+# V1 Windows core. The native Windows bridge initiates the device connection;
 # both the device protocol and HTTP console remain loopback-only.
 services:
   core:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.core
-    image: tuss4470-acquisition-core:m5
+    image: ${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.0.0}
     command:
       - --backend
       - bridge

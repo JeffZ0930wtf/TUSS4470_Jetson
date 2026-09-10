@@ -1,8 +1,8 @@
-# Jetson M5 部署说明
+# Jetson V1 部署与运行
 
 ## 文档说明
 
-本文档说明 M5 超声采集子模块在 Jetson 宿主机和容器内的设备、网络与持久目录边界，解决“哪些配置属于宿主机、哪些路径属于容器”的问题。它适用于 M5 部署准备和 M6 真实 Jetson 验收；功能目标与关闭条件仍以正式设计文档和实施路线图为准。
+本文档说明 V1 超声采集子模块在 Jetson 宿主机和容器内的设备、网络与持久目录边界，解决“哪些配置属于宿主机、哪些路径属于容器”的问题。它适用于 V1 的部署、启动、停止和真实设备运行；协议与安全边界分别以 `docs/protocol.md` 和 V1 已知限制为准。
 
 ## 宿主机与容器边界
 
@@ -52,9 +52,24 @@ docker compose -f deploy/compose.jetson.yaml up -d --force-recreate bridge
 
 ## 启动结果
 
-使用 `docker compose -f deploy/compose.jetson.yaml up` 后：
+在仓库根目录执行：
+
+```sh
+export USAC_CORE_IMAGE=tuss4470-acquisition-core:1.0.0
+docker compose -f deploy/compose.jetson.yaml up -d
+```
+
+启动后：
 
 - bridge 连接真实 USB CDC，并主动连接 `core:8765`；
 - CAPTURE_DATA 先写入 bridge spool，core SQLite COMMIT 后才删除 pending；
 - Web/API 仅发布到 Jetson 宿主的 `127.0.0.1:8000`；
 - 重建单个容器不会删除另一服务的持久数据。
+
+停止服务使用：
+
+```sh
+docker compose -f deploy/compose.jetson.yaml down
+```
+
+停止不会删除 `/var/lib/tuss4470/core` 或 `/var/lib/tuss4470/bridge/spool`。

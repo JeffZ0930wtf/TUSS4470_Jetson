@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+import os
 import re
+import subprocess
+import tempfile
 import tomllib
 
 
@@ -64,7 +67,9 @@ class ProjectLayoutTests(unittest.TestCase):
             "deploy/Dockerfile.core",
             "deploy/compose.yaml",
             "deploy/compose.jetson.yaml",
-            "deploy/README-jetson.md",
+            "requirements-container.lock.txt",
+            "docs/deployment/windows.md",
+            "docs/deployment/jetson.md",
             "firmware/Makefile",
             "firmware/src/main.c",
             "scripts/build-firmware.ps1",
@@ -162,11 +167,46 @@ class ProjectLayoutTests(unittest.TestCase):
         dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
 
         self.assertIn("public.ecr.aws/docker/library/python:3.12-slim@sha256:", dockerfile)
-        self.assertIn("RUN python -m pip install --no-cache-dir .", dockerfile)
+        self.assertIn("COPY requirements-container.lock.txt ./", dockerfile)
+        self.assertIn("pip install --no-cache-dir --require-hashes", dockerfile)
+        self.assertNotIn("pip install --no-cache-dir .", dockerfile)
+        self.assertIn("PYTHONPATH=/opt/usac/packages/usac_protocol/src", dockerfile)
         self.assertIn("packages/usac_protocol/src", dockerfile)
-        self.assertIn("usac_runtime.m5_server", dockerfile)
+        self.assertIn("usac_runtime.core_server", dockerfile)
+        self.assertIn('org.opencontainers.image.version="$VERSION"', dockerfile)
+        self.assertIn('org.opencontainers.image.revision="$VCS_REF"', dockerfile)
         self.assertIn(".venv", dockerignore)
         self.assertIn(".tools", dockerignore)
+
+    def test_container_lock_is_exact_export_of_uv_lock(self) -> None:
+        uv = ROOT / ".tools/uv/uv.exe"
+        expected = ROOT / "requirements-container.lock.txt"
+        self.assertTrue(uv.is_file())
+        self.assertTrue(expected.is_file())
+
+        with tempfile.TemporaryDirectory() as directory:
+            regenerated = Path(directory) / "requirements.txt"
+            environment = os.environ.copy()
+            environment["UV_CACHE_DIR"] = str(ROOT / ".tools/uv-cache")
+            environment["UV_PYTHON_INSTALL_DIR"] = str(ROOT / ".tools/uv-python")
+            subprocess.run(
+                [
+                    str(uv),
+                    "export",
+                    "--frozen",
+                    "--no-dev",
+                    "--no-emit-project",
+                    "--no-header",
+                    "--format",
+                    "requirements.txt",
+                    "--output-file",
+                    str(regenerated),
+                ],
+                cwd=ROOT,
+                check=True,
+                env=environment,
+            )
+            self.assertEqual(regenerated.read_bytes(), expected.read_bytes())
 
     def test_host_automation_matches_the_platform_split(self) -> None:
         windows_test = (ROOT / "scripts/test-all.ps1").read_text(encoding="utf-8")
@@ -178,7 +218,9 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn(".venv", jetson_test)
         self.assertIn("linux/arm64", jetson_test)
         self.assertIn("linux/amd64", jetson_test)
-        self.assertIn("m1-arm64", jetson_test)
+        self.assertIn("candidate_sha", jetson_test)
+        self.assertIn("1.0.0-${candidate_sha}-arm64", jetson_test)
+        self.assertIn("1.0.0-${candidate_sha}-amd64.oci.tar", jetson_test)
         self.assertNotIn("make -C firmware", jetson_test)
         arm64_run = "docker run --rm --platform linux/arm64 --entrypoint python"
         amd64_export = "docker buildx build --platform linux/amd64"
@@ -239,18 +281,18 @@ class ProjectLayoutTests(unittest.TestCase):
         ]
         self.assertEqual(files_with_crlf, [])
 
-    def test_m1_c_vector_checker_is_part_of_jetson_test_entrypoint(self) -> None:
+    def test_c_vector_checker_is_part_of_jetson_test_entrypoint(self) -> None:
         jetson_test = (ROOT / "scripts/test-all.sh").read_text(encoding="utf-8")
 
         self.assertTrue((ROOT / "tests/c/test_protocol_vectors.c").is_file())
         self.assertTrue((ROOT / "scripts/test-c-vectors.sh").is_file())
         self.assertIn("test-c-vectors.sh", jetson_test)
 
-    def test_m5_core_container_uses_external_data_and_loopback_ports(self) -> None:
+    def test_v1_core_container_uses_external_data_and_loopback_ports(self) -> None:
         compose = (ROOT / "deploy/compose.yaml").read_text(encoding="utf-8")
         dockerfile = (ROOT / "deploy/Dockerfile.core").read_text(encoding="utf-8")
 
-        self.assertIn("tuss4470-acquisition-core:m5", compose)
+        self.assertIn("${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.0.0}", compose)
         self.assertIn("127.0.0.1:8765:8765", compose)
         self.assertIn("127.0.0.1:8000:8000", compose)
         self.assertIn("USAC_CORE_DATA_DIR", compose)
@@ -260,8 +302,9 @@ class ProjectLayoutTests(unittest.TestCase):
             compose,
         )
         self.assertIn("/var/lib/usac/database", compose)
-        self.assertIn("usac_runtime.m5_server", compose + dockerfile)
-        self.assertNotIn("usac-core-m1:ready", compose + dockerfile)
+        self.assertIn("usac_runtime.core_server", compose + dockerfile)
+        self.assertIn("--backend\n      - bridge", compose)
+        self.assertNotRegex(compose + dockerfile, r"usac_runtime\.m[0-6]")
 
     def test_jetson_compose_maps_device_and_separate_host_storage(self) -> None:
         compose = (ROOT / "deploy/compose.jetson.yaml").read_text(encoding="utf-8")
@@ -278,6 +321,10 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn("/dev/tuss4470", compose)
         self.assertIn("--core-host\n      - core", compose)
         self.assertIn("--core-port\n      - \"8765\"", compose)
+        self.assertIn("${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.0.0}", compose)
+        self.assertIn('entrypoint: ["python", "-m", "usac_runtime.bridge_cli"]', compose)
+        self.assertNotIn("      - serve\n", compose)
+        self.assertIn("--backend\n      - bridge", compose)
 
     def test_runtime_examples_use_the_approved_external_data_roots(self) -> None:
         windows = (ROOT / "config/windows.example.toml").read_text(encoding="utf-8")
