@@ -1,4 +1,4 @@
-"""Small M4 operator CLI for reading and downloading committed captures."""
+"""Offline operator CLI for inspecting and exporting committed captures."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def _metadata(record: CaptureRecord) -> dict[str, object]:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="M4 committed capture access")
+    parser = argparse.ArgumentParser(description="Offline committed capture access")
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("show", "download"):
         command = commands.add_parser(name)

@@ -13,7 +13,7 @@ import json
 import sys
 import time
 
-from usac_runtime.m5_cli import ApiRequestError, HttpApiClient
+from usac_runtime.client_cli import ApiRequestError, HttpApiClient
 
 
 ZERO_SCHEDULE = "00" * 16

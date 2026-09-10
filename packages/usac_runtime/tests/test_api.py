@@ -14,7 +14,7 @@ from usac_runtime.application import AcquisitionApplication
 from usac_runtime.bridge_device_client import ReconnectableBridgeDeviceClient
 from usac_runtime.core_store import CaptureStore, SavePolicy
 from usac_runtime.device_executor import SingleDeviceExecutor
-from usac_runtime.m5_api import create_api
+from usac_runtime.api import create_api
 from usac_runtime.parameter_service import ParameterService
 from usac_runtime.simulated_device_client import SimulatedDeviceClient
 

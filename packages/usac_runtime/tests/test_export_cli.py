@@ -5,7 +5,7 @@ from pathlib import Path
 
 from usac_protocol.bridge_messages import BridgeCaptureDelivery
 from usac_runtime.core_store import CaptureStore
-from usac_runtime.m4_cli import main
+from usac_runtime.export_cli import main
 
 
 ROOT = Path(__file__).resolve().parents[3]

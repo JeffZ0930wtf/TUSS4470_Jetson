@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from usac_runtime.m5_cli import main
+from usac_runtime.client_cli import main
 
 
 class FakeApiClient:

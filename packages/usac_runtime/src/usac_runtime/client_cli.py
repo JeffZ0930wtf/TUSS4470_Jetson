@@ -1,4 +1,4 @@
-"""Thin command-line client for the versioned M5 REST interface.
+"""Thin command-line client for the versioned acquisition REST interface.
 
 The CLI intentionally contains no TUSS4470 field table or validation rules.
 Those remain in the shared core application so CLI, browser, and future BMS

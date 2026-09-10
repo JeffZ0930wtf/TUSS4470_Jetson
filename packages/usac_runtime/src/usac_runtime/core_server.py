@@ -1,4 +1,4 @@
-"""Launch the M5 REST/Web core with an explicit development backend.
+"""Launch the V1 REST/Web core with an explicit device backend.
 
 The simulator backend is intentionally named and selected explicitly. It is
 used for software and UI verification only and never claims hardware evidence.
@@ -23,7 +23,7 @@ from .application import AcquisitionApplication
 from .bridge_device_client import BridgeDeviceClient, ReconnectableBridgeDeviceClient
 from .core_store import CaptureStore
 from .device_executor import SingleDeviceExecutor
-from .m5_api import create_api
+from .api import create_api
 from .parameter_service import ParameterService
 from .simulated_device_client import SimulatedDeviceClient
 
@@ -123,7 +123,7 @@ def _accept_replacement_bridges(
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="M5 REST and Web acquisition core")
+    parser = argparse.ArgumentParser(description="TUSS4470 REST and Web acquisition core")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(

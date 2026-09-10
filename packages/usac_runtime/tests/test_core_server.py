@@ -6,7 +6,8 @@ import threading
 from fastapi.testclient import TestClient
 
 from usac_runtime.bridge_device_client import ReconnectableBridgeDeviceClient
-from usac_runtime.m5_server import (
+from usac_runtime.core_server import (
+    _parser,
     accept_replacement_bridge,
     create_bridge_api,
     create_simulator_api,
@@ -15,6 +16,14 @@ from usac_runtime.m5_server import (
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_core_parser_defaults_to_safe_simulator_and_keeps_v1_ports() -> None:
+    args = _parser().parse_args([])
+
+    assert args.backend == "simulator"
+    assert args.port == 8000
+    assert args.bridge_port == 8765
 
 
 def test_simulator_server_factory_never_requires_a_serial_device(tmp_path: Path) -> None:
@@ -161,9 +170,9 @@ def test_bridge_server_starts_http_before_accepting_a_bridge(tmp_path: Path, mon
         def close(self) -> None:
             pass
 
-    monkeypatch.setattr("usac_runtime.m5_server.socket.socket", lambda *_args: Listener())
+    monkeypatch.setattr("usac_runtime.core_server.socket.socket", lambda *_args: Listener())
     monkeypatch.setattr(
-        "usac_runtime.m5_server.uvicorn.run",
+        "usac_runtime.core_server.uvicorn.run",
         lambda application, *_args, **_kwargs: (
             applications.append(application),
             calls.append(("http", threading.current_thread().name)),

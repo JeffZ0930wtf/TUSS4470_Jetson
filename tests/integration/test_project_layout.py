@@ -2,12 +2,26 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class ProjectLayoutTests(unittest.TestCase):
+    def test_v1_public_commands_are_neutral_and_complete(self) -> None:
+        metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            metadata["project"]["scripts"],
+            {
+                "usac-core": "usac_runtime.core_server:main",
+                "usac-bridge": "usac_runtime.bridge_cli:main",
+                "usac-cli": "usac_runtime.client_cli:main",
+                "usac-export": "usac_runtime.export_cli:main",
+            },
+        )
+
     def test_required_m0_files_exist(self) -> None:
         required = [
             "README.md",
