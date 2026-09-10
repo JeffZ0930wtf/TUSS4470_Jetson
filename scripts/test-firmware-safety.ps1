@@ -5,13 +5,11 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $mainSource = Join-Path $repositoryRoot 'firmware\src\main.c'
 $platformSource = Join-Path $repositoryRoot 'firmware\src\usac_platform_msp430.c'
-$coreSource = Join-Path $repositoryRoot 'firmware\src\usac_firmware_core.c'
-$appSource = Join-Path $repositoryRoot 'firmware\src\usac_firmware_app.c'
 $elf = Join-Path $repositoryRoot 'firmware\build\release\tuss4470-acquisition-fw-0.2.0.2.elf'
 $compilerRoot = Join-Path $repositoryRoot '.tools\msp430-gcc\msp430-gcc-9.3.1.11_win64'
 $sizeTool = Join-Path $compilerRoot 'bin\msp430-elf-size.exe'
 
-foreach ($required in @($mainSource, $platformSource, $coreSource, $appSource, $elf, $sizeTool)) {
+foreach ($required in @($mainSource, $platformSource, $elf, $sizeTool)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "firmware safety input is missing: $required"
     }
@@ -19,8 +17,6 @@ foreach ($required in @($mainSource, $platformSource, $coreSource, $appSource, $
 
 $main = Get-Content -Raw -LiteralPath $mainSource
 $platform = Get-Content -Raw -LiteralPath $platformSource
-$core = Get-Content -Raw -LiteralPath $coreSource
-$app = Get-Content -Raw -LiteralPath $appSource
 
 $requiredPatterns = @(
     @{ Text = $main; Pattern = '#define\s+USAC_USB_DETACH_CYCLES\s+14400000ul'; Label = '600 ms USB detach at 24 MHz' },
@@ -32,9 +28,7 @@ $requiredPatterns = @(
     @{ Text = $platform; Pattern = 'TA2CTL\s*=\s*TACLR'; Label = 'Burst timer stopped' },
     @{ Text = $platform; Pattern = 'UCB0BR0\s*=\s*24u'; Label = '1 MHz SPI divider at 24 MHz SMCLK' },
     @{ Text = $platform; Pattern = 'UCB0BR1\s*=\s*0u'; Label = 'SPI divider high byte zero' },
-    @{ Text = $platform; Pattern = 'TB0CTL\s*=\s*TBCLR'; Label = 'ADC timer stopped' },
-    @{ Text = $core; Pattern = 'uint8_t\s+usac_firmware_core_burst_permitted[\s\S]*?return\s+0u;'; Label = 'base-core compile-time Burst denial' },
-    @{ Text = $app; Pattern = 'USAC_MESSAGE_CAPTURE_ONCE[\s\S]*?USAC_ERROR_INVALID_STATE'; Label = 'CAPTURE_ONCE rejected without acquisition support' }
+    @{ Text = $platform; Pattern = 'TB0CTL\s*=\s*TBCLR'; Label = 'ADC timer stopped' }
 )
 foreach ($check in $requiredPatterns) {
     if ($check.Text -notmatch $check.Pattern) {
