@@ -93,13 +93,13 @@ if ($usbCoreText -notmatch 'abramSerialStringDescriptor\[66\]') { throw 'failed 
 [System.IO.File]::WriteAllText($generatedUsbCore, $usbCoreText, $utf8WithoutBom)
 
 $projectSources = @(
-    (Join-Path $repositoryRoot 'firmware\src\m2_main.c'),
-    (Join-Path $repositoryRoot 'firmware\src\m2_usb_events.c'),
-    (Join-Path $repositoryRoot 'firmware\src\usac_m2_core.c'),
-    (Join-Path $repositoryRoot 'firmware\src\usac_m3_loopback.c'),
-    (Join-Path $repositoryRoot 'firmware\src\usac_m3_capture.c'),
-    (Join-Path $repositoryRoot 'firmware\src\usac_m3_capture_stream.c'),
-    (Join-Path $repositoryRoot 'firmware\src\usac_m3_capture_tx.c'),
+    (Join-Path $repositoryRoot 'firmware\src\main.c'),
+    (Join-Path $repositoryRoot 'firmware\src\usb_events.c'),
+    (Join-Path $repositoryRoot 'firmware\src\usac_firmware_core.c'),
+    (Join-Path $repositoryRoot 'firmware\src\usac_loopback.c'),
+    (Join-Path $repositoryRoot 'firmware\src\usac_capture.c'),
+    (Join-Path $repositoryRoot 'firmware\src\usac_capture_stream.c'),
+    (Join-Path $repositoryRoot 'firmware\src\usac_capture_tx.c'),
     (Join-Path $repositoryRoot 'firmware\src\tuss4470_profile.c'),
     (Join-Path $repositoryRoot 'firmware\src\tuss4470_configurator.c'),
     (Join-Path $repositoryRoot 'firmware\src\usac_platform_msp430.c'),
@@ -107,20 +107,20 @@ $projectSources = @(
     (Join-Path $repositoryRoot 'firmware\src\usac_identity.c'),
     (Join-Path $repositoryRoot 'firmware\src\usac_sha256.c'),
     (Join-Path $repositoryRoot 'firmware\src\usac_config_v2.c'),
-    (Join-Path $repositoryRoot 'firmware\src\usac_m2_app.c'),
+    (Join-Path $repositoryRoot 'firmware\src\usac_firmware_app.c'),
     (Join-Path $repositoryRoot 'firmware\src\usac_dtr_gate.c'),
     (Join-Path $repositoryRoot 'firmware\src\usac_tx_gate.c'),
-    (Join-Path $repositoryRoot 'firmware\src\usac_m5_schedule.c'),
-    (Join-Path $repositoryRoot 'firmware\src\usac_m5_burst_plan.c')
+    (Join-Path $repositoryRoot 'firmware\src\usac_capture_schedule.c'),
+    (Join-Path $repositoryRoot 'firmware\src\usac_burst_plan.c')
 )
 if ($M3SmallRamDiagnostic) {
     # The small-RAM diagnostic supplies a fail-closed report stub and must not
     # link the production translation unit that owns the 4096-byte buffer.
-    $productionCaptureSource = Join-Path $repositoryRoot 'firmware\src\usac_m3_capture.c'
+    $productionCaptureSource = Join-Path $repositoryRoot 'firmware\src\usac_capture.c'
     $projectSources = @($projectSources | Where-Object { $_ -ne $productionCaptureSource })
 }
 if ($EnableM5 -or $EnableM3Loopback -or $M3AdcDmaDiagnostic) {
-    $projectSources += Join-Path $repositoryRoot 'firmware\src\usac_platform_m3_msp430.c'
+    $projectSources += Join-Path $repositoryRoot 'firmware\src\usac_acquisition_platform_msp430.c'
 } elseif ($M3StartupDiagnostic) {
     $projectSources += Join-Path $repositoryRoot 'firmware\tests\m3_platform_startup_stub.c'
 } elseif ($M3SmallRamDiagnostic) {
@@ -140,13 +140,13 @@ $projectCompileArguments = @(
     '-Wall', '-Wextra', '-Werror', "-L$(Join-Path $supportRoot 'include')"
 )
 if ($m3MainEnabled) {
-    $projectCompileArguments += '-DUSAC_ENABLE_M3_LOOPBACK'
+    $projectCompileArguments += '-DUSAC_ENABLE_LOOPBACK'
 }
 if ($EnableM5) {
-    $projectCompileArguments += '-DUSAC_ENABLE_M5'
+    $projectCompileArguments += '-DUSAC_ENABLE_ACQUISITION'
 }
 if ($M3AdcDmaDiagnostic) {
-    $projectCompileArguments += '-DUSAC_M3_ADC_DMA_DIAGNOSTIC'
+    $projectCompileArguments += '-DUSAC_ADC_DMA_DIAGNOSTIC'
 }
 foreach ($source in $projectSources) {
     $objectName = ([System.IO.Path]::GetFileNameWithoutExtension($source)) + '.o'
@@ -180,13 +180,13 @@ $arguments = @(
     '-Wl,--gc-sections', "-Wl,-Map=$mapFile"
 )
 if ($m3MainEnabled) {
-    $arguments += '-DUSAC_ENABLE_M3_LOOPBACK'
+    $arguments += '-DUSAC_ENABLE_LOOPBACK'
 }
 if ($EnableM5) {
-    $arguments += '-DUSAC_ENABLE_M5'
+    $arguments += '-DUSAC_ENABLE_ACQUISITION'
 }
 if ($M3AdcDmaDiagnostic) {
-    $arguments += '-DUSAC_M3_ADC_DMA_DIAGNOSTIC'
+    $arguments += '-DUSAC_ADC_DMA_DIAGNOSTIC'
 }
 $arguments += $sources + @('-o', $output)
 

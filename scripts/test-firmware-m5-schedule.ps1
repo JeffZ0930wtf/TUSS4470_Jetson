@@ -16,8 +16,8 @@ New-Item -ItemType Directory -Force -Path $buildDirectory | Out-Null
     "-I$(Join-Path $supportRoot 'include')" `
     "-L$(Join-Path $supportRoot 'include')" `
     '-mmcu=msp430f5529' '-std=c11' '-g' '-Wall' '-Wextra' '-Werror' `
-    (Join-Path $repositoryRoot 'firmware\tests\test_m5_schedule.c') `
-    (Join-Path $repositoryRoot 'firmware\src\usac_m5_schedule.c') `
+    (Join-Path $repositoryRoot 'firmware\tests\test_capture_schedule.c') `
+    (Join-Path $repositoryRoot 'firmware\src\usac_capture_schedule.c') `
     '-o' $testBinary
 if ($LASTEXITCODE -ne 0) { throw "M5 scheduler compile failed: $LASTEXITCODE" }
 

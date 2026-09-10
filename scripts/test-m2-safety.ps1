@@ -3,10 +3,10 @@
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$mainSource = Join-Path $repositoryRoot 'firmware\src\m2_main.c'
+$mainSource = Join-Path $repositoryRoot 'firmware\src\main.c'
 $platformSource = Join-Path $repositoryRoot 'firmware\src\usac_platform_msp430.c'
-$coreSource = Join-Path $repositoryRoot 'firmware\src\usac_m2_core.c'
-$appSource = Join-Path $repositoryRoot 'firmware\src\usac_m2_app.c'
+$coreSource = Join-Path $repositoryRoot 'firmware\src\usac_firmware_core.c'
+$appSource = Join-Path $repositoryRoot 'firmware\src\usac_firmware_app.c'
 $elf = Join-Path $repositoryRoot 'firmware\build\m2\usac-m2-no-burst.elf'
 $compilerRoot = Join-Path $repositoryRoot '.tools\msp430-gcc\msp430-gcc-9.3.1.11_win64'
 $sizeTool = Join-Path $compilerRoot 'bin\msp430-elf-size.exe'
@@ -27,13 +27,13 @@ $requiredPatterns = @(
     @{ Text = $main; Pattern = 'UCS_initFLLSettle\(24000u,\s*6u\)'; Label = '24 MHz XT2-referenced FLL ratio' },
     @{ Text = $main; Pattern = 'UCS_XT2CLK_SELECT'; Label = 'XT2 FLL reference' },
     @{ Text = $main; Pattern = 'GPIO_setAsPeripheralModuleFunctionOutputPin\([\s\S]*?GPIO_PORT_P5,[\s\S]*?GPIO_PIN2\s*\|\s*GPIO_PIN3\)[\s\S]*?UCS_turnOnXT2WithTimeout'; Label = 'XT2 pins mapped before oscillator start' },
-    @{ Text = $main; Pattern = 'usac_m2_clock_faults_safe\(\(uint8_t\)UCSCTL7\)'; Label = 'DCO and XT2 clock fault gate' },
+    @{ Text = $main; Pattern = 'usac_firmware_clock_faults_safe\(\(uint8_t\)UCSCTL7\)'; Label = 'DCO and XT2 clock fault gate' },
     @{ Text = $platform; Pattern = 'P2OUT\s*\|=\s*\(TUSS_IO2_BIT\s*\|\s*TUSS_NCS_BIT\)'; Label = 'IO2/NCS latch high before direction' },
     @{ Text = $platform; Pattern = 'TA2CTL\s*=\s*TACLR'; Label = 'Burst timer stopped' },
     @{ Text = $platform; Pattern = 'UCB0BR0\s*=\s*24u'; Label = '1 MHz SPI divider at 24 MHz SMCLK' },
     @{ Text = $platform; Pattern = 'UCB0BR1\s*=\s*0u'; Label = 'SPI divider high byte zero' },
     @{ Text = $platform; Pattern = 'TB0CTL\s*=\s*TBCLR'; Label = 'ADC timer stopped' },
-    @{ Text = $core; Pattern = 'uint8_t\s+usac_m2_core_burst_permitted[\s\S]*?return\s+0u;'; Label = 'M2 compile-time Burst denial' },
+    @{ Text = $core; Pattern = 'uint8_t\s+usac_firmware_core_burst_permitted[\s\S]*?return\s+0u;'; Label = 'M2 compile-time Burst denial' },
     @{ Text = $app; Pattern = 'USAC_MESSAGE_CAPTURE_ONCE[\s\S]*?USAC_ERROR_INVALID_STATE'; Label = 'CAPTURE_ONCE rejected in M2' }
 )
 foreach ($check in $requiredPatterns) {

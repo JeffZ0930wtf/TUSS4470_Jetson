@@ -16,8 +16,8 @@ New-Item -ItemType Directory -Force -Path $buildDirectory | Out-Null
     "-I$(Join-Path $supportRoot 'include')" `
     "-L$(Join-Path $supportRoot 'include')" `
     '-mmcu=msp430f5529' '-std=c11' '-g' '-Wall' '-Wextra' '-Werror' `
-    (Join-Path $repositoryRoot 'firmware\tests\test_m5_burst_plan.c') `
-    (Join-Path $repositoryRoot 'firmware\src\usac_m5_burst_plan.c') `
+    (Join-Path $repositoryRoot 'firmware\tests\test_burst_plan.c') `
+    (Join-Path $repositoryRoot 'firmware\src\usac_burst_plan.c') `
     '-o' $testBinary
 if ($LASTEXITCODE -ne 0) { throw "M5 Burst plan compile failed: $LASTEXITCODE" }
 

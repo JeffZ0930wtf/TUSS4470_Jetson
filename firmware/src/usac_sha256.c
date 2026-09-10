@@ -1,6 +1,6 @@
 /* Small allocation-free SHA-256 implementation for fixed identity and profile
  * material on MSP430. It is first-party code and has no streaming API because
- * all M2 inputs are short, bounded buffers. */
+ * all firmware inputs are short, bounded buffers. */
 #include "usac_sha256.h"
 
 static const uint32_t round_constants[64] = {

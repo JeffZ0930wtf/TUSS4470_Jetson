@@ -3,14 +3,14 @@ $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $buildScript = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'build-firmware-m2.ps1')
-$platform = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot 'firmware\src\usac_platform_m3_msp430.c')
+$platform = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot 'firmware\src\usac_acquisition_platform_msp430.c')
 $flashPath = Join-Path $PSScriptRoot 'flash-firmware-m3-adc-dma-diagnostic.ps1'
 $elfPath = Join-Path $repositoryRoot 'firmware\build\m3-adc-dma-diagnostic\usac-m3-adc-dma-diagnostic-no-burst.elf'
 
 $checks = @(
     @{ Text = $buildScript; Pattern = '\[switch\]\$M3AdcDmaDiagnostic'; Label = 'dedicated build switch' },
-    @{ Text = $buildScript; Pattern = 'USAC_M3_ADC_DMA_DIAGNOSTIC'; Label = 'diagnostic compile definition' },
-    @{ Text = $platform; Pattern = '#ifdef\s+USAC_M3_ADC_DMA_DIAGNOSTIC'; Label = 'compile-time isolation' },
+    @{ Text = $buildScript; Pattern = 'USAC_ADC_DMA_DIAGNOSTIC'; Label = 'diagnostic compile definition' },
+    @{ Text = $platform; Pattern = '#ifdef\s+USAC_ADC_DMA_DIAGNOSTIC'; Label = 'compile-time isolation' },
     @{ Text = $platform; Pattern = 'ADC12SHS_0'; Label = 'software ADC trigger source' },
     @{ Text = $platform; Pattern = 'ADC12CONSEQ_0'; Label = 'single-conversion diagnostic mode' },
     @{ Text = $platform; Pattern = 'ADC12ENC\s*\|\s*ADC12SC'; Label = 'explicit diagnostic conversion start' },
@@ -20,7 +20,7 @@ $checks = @(
     @{ Text = $platform; Pattern = 'DMA0CTL\s*\|=\s*DMAREQ'; Label = 'explicit DMA software request' },
     @{ Text = $platform; Pattern = 'DMA0CTL\s*&\s*DMAIFG'; Label = 'DMA completion polling' },
     @{ Text = $platform; Pattern = 'report->captured_samples\s*=\s*dma_completed'; Label = 'DMA completion evidence' },
-    @{ Text = $platform; Pattern = 'report->dma_remaining\s*=\s*g_usac_m3_waveform\[0\]'; Label = 'DMA target value evidence' }
+    @{ Text = $platform; Pattern = 'report->dma_remaining\s*=\s*g_usac_capture_waveform\[0\]'; Label = 'DMA target value evidence' }
 )
 foreach ($check in $checks) {
     if ($check.Text -notmatch $check.Pattern) {
@@ -30,7 +30,7 @@ foreach ($check in $checks) {
 
 $diagnosticBranch = [regex]::Match(
     $platform,
-    '#ifdef\s+USAC_M3_ADC_DMA_DIAGNOSTIC(?<body>[\s\S]*?)#else').Groups['body'].Value
+    '#ifdef\s+USAC_ADC_DMA_DIAGNOSTIC(?<body>[\s\S]*?)#else').Groups['body'].Value
 if ([string]::IsNullOrWhiteSpace($diagnosticBranch)) {
     throw 'unable to isolate M3 ADC/DMA diagnostic branch'
 }

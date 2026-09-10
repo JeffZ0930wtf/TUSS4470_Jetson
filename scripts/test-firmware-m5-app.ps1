@@ -11,25 +11,25 @@ $testBinary = Join-Path $buildDirectory 'test_m5_app.elf'
 
 New-Item -ItemType Directory -Force -Path $buildDirectory | Out-Null
 $sources = @(
-    'firmware/tests/test_m5_app.c',
-    'firmware/src/usac_m2_app.c',
-    'firmware/src/usac_m2_core.c',
-    'firmware/src/usac_m5_schedule.c',
+    'firmware/tests/test_firmware_app.c',
+    'firmware/src/usac_firmware_app.c',
+    'firmware/src/usac_firmware_core.c',
+    'firmware/src/usac_capture_schedule.c',
     'firmware/src/usac_mcu_protocol.c',
     'firmware/src/usac_config_v2.c',
     'firmware/src/usac_sha256.c',
     'firmware/src/usac_identity.c',
     'firmware/src/tuss4470_profile.c',
     'firmware/src/tuss4470_configurator.c',
-    'firmware/src/usac_m3_loopback.c',
-    'firmware/src/usac_m3_capture.c'
-    'firmware/src/usac_m3_capture_stream.c'
+    'firmware/src/usac_loopback.c',
+    'firmware/src/usac_capture.c'
+    'firmware/src/usac_capture_stream.c'
 ) | ForEach-Object { Join-Path $repositoryRoot $_ }
 & $compiler `
     "-I$(Join-Path $repositoryRoot 'firmware\include')" `
     "-I$(Join-Path $supportRoot 'include')" `
     "-L$(Join-Path $supportRoot 'include')" `
-    '-DUSAC_ENABLE_M5' '-mmcu=msp430f5529' '-std=c11' '-g' `
+    '-DUSAC_ENABLE_ACQUISITION' '-mmcu=msp430f5529' '-std=c11' '-g' `
     '-Wall' '-Wextra' '-Werror' @sources '-o' $testBinary
 if ($LASTEXITCODE -ne 0) { throw "M5 app compile failed: $LASTEXITCODE" }
 

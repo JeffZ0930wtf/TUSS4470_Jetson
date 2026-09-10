@@ -1,8 +1,8 @@
-/* Implements M2 request semantics above the bounded byte parser. It owns
+/* Implements firmware request semantics above the bounded byte parser. It owns
  * HELLO/configuration state, duplicate SET_CONFIG responses, and safe session
  * shutdown. Later milestone handlers are compiled only into their dedicated
- * image so the accepted M2/M3 binaries retain their original command set. */
-#include "usac_m2_app.h"
+ * image so the accepted firmware/acquisition binaries retain their original command set. */
+#include "usac_firmware_app.h"
 
 #include "usac_identity.h"
 
@@ -36,8 +36,8 @@
 #define USAC_ERROR_LEASE_EXPIRED 18u
 #define USAC_ERROR_BOOT_SESSION_MISMATCH 20u
 
-#define USAC_M5_CAPABILITY_FLAGS 0x0000007Ful
-#define USAC_M5_QUALITY_TIMING_UNCALIBRATED 0x00000020ul
+#define USAC_CAPABILITY_FLAGS 0x0000007Ful
+#define USAC_QUALITY_TIMING_UNCALIBRATED 0x00000020ul
 
 static uint32_t read_u32_le(const uint8_t *data)
 {
@@ -83,9 +83,9 @@ static uint8_t bytes_equal(
     return (uint8_t)(difference == 0u);
 }
 
-#ifdef USAC_ENABLE_M5
+#ifdef USAC_ENABLE_ACQUISITION
 static uint8_t encode_ack(
-    const usac_m2_app_t *app,
+    const usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     const uint8_t request_id[16],
     uint8_t acked_type,
@@ -109,7 +109,7 @@ static uint8_t encode_ack(
 #endif
 
 static uint8_t encode_error(
-    const usac_m2_app_t *app,
+    const usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint16_t error_code,
     uint32_t detail0,
@@ -143,7 +143,7 @@ static uint8_t encode_error(
 }
 
 static uint8_t handle_hello(
-    usac_m2_app_t *app,
+    usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint8_t *response,
     uint16_t capacity,
@@ -159,15 +159,15 @@ static uint8_t handle_hello(
                 app->host_nonce[index] ^ request->payload[index]);
         }
         if (nonce_changed != 0u) {
-            usac_m2_app_end_session(app);
+            usac_firmware_app_end_session(app);
         }
     }
 
     usac_boot_id_derive(app->device_id, request->payload, app->boot_id);
     copy_bytes(app->host_nonce, request->payload, 16u);
     app->hello_established = 1u;
-    if (app->core.state == USAC_M2_SESSION_WAIT) {
-        app->core.state = USAC_M2_IDLE_SAFE;
+    if (app->core.state == USAC_FIRMWARE_SESSION_WAIT) {
+        app->core.state = USAC_FIRMWARE_IDLE_SAFE;
     }
     copy_bytes(&payload[0], request->payload, 16u);
     copy_bytes(&payload[16], app->boot_id, 16u);
@@ -191,7 +191,7 @@ static uint8_t handle_hello(
 }
 
 static uint8_t handle_get_config(
-    const usac_m2_app_t *app,
+    const usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint8_t *response,
     uint16_t capacity,
@@ -241,9 +241,9 @@ static uint16_t map_config_error(tuss4470_config_result_t result)
     return USAC_ERROR_UNSAFE_CONFIG;
 }
 
-#ifdef USAC_ENABLE_M5
-void usac_m5_app_record_boot_config(
-    usac_m2_app_t *app,
+#ifdef USAC_ENABLE_ACQUISITION
+void usac_firmware_app_record_boot_config(
+    usac_firmware_app_t *app,
     tuss4470_config_result_t result,
     uint8_t dev_stat)
 {
@@ -254,7 +254,7 @@ void usac_m5_app_record_boot_config(
 #endif
 
 static uint8_t execute_set_config(
-    usac_m2_app_t *app,
+    usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint8_t *response,
     uint16_t capacity,
@@ -291,13 +291,13 @@ static uint8_t execute_set_config(
             response, capacity, response_length);
     }
 
-    app->core.state = USAC_M2_CONFIGURING;
+    app->core.state = USAC_FIRMWARE_CONFIGURING;
     apply_result = app->apply_profile(
         app->apply_context, &candidate.profile, &report);
     if (apply_result != TUSS4470_CONFIG_OK) {
         app->config_valid = 0u;
         app->profile_active = 0u;
-        app->core.state = USAC_M2_FAULT;
+        app->core.state = USAC_FIRMWARE_FAULT;
         return encode_error(
             app, request, map_config_error(apply_result), report.dev_stat, 0u,
             response, capacity, response_length);
@@ -305,7 +305,7 @@ static uint8_t execute_set_config(
     app->config = candidate;
     app->config_valid = 1u;
     app->profile_active = 1u;
-#ifdef USAC_ENABLE_M5
+#ifdef USAC_ENABLE_ACQUISITION
     /* GET_STATUS must expose the DEV_STAT sample that made this applied
      * profile eligible for ACK, rather than the reset-time zero snapshot. */
     app->last_tuss_dev_stat = report.dev_stat;
@@ -313,7 +313,7 @@ static uint8_t execute_set_config(
     app->loopback_authorized = 0u;
     app->loopback_cache_valid = 0u;
     app->capture_cache_valid = 0u;
-    app->core.state = USAC_M2_IDLE_SAFE;
+    app->core.state = USAC_FIRMWARE_IDLE_SAFE;
     copy_bytes(&ack[0], request->payload, 16u);
     ack[16] = USAC_MESSAGE_SET_CONFIG;
     ack[17] = (uint8_t)app->core.state;
@@ -331,7 +331,7 @@ static uint8_t execute_set_config(
 }
 
 static uint8_t handle_set_config(
-    usac_m2_app_t *app,
+    usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint8_t *response,
     uint16_t capacity,
@@ -384,9 +384,9 @@ static uint8_t handle_set_config(
 }
 
 static uint8_t encode_loopback_result(
-    const usac_m2_app_t *app,
+    const usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
-    const usac_m3_loopback_report_t *report,
+    const usac_loopback_report_t *report,
     uint8_t *response,
     uint16_t capacity,
     uint16_t *response_length)
@@ -400,7 +400,7 @@ static uint8_t encode_loopback_result(
     write_u16_le(&payload[52], app->config.profile.burst_period_ticks);
     payload[54] = report->captured_edges;
     payload[55] = report->result_flags;
-    for (index = 0u; index < USAC_M3_LOOPBACK_EDGE_COUNT; ++index) {
+    for (index = 0u; index < USAC_LOOPBACK_EDGE_COUNT; ++index) {
         write_u16_le(&payload[56u + ((uint16_t)index * 2u)],
                      report->capture_ticks[index]);
     }
@@ -427,14 +427,14 @@ static uint8_t encode_loopback_result(
 }
 
 static uint8_t handle_io2_loopback(
-    usac_m2_app_t *app,
+    usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint8_t *response,
     uint16_t capacity,
     uint16_t *response_length)
 {
     usac_config_v2_t baseline;
-    usac_m3_loopback_report_t report = {0u};
+    usac_loopback_report_t report = {0u};
     uint32_t payload_crc = usac_mcu_crc32(
         request->payload, request->payload_length);
     uint8_t request_id_matches;
@@ -464,13 +464,13 @@ static uint8_t handle_io2_loopback(
         }
     }
 
-    if ((app->core.state != USAC_M2_IDLE_SAFE) ||
+    if ((app->core.state != USAC_FIRMWARE_IDLE_SAFE) ||
         (app->config_valid == 0u)) {
         return encode_error(
             app, request, USAC_ERROR_INVALID_STATE, 0u, 0u,
             response, capacity, response_length);
     }
-#ifdef USAC_ENABLE_M5
+#ifdef USAC_ENABLE_ACQUISITION
     if (app->clock_fault_flags != 0u) {
         return encode_error(
             app, request, USAC_ERROR_TIMING_UNCALIBRATED,
@@ -508,7 +508,7 @@ static uint8_t handle_io2_loopback(
             response, capacity, response_length);
     }
     app->loopback_authorized = (uint8_t)(
-        report.result_flags == USAC_M3_LOOPBACK_PASS);
+        report.result_flags == USAC_LOOPBACK_PASS);
     result = encode_loopback_result(
         app, request, &report, response, capacity, response_length);
     if ((result == 0u) ||
@@ -528,7 +528,7 @@ static uint8_t handle_io2_loopback(
 }
 
 static uint8_t handle_capture_once(
-    usac_m2_app_t *app,
+    usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint8_t *response,
     uint16_t capacity,
@@ -536,7 +536,7 @@ static uint8_t handle_capture_once(
 {
     tuss4470_config_report_t apply_report = {0u, 0u, 0u};
     tuss4470_config_result_t apply_result;
-    usac_m3_capture_report_t capture_report = {0u};
+    usac_capture_report_t capture_report = {0u};
     uint8_t ack[24] = {0u};
     uint8_t capture_result;
     uint8_t request_id_matches;
@@ -568,13 +568,13 @@ static uint8_t handle_capture_once(
         }
     }
 
-    if ((app->core.state != USAC_M2_IDLE_SAFE) ||
+    if ((app->core.state != USAC_FIRMWARE_IDLE_SAFE) ||
         (app->config_valid == 0u) ||
-#ifndef USAC_ENABLE_M5
+#ifndef USAC_ENABLE_ACQUISITION
         (app->loopback_authorized == 0u) ||
         (app->capture_once == 0) ||
 #else
-        (app->capture_m5 == 0) ||
+        (app->capture == 0) ||
 #endif
         (app->apply_profile == 0) ||
         (app->force_safe == 0)) {
@@ -582,7 +582,7 @@ static uint8_t handle_capture_once(
             app, request, USAC_ERROR_INVALID_STATE, 0u, 0u,
             response, capacity, response_length);
     }
-#ifdef USAC_ENABLE_M5
+#ifdef USAC_ENABLE_ACQUISITION
     if (app->clock_fault_flags != 0u) {
         return encode_error(
             app, request, USAC_ERROR_TIMING_UNCALIBRATED,
@@ -600,13 +600,13 @@ static uint8_t handle_capture_once(
     if ((request->payload[52] > 2u) ||
         ((request->payload[52] != 1u) &&
          (read_u32_le(&request->payload[56]) != 0u)) ||
-#ifndef USAC_ENABLE_M5
+#ifndef USAC_ENABLE_ACQUISITION
         (request->payload[52] != 0u) ||
         (app->config.profile.sample_interval_ticks != 120u) ||
         (app->config.profile.burst_period_ticks != 50u) ||
-        (app->config.pretrigger_count != USAC_M3_PRETRIGGER_COUNT)
+        (app->config.pretrigger_count != USAC_CAPTURE_DEFAULT_PRETRIGGER_COUNT)
 #else
-        (app->config.pretrigger_count >= USAC_M3_SAMPLE_COUNT)
+        (app->config.pretrigger_count >= USAC_CAPTURE_SAMPLE_COUNT)
 #endif
         ) {
         app->loopback_authorized = 0u;
@@ -629,8 +629,8 @@ static uint8_t handle_capture_once(
             response, capacity, response_length);
     }
     app->profile_active = 1u;
-#ifdef USAC_ENABLE_M5
-    capture_result = app->capture_m5(
+#ifdef USAC_ENABLE_ACQUISITION
+    capture_result = app->capture(
         app->capture_context,
         &app->config,
         request->payload[52],
@@ -648,11 +648,11 @@ static uint8_t handle_capture_once(
         capture_report.hardware_fault = 1u;
     }
     if ((capture_result == 0u) ||
-#ifdef USAC_ENABLE_M5
-        (usac_m5_capture_report_is_complete(
+#ifdef USAC_ENABLE_ACQUISITION
+        (usac_capture_report_is_complete(
              &capture_report, app->config.pretrigger_count) == 0u)) {
 #else
-        (usac_m3_capture_report_is_complete(&capture_report) == 0u)) {
+        (usac_capture_report_is_default_complete(&capture_report) == 0u)) {
 #endif
         return encode_error(
             app, request,
@@ -710,9 +710,9 @@ static uint8_t handle_capture_once(
     return 1u;
 }
 
-#ifdef USAC_ENABLE_M5
+#ifdef USAC_ENABLE_ACQUISITION
 static uint8_t handle_get_capabilities(
-    const usac_m2_app_t *app,
+    const usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint8_t *response,
     uint16_t capacity,
@@ -721,9 +721,9 @@ static uint8_t handle_get_capabilities(
     uint8_t payload[24] = {0u};
 
     (void)app;
-    write_u32_le(&payload[0], USAC_M5_CAPABILITY_FLAGS);
+    write_u32_le(&payload[0], USAC_CAPABILITY_FLAGS);
     write_u16_le(&payload[4], USAC_MCU_MAX_COMMAND_PAYLOAD);
-    write_u16_le(&payload[6], USAC_M3_SAMPLE_COUNT);
+    write_u16_le(&payload[6], USAC_CAPTURE_SAMPLE_COUNT);
     write_u16_le(&payload[8], 120u);
     write_u16_le(&payload[10], 960u);
     write_u16_le(&payload[12], 24u);
@@ -740,7 +740,7 @@ static uint8_t handle_get_capabilities(
 }
 
 static uint8_t handle_get_status(
-    const usac_m2_app_t *app,
+    const usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint8_t *response,
     uint16_t capacity,
@@ -759,7 +759,7 @@ static uint8_t handle_get_status(
     }
     write_u32_le(&payload[56], app->capture_sequence);
     write_u32_le(&payload[60], app->periodic.missed_count);
-    write_u32_le(&payload[64], USAC_M5_QUALITY_TIMING_UNCALIBRATED);
+    write_u32_le(&payload[64], USAC_QUALITY_TIMING_UNCALIBRATED);
     payload[68] = app->last_tuss_dev_stat;
     payload[69] = (uint8_t)(
         (app->last_tuss_dev_stat & TUSS4470_DEV_STAT_VDRV_READY) != 0u);
@@ -768,7 +768,7 @@ static uint8_t handle_get_status(
         copy_bytes(&payload[76], app->periodic.schedule_id, 16u);
         write_u32_le(&payload[92], app->periodic.lease_sequence);
         write_u32_le(
-            &payload[96], usac_m5_schedule_lease_remaining_ms(&app->periodic));
+            &payload[96], usac_capture_schedule_lease_remaining_ms(&app->periodic));
     }
     return usac_mcu_encode_frame(
         USAC_MESSAGE_GET_STATUS, USAC_FLAG_RESPONSE, request->sequence,
@@ -777,16 +777,16 @@ static uint8_t handle_get_status(
 }
 
 static uint8_t handle_start_periodic(
-    usac_m2_app_t *app,
+    usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint8_t *response,
     uint16_t capacity,
     uint16_t *response_length)
 {
-    usac_m5_schedule_result_t result;
+    usac_capture_schedule_result_t result;
     uint32_t lease_timeout_ms = read_u32_le(&request->payload[76]);
 
-    if ((app->core.state != USAC_M2_IDLE_SAFE) ||
+    if ((app->core.state != USAC_FIRMWARE_IDLE_SAFE) ||
         (app->config_valid == 0u) || (app->capture_pending != 0u) ||
         (app->clock_fault_flags != 0u)) {
         return encode_error(
@@ -799,14 +799,14 @@ static uint8_t handle_start_periodic(
             app, request, USAC_ERROR_CONFIG_MISMATCH, 0u, 0u,
             response, capacity, response_length);
     }
-    result = usac_m5_schedule_start(
+    result = usac_capture_schedule_start(
         &app->periodic, &request->payload[16],
         read_u32_le(&request->payload[68]),
         read_u32_le(&request->payload[72]), (uint16_t)lease_timeout_ms);
-    if (result != USAC_M5_SCHEDULE_OK) {
+    if (result != USAC_CAPTURE_SCHEDULE_OK) {
         return encode_error(
             app, request,
-            (result == USAC_M5_SCHEDULE_CONFLICT) ?
+            (result == USAC_CAPTURE_SCHEDULE_CONFLICT) ?
                 USAC_ERROR_INVALID_STATE : USAC_ERROR_UNSAFE_CONFIG,
             0u, 0u, response, capacity, response_length);
     }
@@ -818,13 +818,13 @@ static uint8_t handle_start_periodic(
 }
 
 static uint8_t handle_renew_periodic(
-    usac_m2_app_t *app,
+    usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint8_t *response,
     uint16_t capacity,
     uint16_t *response_length)
 {
-    usac_m5_schedule_result_t result;
+    usac_capture_schedule_result_t result;
     uint8_t payload[40];
     uint32_t timeout_ms;
 
@@ -834,13 +834,13 @@ static uint8_t handle_renew_periodic(
             response, capacity, response_length);
     }
     timeout_ms = read_u32_le(&request->payload[36]);
-    result = usac_m5_schedule_renew(
+    result = usac_capture_schedule_renew(
         &app->periodic, &request->payload[16],
         read_u32_le(&request->payload[32]), (uint16_t)timeout_ms);
-    if (result != USAC_M5_SCHEDULE_OK) {
+    if (result != USAC_CAPTURE_SCHEDULE_OK) {
         return encode_error(
             app, request,
-            (result == USAC_M5_SCHEDULE_CONFLICT) ?
+            (result == USAC_CAPTURE_SCHEDULE_CONFLICT) ?
                 USAC_ERROR_INVALID_STATE : USAC_ERROR_INVALID_MESSAGE,
             0u, 0u, response, capacity, response_length);
     }
@@ -848,7 +848,7 @@ static uint8_t handle_renew_periodic(
     copy_bytes(&payload[16], app->periodic.schedule_id, 16u);
     write_u32_le(&payload[32], app->periodic.lease_sequence);
     write_u32_le(
-        &payload[36], usac_m5_schedule_lease_remaining_ms(&app->periodic));
+        &payload[36], usac_capture_schedule_lease_remaining_ms(&app->periodic));
     return usac_mcu_encode_frame(
         USAC_MESSAGE_RENEW_PERIODIC_LEASE, USAC_FLAG_RESPONSE,
         request->sequence, payload, (uint16_t)sizeof(payload), response,
@@ -856,16 +856,16 @@ static uint8_t handle_renew_periodic(
 }
 
 static uint8_t handle_stop(
-    usac_m2_app_t *app,
+    usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint8_t *response,
     uint16_t capacity,
     uint16_t *response_length)
 {
-    usac_m5_schedule_result_t result = usac_m5_schedule_stop(
+    usac_capture_schedule_result_t result = usac_capture_schedule_stop(
         &app->periodic, &request->payload[16]);
 
-    if (result == USAC_M5_SCHEDULE_CONFLICT) {
+    if (result == USAC_CAPTURE_SCHEDULE_CONFLICT) {
         return encode_error(
             app, request, USAC_ERROR_INVALID_STATE, 0u, 0u,
             response, capacity, response_length);
@@ -879,11 +879,11 @@ static uint8_t handle_stop(
         (uint8_t)app->core.state, response, capacity, response_length);
 }
 
-void usac_m5_app_advance_time(usac_m2_app_t *app, uint32_t elapsed_us)
+void usac_firmware_app_advance_time(usac_firmware_app_t *app, uint32_t elapsed_us)
 {
     if ((app->periodic.active != 0u) &&
-        (usac_m5_schedule_advance(&app->periodic, elapsed_us) ==
-         USAC_M5_SCHEDULE_EXPIRED)) {
+        (usac_capture_schedule_advance(&app->periodic, elapsed_us) ==
+         USAC_CAPTURE_SCHEDULE_EXPIRED)) {
         app->last_error = USAC_ERROR_LEASE_EXPIRED;
         if (app->force_safe != 0) {
             (void)app->force_safe(app->safety_context);
@@ -891,8 +891,8 @@ void usac_m5_app_advance_time(usac_m2_app_t *app, uint32_t elapsed_us)
     }
 }
 
-void usac_m5_app_update_clock_faults(
-    usac_m2_app_t *app,
+void usac_firmware_app_update_clock_faults(
+    usac_firmware_app_t *app,
     uint16_t clock_fault_flags)
 {
     if ((clock_fault_flags == 0u) || (app->clock_fault_flags != 0u)) {
@@ -903,7 +903,7 @@ void usac_m5_app_update_clock_faults(
     app->clock_fault_flags = clock_fault_flags;
     app->last_error = USAC_ERROR_TIMING_UNCALIBRATED;
     if (app->periodic.active != 0u) {
-        (void)usac_m5_schedule_stop(
+        (void)usac_capture_schedule_stop(
             &app->periodic, app->periodic.schedule_id);
     }
     if (app->force_safe != 0) {
@@ -911,7 +911,7 @@ void usac_m5_app_update_clock_faults(
     }
 }
 
-uint8_t usac_m5_app_periodic_due(const usac_m2_app_t *app)
+uint8_t usac_firmware_app_periodic_due(const usac_firmware_app_t *app)
 {
     return (uint8_t)(
         (app->periodic.active != 0u) &&
@@ -920,14 +920,14 @@ uint8_t usac_m5_app_periodic_due(const usac_m2_app_t *app)
         (app->capture_pending == 0u));
 }
 
-uint8_t usac_m5_app_run_periodic_capture(usac_m2_app_t *app)
+uint8_t usac_firmware_app_run_periodic_capture(usac_firmware_app_t *app)
 {
     tuss4470_config_report_t apply_report = {0u, 0u, 0u};
-    usac_m3_capture_report_t capture_report = {0u};
+    usac_capture_report_t capture_report = {0u};
     uint8_t index;
 
-    if ((usac_m5_app_periodic_due(app) == 0u) ||
-        (app->apply_profile == 0) || (app->capture_m5 == 0) ||
+    if ((usac_firmware_app_periodic_due(app) == 0u) ||
+        (app->apply_profile == 0) || (app->capture == 0) ||
         (app->force_safe == 0)) {
         return 0u;
     }
@@ -935,21 +935,21 @@ uint8_t usac_m5_app_run_periodic_capture(usac_m2_app_t *app)
             app->apply_context, &app->config.profile, &apply_report) !=
         TUSS4470_CONFIG_OK) {
         app->last_error = USAC_ERROR_TUSS_DRIVER_FAULT;
-        (void)usac_m5_schedule_stop(&app->periodic, app->periodic.schedule_id);
+        (void)usac_capture_schedule_stop(&app->periodic, app->periodic.schedule_id);
         (void)app->force_safe(app->safety_context);
         return 0u;
     }
-    if ((app->capture_m5(
+    if ((app->capture(
              app->capture_context,
              &app->config,
              0u,
              0ul,
              &capture_report) == 0u) ||
-        (usac_m5_capture_report_is_complete(
+        (usac_capture_report_is_complete(
              &capture_report, app->config.pretrigger_count) == 0u)) {
         app->last_error = (capture_report.hardware_fault != 0u) ?
             USAC_ERROR_TUSS_DRIVER_FAULT : USAC_ERROR_ADC_DMA_TIMEOUT;
-        (void)usac_m5_schedule_stop(&app->periodic, app->periodic.schedule_id);
+        (void)usac_capture_schedule_stop(&app->periodic, app->periodic.schedule_id);
         (void)app->force_safe(app->safety_context);
         return 0u;
     }
@@ -966,7 +966,7 @@ uint8_t usac_m5_app_run_periodic_capture(usac_m2_app_t *app)
     app->last_tuss_dev_stat = capture_report.tuss_dev_stat;
     app->capture_pending = 1u;
     app->last_error = 0u;
-    (void)usac_m5_schedule_claim_due(&app->periodic);
+    (void)usac_capture_schedule_claim_due(&app->periodic);
     for (index = 0u; index < 16u; ++index) {
         if (app->periodic.active == 0u) {
             app->periodic.schedule_id[index] = 0u;
@@ -976,16 +976,16 @@ uint8_t usac_m5_app_run_periodic_capture(usac_m2_app_t *app)
 }
 #endif
 
-void usac_m2_app_init(
-    usac_m2_app_t *app,
+void usac_firmware_app_init(
+    usac_firmware_app_t *app,
     const uint8_t device_id[16],
     const uint8_t boot_id[16],
     uint8_t reset_reason,
-    usac_m2_state_t initial_state)
+    usac_firmware_state_t initial_state)
 {
     uint8_t index;
 
-    usac_m2_core_reset(&app->core);
+    usac_firmware_core_reset(&app->core);
     app->core.state = initial_state;
     usac_config_v2_init_d10x4(&app->config);
     copy_bytes(app->device_id, device_id, 16u);
@@ -996,8 +996,8 @@ void usac_m2_app_init(
     app->reset_reason = reset_reason;
     app->hello_established = 0u;
     app->config_valid = (uint8_t)(
-        (initial_state == USAC_M2_SESSION_WAIT) ||
-        (initial_state == USAC_M2_IDLE_SAFE));
+        (initial_state == USAC_FIRMWARE_SESSION_WAIT) ||
+        (initial_state == USAC_FIRMWARE_IDLE_SAFE));
     app->profile_active = app->config_valid;
     app->set_cache_valid = 0u;
     app->set_cache_sequence = 0u;
@@ -1027,9 +1027,9 @@ void usac_m2_app_init(
     app->run_io2_loopback = 0;
     app->capture_context = 0;
     app->capture_once = 0;
-#ifdef USAC_ENABLE_M5
-    app->capture_m5 = 0;
-    usac_m5_schedule_init(&app->periodic);
+#ifdef USAC_ENABLE_ACQUISITION
+    app->capture = 0;
+    usac_capture_schedule_init(&app->periodic);
     for (index = 0u; index < 16u; ++index) {
         app->periodic_request_id[index] = 0u;
     }
@@ -1039,7 +1039,7 @@ void usac_m2_app_init(
 #endif
 }
 
-void usac_m2_app_end_session(usac_m2_app_t *app)
+void usac_firmware_app_end_session(usac_firmware_app_t *app)
 {
     uint8_t index;
 
@@ -1050,25 +1050,25 @@ void usac_m2_app_end_session(usac_m2_app_t *app)
     app->capture_pending = 0u;
     app->capture_cache_valid = 0u;
     app->profile_active = 0u;
-#ifdef USAC_ENABLE_M5
-    usac_m5_schedule_init(&app->periodic);
+#ifdef USAC_ENABLE_ACQUISITION
+    usac_capture_schedule_init(&app->periodic);
 #endif
     if ((app->force_safe != 0) &&
         (app->force_safe(app->safety_context) != TUSS4470_CONFIG_OK)) {
         app->config_valid = 0u;
-        app->core.state = USAC_M2_FAULT;
+        app->core.state = USAC_FIRMWARE_FAULT;
     }
     for (index = 0u; index < 16u; ++index) {
         app->boot_id[index] = 0u;
         app->host_nonce[index] = 0u;
     }
-    if (app->core.state != USAC_M2_FAULT) {
-        app->core.state = USAC_M2_SESSION_WAIT;
+    if (app->core.state != USAC_FIRMWARE_FAULT) {
+        app->core.state = USAC_FIRMWARE_SESSION_WAIT;
     }
 }
 
-uint8_t usac_m2_app_handle(
-    usac_m2_app_t *app,
+uint8_t usac_firmware_app_handle(
+    usac_firmware_app_t *app,
     const usac_mcu_frame_view_t *request,
     uint8_t *response,
     uint16_t response_capacity,
@@ -1088,7 +1088,7 @@ uint8_t usac_m2_app_handle(
             app, request, USAC_ERROR_INVALID_STATE, 0u, 0u,
             response, response_capacity, response_length);
     }
-#ifdef USAC_ENABLE_M5
+#ifdef USAC_ENABLE_ACQUISITION
     if (request->message_type == USAC_MESSAGE_GET_CAPABILITIES) {
         return handle_get_capabilities(
             app, request, response, response_capacity, response_length);
@@ -1114,7 +1114,7 @@ uint8_t usac_m2_app_handle(
         return handle_capture_once(
             app, request, response, response_capacity, response_length);
     }
-#ifdef USAC_ENABLE_M5
+#ifdef USAC_ENABLE_ACQUISITION
     if (request->message_type == USAC_MESSAGE_START_PERIODIC) {
         return handle_start_periodic(
             app, request, response, response_capacity, response_length);

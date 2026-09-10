@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+import re
 import tomllib
 
 
@@ -9,6 +10,33 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ProjectLayoutTests(unittest.TestCase):
+    def test_active_firmware_has_no_milestone_component_identities(self) -> None:
+        firmware_root = ROOT / "firmware"
+        active_files = [
+            path
+            for directory in ("src", "include", "tests")
+            for path in (firmware_root / directory).glob("*")
+            if path.is_file()
+        ]
+        token = re.compile(r"(?i)(?<![a-z0-9])m[0-6](?![a-z0-9])")
+        offenders = []
+        for path in active_files:
+            relative = path.relative_to(ROOT).as_posix()
+            if token.search(relative) or token.search(path.read_text(encoding="utf-8")):
+                offenders.append(relative)
+
+        self.assertEqual(offenders, [])
+
+        identifier_v1 = re.compile(
+            r"\b(?:usac|g_usac|capture|configure|start|test)_[A-Za-z0-9_]*V1[A-Za-z0-9_]*\b"
+        )
+        version_named_identifiers = [
+            path.relative_to(ROOT).as_posix()
+            for path in active_files
+            if identifier_v1.search(path.read_text(encoding="utf-8"))
+        ]
+        self.assertEqual(version_named_identifiers, [])
+
     def test_v1_public_commands_are_neutral_and_complete(self) -> None:
         metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 

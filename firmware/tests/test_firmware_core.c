@@ -1,11 +1,11 @@
 #include <stdint.h>
 #include <msp430.h>
 
-#include "usac_m2_core.h"
-#include "usac_m3_loopback.h"
-#include "usac_m3_capture.h"
-#include "usac_m3_capture_stream.h"
-#include "usac_m3_capture_tx.h"
+#include "usac_firmware_core.h"
+#include "usac_loopback.h"
+#include "usac_capture.h"
+#include "usac_capture_stream.h"
+#include "usac_capture_tx.h"
 #include "tuss4470_profile.h"
 #include "tuss4470_configurator.h"
 #include "usac_platform_msp430.h"
@@ -13,7 +13,7 @@
 #include "usac_identity.h"
 #include "usac_sha256.h"
 #include "usac_config_v2.h"
-#include "usac_m2_app.h"
+#include "usac_firmware_app.h"
 #include "usac_dtr_gate.h"
 #include "usac_tx_gate.h"
 
@@ -21,45 +21,45 @@
 
 static int test_reset_is_safe(void)
 {
-    usac_m2_core_t core;
+    usac_firmware_core_t core;
 
-    usac_m2_core_reset(&core);
+    usac_firmware_core_reset(&core);
 
-    CHECK(core.state == USAC_M2_RESET_SAFE);
+    CHECK(core.state == USAC_FIRMWARE_RESET_SAFE);
     CHECK(core.io2_high == 1u);
     CHECK(core.burst_timer_running == 0u);
     CHECK(core.burst_inhibited == 1u);
-    CHECK(usac_m2_core_burst_permitted(&core) == 0u);
+    CHECK(usac_firmware_core_burst_permitted(&core) == 0u);
     return 0;
 }
 
-static int test_m2_never_releases_burst(void)
+static int test_firmware_never_releases_burst(void)
 {
-    usac_m2_core_t core;
+    usac_firmware_core_t core;
     uint8_t state;
 
-    usac_m2_core_reset(&core);
-    for (state = USAC_M2_RESET_SAFE; state <= USAC_M2_FAULT; ++state) {
-        core.state = (usac_m2_state_t)state;
+    usac_firmware_core_reset(&core);
+    for (state = USAC_FIRMWARE_RESET_SAFE; state <= USAC_FIRMWARE_FAULT; ++state) {
+        core.state = (usac_firmware_state_t)state;
         core.io2_high = 1u;
         core.burst_timer_running = 0u;
         core.burst_inhibited = 1u;
-        CHECK(usac_m2_core_burst_permitted(&core) == 0u);
+        CHECK(usac_firmware_core_burst_permitted(&core) == 0u);
     }
     return 0;
 }
 
 static int test_timer_ranges_are_bounded(void)
 {
-    usac_m2_timing_stage_t stage;
+    usac_firmware_timing_stage_t stage;
 
-    CHECK(usac_m2_validate_timing(120u, 24u) == USAC_M2_OK);
-    CHECK(usac_m2_validate_timing(960u, 800u) == USAC_M2_OK);
-    CHECK(usac_m2_validate_timing(119u, 24u) == USAC_M2_INVALID_TIMING);
-    CHECK(usac_m2_validate_timing(961u, 24u) == USAC_M2_INVALID_TIMING);
-    CHECK(usac_m2_validate_timing(120u, 23u) == USAC_M2_INVALID_TIMING);
-    CHECK(usac_m2_validate_timing(120u, 801u) == USAC_M2_INVALID_TIMING);
-    CHECK(usac_m2_build_timing_stage(120u, 50u, &stage) == USAC_M2_OK);
+    CHECK(usac_firmware_validate_timing(120u, 24u) == USAC_FIRMWARE_OK);
+    CHECK(usac_firmware_validate_timing(960u, 800u) == USAC_FIRMWARE_OK);
+    CHECK(usac_firmware_validate_timing(119u, 24u) == USAC_FIRMWARE_INVALID_TIMING);
+    CHECK(usac_firmware_validate_timing(961u, 24u) == USAC_FIRMWARE_INVALID_TIMING);
+    CHECK(usac_firmware_validate_timing(120u, 23u) == USAC_FIRMWARE_INVALID_TIMING);
+    CHECK(usac_firmware_validate_timing(120u, 801u) == USAC_FIRMWARE_INVALID_TIMING);
+    CHECK(usac_firmware_build_timing_stage(120u, 50u, &stage) == USAC_FIRMWARE_OK);
     CHECK(stage.sample_interval_ticks == 120u);
     CHECK(stage.burst_period_ticks == 50u);
     CHECK(stage.tb0_ccr0 == 119u);
@@ -70,11 +70,11 @@ static int test_timer_ranges_are_bounded(void)
 
 static int test_clock_gate_ignores_only_unused_xt1_fault(void)
 {
-    CHECK(usac_m2_clock_faults_safe(0x00u) == 1u);
-    CHECK(usac_m2_clock_faults_safe(0x02u) == 1u);
-    CHECK(usac_m2_clock_faults_safe(0x01u) == 0u);
-    CHECK(usac_m2_clock_faults_safe(0x08u) == 0u);
-    CHECK(usac_m2_clock_faults_safe(0x0Bu) == 0u);
+    CHECK(usac_firmware_clock_faults_safe(0x00u) == 1u);
+    CHECK(usac_firmware_clock_faults_safe(0x02u) == 1u);
+    CHECK(usac_firmware_clock_faults_safe(0x01u) == 0u);
+    CHECK(usac_firmware_clock_faults_safe(0x08u) == 0u);
+    CHECK(usac_firmware_clock_faults_safe(0x0Bu) == 0u);
     return 0;
 }
 
@@ -208,7 +208,7 @@ static int test_configurator_applies_safe_order_and_reaches_ready(void)
     bus.delay_1ms = fake_delay_1ms;
     tuss4470_profile_init_d10x4(&profile);
 
-    CHECK(tuss4470_configure_m2(&bus, &profile, 4u, &report) ==
+    CHECK(tuss4470_configure_firmware(&bus, &profile, 4u, &report) ==
           TUSS4470_CONFIG_OK);
     CHECK(report.device_id == 0xB9u);
     CHECK(report.revision_id == 0x02u);
@@ -237,7 +237,7 @@ static int test_configurator_applies_safe_order_and_reaches_ready(void)
     tuss4470_profile_init_d10x4(&profile);
     profile.registers[5].value = 0x60u;
     profile.registers[9].value = 0x00u;
-    CHECK(tuss4470_configure_m2(&bus, &profile, 1u, &report) ==
+    CHECK(tuss4470_configure_firmware(&bus, &profile, 1u, &report) ==
           TUSS4470_CONFIG_OK);
     CHECK(device.registers[0x16u] == 0x60u);
     CHECK(device.registers[0x1Bu] == 0x00u);
@@ -269,19 +269,19 @@ static int test_configurator_fails_closed_on_identity_readback_and_status(void)
     tuss4470_profile_init_d10x4(&profile);
 
     device.registers[0x1Du] = 0x00u;
-    CHECK(tuss4470_configure_m2(&bus, &profile, 4u, &report) ==
+    CHECK(tuss4470_configure_firmware(&bus, &profile, 4u, &report) ==
           TUSS4470_CONFIG_IDENTITY);
     CHECK(device.write_count == 0u);
 
     fake_tuss4470_init(&device);
     device.corrupt_readback_address = 0x14u;
-    CHECK(tuss4470_configure_m2(&bus, &profile, 4u, &report) ==
+    CHECK(tuss4470_configure_firmware(&bus, &profile, 4u, &report) ==
           TUSS4470_CONFIG_READBACK);
     CHECK((device.registers[0x1Bu] & 0x01u) == 0u);
 
     fake_tuss4470_init(&device);
     device.registers[0x1Cu] = 0x02u;
-    CHECK(tuss4470_configure_m2(&bus, &profile, 4u, &report) ==
+    CHECK(tuss4470_configure_firmware(&bus, &profile, 4u, &report) ==
           TUSS4470_CONFIG_DRIVER_FAULT);
     CHECK((device.registers[0x1Bu] & 0x01u) == 0u);
     CHECK(device.registers[0x1Bu] == 0x40u);
@@ -289,7 +289,7 @@ static int test_configurator_fails_closed_on_identity_readback_and_status(void)
 
     fake_tuss4470_init(&device);
     device.registers[0x1Cu] = 0x00u;
-    CHECK(tuss4470_configure_m2(&bus, &profile, 2u, &report) ==
+    CHECK(tuss4470_configure_firmware(&bus, &profile, 2u, &report) ==
           TUSS4470_CONFIG_VDRV_TIMEOUT);
     CHECK((device.registers[0x1Bu] & 0x01u) == 0u);
     CHECK(device.registers[0x1Bu] == 0x40u);
@@ -297,7 +297,7 @@ static int test_configurator_fails_closed_on_identity_readback_and_status(void)
     return 0;
 }
 
-static int test_mcu_parser_accepts_m1_hello_vector(void)
+static int test_mcu_parser_accepts_v1_hello_vector(void)
 {
     static const uint8_t hello_frame[] = {
         0x55u,0x53u,0x41u,0x43u,0x01u,0x01u,0x00u,0x00u,
@@ -328,7 +328,7 @@ static int test_mcu_parser_accepts_m1_hello_vector(void)
     return 0;
 }
 
-static int test_mcu_encoder_reproduces_m1_hello_vector(void)
+static int test_mcu_encoder_reproduces_v1_hello_vector(void)
 {
     static const uint8_t hello_payload[20] = {
         0x00u,0x01u,0x02u,0x03u,0x04u,0x05u,0x06u,0x07u,
@@ -461,7 +461,7 @@ static int test_mcu_parser_timeout_discards_partial_candidate(void)
     return 0;
 }
 
-static int test_m2_parser_rejects_short_set_config(void)
+static int test_firmware_parser_rejects_short_set_config(void)
 {
     uint8_t payload[100] = {0u};
     uint8_t encoded[120];
@@ -530,7 +530,7 @@ static usac_mcu_parse_result_t parse_complete_test_frame(
     return result;
 }
 
-static int test_m3_parser_validates_io2_loopback_command(void)
+static int test_acquisition_parser_validates_io2_loopback_command(void)
 {
     uint8_t payload[56] = {0u};
     uint8_t encoded[76];
@@ -571,9 +571,9 @@ static int test_m3_parser_validates_io2_loopback_command(void)
     return 0;
 }
 
-static int test_m3_loopback_evaluation_requires_exact_stable_edges(void)
+static int test_acquisition_loopback_evaluation_requires_exact_stable_edges(void)
 {
-    usac_m3_loopback_report_t report = {0u};
+    usac_loopback_report_t report = {0u};
     uint8_t index;
 
     report.captured_edges = 8u;
@@ -581,68 +581,68 @@ static int test_m3_loopback_evaluation_requires_exact_stable_edges(void)
     for (index = 0u; index < 8u; ++index) {
         report.capture_ticks[index] = (uint16_t)(100u + ((uint16_t)index * 50u));
     }
-    usac_m3_loopback_evaluate(&report, 50u);
-    CHECK(report.result_flags == USAC_M3_LOOPBACK_PASS);
+    usac_loopback_evaluate(&report, 50u);
+    CHECK(report.result_flags == USAC_LOOPBACK_PASS);
     CHECK(report.minimum_interval_ticks == 50u);
     CHECK(report.maximum_interval_ticks == 50u);
 
     report.capture_ticks[4] = 302u;
-    usac_m3_loopback_evaluate(&report, 50u);
-    CHECK((report.result_flags & USAC_M3_LOOPBACK_INTERVAL_MISMATCH) != 0u);
-    CHECK((report.result_flags & USAC_M3_LOOPBACK_PASS) == 0u);
+    usac_loopback_evaluate(&report, 50u);
+    CHECK((report.result_flags & USAC_LOOPBACK_INTERVAL_MISMATCH) != 0u);
+    CHECK((report.result_flags & USAC_LOOPBACK_PASS) == 0u);
 
     report.capture_ticks[4] = 300u;
-    report.result_flags = USAC_M3_LOOPBACK_COV_SEEN;
-    usac_m3_loopback_evaluate(&report, 50u);
-    CHECK((report.result_flags & USAC_M3_LOOPBACK_COV_SEEN) != 0u);
-    CHECK((report.result_flags & USAC_M3_LOOPBACK_PASS) == 0u);
+    report.result_flags = USAC_LOOPBACK_COV_SEEN;
+    usac_loopback_evaluate(&report, 50u);
+    CHECK((report.result_flags & USAC_LOOPBACK_COV_SEEN) != 0u);
+    CHECK((report.result_flags & USAC_LOOPBACK_PASS) == 0u);
 
     report.result_flags = 0u;
     report.captured_edges = 7u;
-    usac_m3_loopback_evaluate(&report, 50u);
-    CHECK((report.result_flags & USAC_M3_LOOPBACK_TIMEOUT) != 0u);
+    usac_loopback_evaluate(&report, 50u);
+    CHECK((report.result_flags & USAC_LOOPBACK_TIMEOUT) != 0u);
 
     report.captured_edges = 8u;
     report.final_io2_level = 0u;
-    usac_m3_loopback_evaluate(&report, 50u);
-    CHECK((report.result_flags & USAC_M3_LOOPBACK_FINAL_NOT_HIGH) != 0u);
+    usac_loopback_evaluate(&report, 50u);
+    CHECK((report.result_flags & USAC_LOOPBACK_FINAL_NOT_HIGH) != 0u);
     return 0;
 }
 
-static int test_m3_capture_report_requires_exact_dma_evidence(void)
+static int test_acquisition_capture_report_requires_exact_dma_evidence(void)
 {
-    usac_m3_capture_report_t report = {0u};
+    usac_capture_report_t report = {0u};
 
-    report.captured_samples = USAC_M3_SAMPLE_COUNT;
-    report.trigger_sample_index = USAC_M3_PRETRIGGER_COUNT;
+    report.captured_samples = USAC_CAPTURE_SAMPLE_COUNT;
+    report.trigger_sample_index = USAC_CAPTURE_DEFAULT_PRETRIGGER_COUNT;
     report.burst_completed = 1u;
 
-    CHECK(usac_m3_capture_report_is_complete(&report) == 1u);
+    CHECK(usac_capture_report_is_default_complete(&report) == 1u);
     report.captured_samples = 2047u;
-    CHECK(usac_m3_capture_report_is_complete(&report) == 0u);
-    report.captured_samples = USAC_M3_SAMPLE_COUNT;
+    CHECK(usac_capture_report_is_default_complete(&report) == 0u);
+    report.captured_samples = USAC_CAPTURE_SAMPLE_COUNT;
     report.trigger_sample_index = 63u;
-    CHECK(usac_m3_capture_report_is_complete(&report) == 0u);
-    report.trigger_sample_index = USAC_M3_PRETRIGGER_COUNT;
+    CHECK(usac_capture_report_is_default_complete(&report) == 0u);
+    report.trigger_sample_index = USAC_CAPTURE_DEFAULT_PRETRIGGER_COUNT;
     report.timed_out = 1u;
-    CHECK(usac_m3_capture_report_is_complete(&report) == 0u);
+    CHECK(usac_capture_report_is_default_complete(&report) == 0u);
     return 0;
 }
 
-static int test_m3_segmented_crc_matches_iso_hdlc_vector(void)
+static int test_acquisition_segmented_crc_matches_iso_hdlc_vector(void)
 {
     static const uint8_t vector[9] = {
         '1','2','3','4','5','6','7','8','9'
     };
-    uint32_t crc = usac_m3_crc32_begin();
+    uint32_t crc = usac_crc32_begin();
 
-    crc = usac_m3_crc32_update(crc, vector, 4u);
-    crc = usac_m3_crc32_update(crc, &vector[4], 5u);
-    CHECK(usac_m3_crc32_finish(crc) == 0xCBF43926ul);
+    crc = usac_crc32_update(crc, vector, 4u);
+    crc = usac_crc32_update(crc, &vector[4], 5u);
+    CHECK(usac_crc32_finish(crc) == 0xCBF43926ul);
     return 0;
 }
 
-static int test_m3_capture_stream_matches_python_fixed_vector(void)
+static int test_acquisition_capture_stream_matches_python_fixed_vector(void)
 {
     static const uint8_t expected_capture_id[16] = {
         0xC5u,0xA1u,0x74u,0xA9u,0xA8u,0x24u,0xD9u,0xBEu,
@@ -650,14 +650,14 @@ static int test_m3_capture_stream_matches_python_fixed_vector(void)
     };
     static const uint8_t expected_crc[4] = {0x87u,0x57u,0xFFu,0xDCu};
     usac_config_v2_t config;
-    usac_m3_capture_descriptor_t descriptor = {0u};
-    usac_m3_capture_stream_t stream;
+    usac_capture_descriptor_t descriptor = {0u};
+    usac_capture_stream_t stream;
     const uint8_t *chunk;
     const uint8_t *again;
     const uint8_t *expected_segments[4];
     static const uint16_t expected_lengths[4] = {
-        16u, USAC_M3_CAPTURE_METADATA_LENGTH,
-        USAC_M3_SAMPLE_COUNT * 2u, 4u
+        16u, USAC_CAPTURE_METADATA_LENGTH,
+        USAC_CAPTURE_SAMPLE_COUNT * 2u, 4u
     };
     uint16_t chunk_length;
     uint16_t again_length;
@@ -677,19 +677,19 @@ static int test_m3_capture_stream_matches_python_fixed_vector(void)
     descriptor.capture_sequence = 1u;
     descriptor.sample_interval_ticks = 120u;
     descriptor.burst_period_ticks = 50u;
-    descriptor.pretrigger_count = USAC_M3_PRETRIGGER_COUNT;
+    descriptor.pretrigger_count = USAC_CAPTURE_DEFAULT_PRETRIGGER_COUNT;
     descriptor.tuss_dev_stat = 0x08u;
     descriptor.out3_start_level = 0xFFu;
     descriptor.out4_start_level = 0xFFu;
-    descriptor.quality_flags = USAC_M3_QUALITY_TIMING_UNCALIBRATED;
+    descriptor.quality_flags = USAC_QUALITY_TIMING_UNCALIBRATED;
     for (index = 0u; index < TUSS4470_PROFILE_REGISTER_COUNT; ++index) {
         descriptor.register_pairs[index] = config.profile.registers[index];
     }
-    for (index = 0u; index < USAC_M3_SAMPLE_COUNT; ++index) {
-        g_usac_m3_waveform[index] = index;
+    for (index = 0u; index < USAC_CAPTURE_SAMPLE_COUNT; ++index) {
+        g_usac_capture_waveform[index] = index;
     }
 
-    usac_m3_capture_stream_init(&stream, &descriptor, g_usac_m3_waveform);
+    usac_capture_stream_init(&stream, &descriptor, g_usac_capture_waveform);
     CHECK(stream.frame_header[12] == 0xD0u && stream.frame_header[13] == 0x10u);
     for (index = 0u; index < 16u; ++index) {
         CHECK(stream.metadata[36u + index] == expected_capture_id[index]);
@@ -699,75 +699,75 @@ static int test_m3_capture_stream_matches_python_fixed_vector(void)
     }
     expected_segments[0] = stream.frame_header;
     expected_segments[1] = stream.metadata;
-    expected_segments[2] = (const uint8_t *)g_usac_m3_waveform;
+    expected_segments[2] = (const uint8_t *)g_usac_capture_waveform;
     expected_segments[3] = stream.frame_crc;
     for (index = 0u; index < 4u; ++index) {
-        CHECK(usac_m3_capture_stream_peek(
+        CHECK(usac_capture_stream_peek(
             &stream, &chunk, &chunk_length) == 1u);
         CHECK(chunk == expected_segments[index]);
         CHECK(chunk_length == expected_lengths[index]);
-        CHECK(usac_m3_capture_stream_peek(
+        CHECK(usac_capture_stream_peek(
             &stream, &again, &again_length) == 1u);
         CHECK(again == chunk && again_length == chunk_length);
-        CHECK(usac_m3_capture_stream_commit(&stream) == 1u);
+        CHECK(usac_capture_stream_commit(&stream) == 1u);
     }
-    CHECK(usac_m3_capture_stream_peek(
+    CHECK(usac_capture_stream_peek(
         &stream, &chunk, &chunk_length) == 0u);
-    CHECK(usac_m3_capture_stream_commit(&stream) == 0u);
+    CHECK(usac_capture_stream_commit(&stream) == 0u);
     return 0;
 }
 
-static int test_m3_capture_tx_commits_only_completed_segments(void)
+static int test_acquisition_capture_tx_commits_only_completed_segments(void)
 {
     static const uint16_t expected_lengths[4] = {
-        16u, USAC_M3_CAPTURE_METADATA_LENGTH,
-        USAC_M3_SAMPLE_COUNT * 2u, 4u
+        16u, USAC_CAPTURE_METADATA_LENGTH,
+        USAC_CAPTURE_SAMPLE_COUNT * 2u, 4u
     };
-    usac_m3_capture_stream_t stream = {0u};
-    usac_m3_capture_tx_t tx;
+    usac_capture_stream_t stream = {0u};
+    usac_capture_tx_t tx;
     const uint8_t *data;
     const uint8_t *again;
     uint16_t length;
     uint16_t again_length;
     uint8_t index;
 
-    stream.samples = g_usac_m3_waveform;
-    stream.metadata_length = USAC_M3_CAPTURE_METADATA_LENGTH;
+    stream.samples = g_usac_capture_waveform;
+    stream.metadata_length = USAC_CAPTURE_METADATA_LENGTH;
     stream.active = 1u;
-    usac_m3_capture_tx_init(&tx, &stream);
-    CHECK(tx.state == USAC_M3_TX_READY);
-    CHECK(usac_m3_capture_tx_peek(&tx, &data, &length) == 1u);
+    usac_capture_tx_init(&tx, &stream);
+    CHECK(tx.state == USAC_CAPTURE_TX_READY);
+    CHECK(usac_capture_tx_peek(&tx, &data, &length) == 1u);
     CHECK(length == expected_lengths[0]);
 
-    usac_m3_capture_tx_on_start_result(&tx, USAC_M3_TX_START_BUSY);
-    CHECK(tx.state == USAC_M3_TX_READY);
+    usac_capture_tx_on_start_result(&tx, USAC_CAPTURE_TX_START_BUSY);
+    CHECK(tx.state == USAC_CAPTURE_TX_READY);
     CHECK(stream.phase == 0u);
-    CHECK(usac_m3_capture_tx_peek(&tx, &again, &again_length) == 1u);
+    CHECK(usac_capture_tx_peek(&tx, &again, &again_length) == 1u);
     CHECK(again == data && again_length == length);
 
     for (index = 0u; index < 4u; ++index) {
-        CHECK(usac_m3_capture_tx_peek(&tx, &data, &length) == 1u);
+        CHECK(usac_capture_tx_peek(&tx, &data, &length) == 1u);
         CHECK(length == expected_lengths[index]);
-        usac_m3_capture_tx_on_start_result(&tx, USAC_M3_TX_START_STARTED);
-        CHECK(tx.state == USAC_M3_TX_IN_FLIGHT);
-        CHECK(usac_m3_capture_tx_peek(&tx, &again, &again_length) == 0u);
-        usac_m3_capture_tx_on_send_completed(&tx);
+        usac_capture_tx_on_start_result(&tx, USAC_CAPTURE_TX_START_STARTED);
+        CHECK(tx.state == USAC_CAPTURE_TX_IN_FLIGHT);
+        CHECK(usac_capture_tx_peek(&tx, &again, &again_length) == 0u);
+        usac_capture_tx_on_send_completed(&tx);
         CHECK(stream.phase == (uint8_t)(index + 1u));
     }
-    CHECK(tx.state == USAC_M3_TX_COMPLETE);
+    CHECK(tx.state == USAC_CAPTURE_TX_COMPLETE);
     CHECK(stream.active == 0u);
 
     stream.phase = 0u;
     stream.active = 1u;
-    usac_m3_capture_tx_init(&tx, &stream);
-    usac_m3_capture_tx_on_start_result(&tx, USAC_M3_TX_START_FATAL);
-    CHECK(tx.state == USAC_M3_TX_FAILED);
+    usac_capture_tx_init(&tx, &stream);
+    usac_capture_tx_on_start_result(&tx, USAC_CAPTURE_TX_START_FATAL);
+    CHECK(tx.state == USAC_CAPTURE_TX_FAILED);
     CHECK(stream.phase == 0u && stream.active == 1u);
 
-    usac_m3_capture_tx_init(&tx, &stream);
-    usac_m3_capture_tx_on_start_result(
-        &tx, (usac_m3_capture_tx_start_result_t)0xFFu);
-    CHECK(tx.state == USAC_M3_TX_FAILED);
+    usac_capture_tx_init(&tx, &stream);
+    usac_capture_tx_on_start_result(
+        &tx, (usac_capture_tx_start_result_t)0xFFu);
+    CHECK(tx.state == USAC_CAPTURE_TX_FAILED);
     CHECK(stream.phase == 0u && stream.active == 1u);
     return 0;
 }
@@ -845,7 +845,7 @@ static int test_mcu_sha256_matches_d10x4_canonical_vector(void)
     return 0;
 }
 
-static int test_config_v2_round_trip_matches_m1_contract(void)
+static int test_config_v2_round_trip_matches_v1_contract(void)
 {
     usac_config_v2_t config;
     usac_config_v2_t decoded;
@@ -929,7 +929,7 @@ static tuss4470_config_result_t fake_force_safe_failure(void *context)
 static uint8_t fake_run_io2_loopback(
     void *context,
     uint16_t burst_period_ticks,
-    usac_m3_loopback_report_t *report)
+    usac_loopback_report_t *report)
 {
     uint8_t *calls = (uint8_t *)context;
     uint8_t index;
@@ -945,7 +945,7 @@ static uint8_t fake_run_io2_loopback(
         report->capture_ticks[index] = (uint16_t)(
             100u + ((uint16_t)index * burst_period_ticks));
     }
-    usac_m3_loopback_evaluate(report, burst_period_ticks);
+    usac_loopback_evaluate(report, burst_period_ticks);
     return 1u;
 }
 
@@ -953,7 +953,7 @@ static uint8_t fake_capture_once(
     void *context,
     uint16_t sample_interval_ticks,
     uint16_t burst_period_ticks,
-    usac_m3_capture_report_t *report)
+    usac_capture_report_t *report)
 {
     uint8_t *calls = (uint8_t *)context;
     uint16_t index;
@@ -962,11 +962,11 @@ static uint8_t fake_capture_once(
     if ((sample_interval_ticks != 120u) || (burst_period_ticks != 50u)) {
         return 0u;
     }
-    for (index = 0u; index < USAC_M3_SAMPLE_COUNT; ++index) {
-        g_usac_m3_waveform[index] = index;
+    for (index = 0u; index < USAC_CAPTURE_SAMPLE_COUNT; ++index) {
+        g_usac_capture_waveform[index] = index;
     }
-    report->captured_samples = USAC_M3_SAMPLE_COUNT;
-    report->trigger_sample_index = USAC_M3_PRETRIGGER_COUNT;
+    report->captured_samples = USAC_CAPTURE_SAMPLE_COUNT;
+    report->trigger_sample_index = USAC_CAPTURE_DEFAULT_PRETRIGGER_COUNT;
     report->dma_remaining = 0u;
     report->burst_completed = 1u;
     report->timed_out = 0u;
@@ -974,7 +974,7 @@ static uint8_t fake_capture_once(
     return 1u;
 }
 
-static int test_m3_app_allows_one_bound_capture_and_returns_ack(void)
+static int test_acquisition_app_allows_one_bound_capture_and_returns_ack(void)
 {
     uint8_t zero_id[16] = {0u};
     uint8_t hello_payload[20] = {0u};
@@ -987,9 +987,9 @@ static int test_m3_app_allows_one_bound_capture_and_returns_ack(void)
     uint16_t response_length;
     uint16_t index;
     usac_mcu_frame_view_t request;
-    usac_m2_app_t app;
+    usac_firmware_app_t app;
 
-    usac_m2_app_init(&app, zero_id, zero_id, 0u, USAC_M2_IDLE_SAFE);
+    usac_firmware_app_init(&app, zero_id, zero_id, 0u, USAC_FIRMWARE_IDLE_SAFE);
     app.apply_context = &apply_calls;
     app.apply_profile = fake_apply_profile;
     app.capture_context = &capture_calls;
@@ -1003,7 +1003,7 @@ static int test_m3_app_allows_one_bound_capture_and_returns_ack(void)
     request.sequence = 70u;
     request.payload_length = 20u;
     request.payload = hello_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
 
     app.loopback_authorized = 1u;
@@ -1022,7 +1022,7 @@ static int test_m3_app_allows_one_bound_capture_and_returns_ack(void)
     request.payload_length = 60u;
     request.payload = capture_payload;
 
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response[5] == 0x7Eu);
     CHECK(response[32] == 0x05u);
@@ -1032,15 +1032,15 @@ static int test_m3_app_allows_one_bound_capture_and_returns_ack(void)
     CHECK(app.capture_pending == 1u);
     CHECK(app.loopback_authorized == 0u);
     CHECK(app.profile_active == 0u);
-    CHECK(app.capture_report.captured_samples == USAC_M3_SAMPLE_COUNT);
-    CHECK(g_usac_m3_waveform[0] == 0u);
-    CHECK(g_usac_m3_waveform[2047] == 2047u);
+    CHECK(app.capture_report.captured_samples == USAC_CAPTURE_SAMPLE_COUNT);
+    CHECK(g_usac_capture_waveform[0] == 0u);
+    CHECK(g_usac_capture_waveform[2047] == 2047u);
     CHECK(response_length == sizeof(first_ack));
     for (index = 0u; index < response_length; ++index) {
         first_ack[index] = response[index];
     }
     app.capture_pending = 0u;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(apply_calls == 1u);
     CHECK(capture_calls == 1u);
@@ -1052,7 +1052,7 @@ static int test_m3_app_allows_one_bound_capture_and_returns_ack(void)
     return 0;
 }
 
-static int test_m3_app_runs_and_caches_io2_loopback_evidence(void)
+static int test_acquisition_app_runs_and_caches_io2_loopback_evidence(void)
 {
     uint8_t zero_id[16] = {0u};
     uint8_t hello_payload[20] = {0u};
@@ -1064,9 +1064,9 @@ static int test_m3_app_runs_and_caches_io2_loopback_evidence(void)
     uint16_t retry_length;
     uint16_t index;
     usac_mcu_frame_view_t request;
-    usac_m2_app_t app;
+    usac_firmware_app_t app;
 
-    usac_m2_app_init(&app, zero_id, zero_id, 0u, USAC_M2_IDLE_SAFE);
+    usac_firmware_app_init(&app, zero_id, zero_id, 0u, USAC_FIRMWARE_IDLE_SAFE);
     app.loopback_context = &calls;
     app.run_io2_loopback = fake_run_io2_loopback;
     hello_payload[16] = 1u;
@@ -1076,7 +1076,7 @@ static int test_m3_app_runs_and_caches_io2_loopback_evidence(void)
     request.sequence = 60u;
     request.payload_length = 20u;
     request.payload = hello_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, first_response, sizeof(first_response),
               &first_length) == 1u);
 
@@ -1096,18 +1096,18 @@ static int test_m3_app_runs_and_caches_io2_loopback_evidence(void)
     request.payload_length = 56u;
     request.payload = loopback_payload;
 
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, first_response, sizeof(first_response),
               &first_length) == 1u);
     CHECK(calls == 1u);
     CHECK(first_length == 106u);
     CHECK(first_response[5] == 0x0Eu);
     CHECK(first_response[6] == 1u && first_response[7] == 0u);
-    CHECK(first_response[71] == USAC_M3_LOOPBACK_PASS);
+    CHECK(first_response[71] == USAC_LOOPBACK_PASS);
     CHECK(app.loopback_authorized == 1u);
     CHECK(app.profile_active == 0u);
 
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, retry_response, sizeof(retry_response),
               &retry_length) == 1u);
     CHECK(calls == 1u);
@@ -1118,7 +1118,7 @@ static int test_m3_app_runs_and_caches_io2_loopback_evidence(void)
     return 0;
 }
 
-static int test_m2_app_replies_and_never_captures(void)
+static int test_firmware_app_replies_and_never_captures(void)
 {
     static const uint8_t device_id[16] = {
         0u,1u,2u,3u,4u,5u,6u,7u,8u,9u,10u,11u,12u,13u,14u,15u
@@ -1137,16 +1137,16 @@ static int test_m2_app_replies_and_never_captures(void)
     uint8_t response[128];
     uint16_t response_length;
     usac_mcu_frame_view_t request;
-    usac_m2_app_t app;
+    usac_firmware_app_t app;
     uint8_t index;
 
-    usac_m2_app_init(&app, device_id, initial_boot_id, 3u, USAC_M2_IDLE_SAFE);
+    usac_firmware_app_init(&app, device_id, initial_boot_id, 3u, USAC_FIRMWARE_IDLE_SAFE);
     request.message_type = 0x01u;
     request.flags = 0u;
     request.sequence = 0x11223344ul;
     request.payload_length = 20u;
     request.payload = hello_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response_length == 84u);
     CHECK(response[5] == 0x01u);
@@ -1163,7 +1163,7 @@ static int test_m2_app_replies_and_never_captures(void)
     request.sequence = 2u;
     request.payload_length = 0u;
     request.payload = 0;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response[5] == 0x03u);
     CHECK(response[12] == 72u);
@@ -1173,30 +1173,30 @@ static int test_m2_app_replies_and_never_captures(void)
     request.sequence = 3u;
     request.payload_length = 60u;
     request.payload = capture_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response[5] == 0x7Fu);
     CHECK(response[34] == 5u && response[35] == 0u);
-    CHECK(usac_m2_core_burst_permitted(&app.core) == 0u);
+    CHECK(usac_firmware_core_burst_permitted(&app.core) == 0u);
     return 0;
 }
 
-static int test_m2_app_requires_hello_before_other_commands(void)
+static int test_firmware_app_requires_hello_before_other_commands(void)
 {
     uint8_t zero_id[16] = {0u};
     uint8_t hello_payload[20] = {0u};
     uint8_t response[128];
     uint16_t response_length;
     usac_mcu_frame_view_t request;
-    usac_m2_app_t app;
+    usac_firmware_app_t app;
 
-    usac_m2_app_init(&app, zero_id, zero_id, 0u, USAC_M2_SESSION_WAIT);
+    usac_firmware_app_init(&app, zero_id, zero_id, 0u, USAC_FIRMWARE_SESSION_WAIT);
     request.message_type = 0x03u;
     request.flags = 0u;
     request.sequence = 4u;
     request.payload_length = 0u;
     request.payload = 0;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response[5] == 0x7Fu);
     CHECK(response[34] == 5u && response[35] == 0u);
@@ -1207,16 +1207,16 @@ static int test_m2_app_requires_hello_before_other_commands(void)
     request.sequence = 5u;
     request.payload_length = 20u;
     request.payload = hello_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response[5] == 0x01u);
-    CHECK(app.core.state == USAC_M2_IDLE_SAFE);
-    usac_m2_app_end_session(&app);
+    CHECK(app.core.state == USAC_FIRMWARE_IDLE_SAFE);
+    usac_firmware_app_end_session(&app);
     request.message_type = 0x03u;
     request.sequence = 6u;
     request.payload_length = 0u;
     request.payload = 0;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response[5] == 0x7Fu);
     CHECK(response[34] == 5u && response[35] == 0u);
@@ -1225,13 +1225,13 @@ static int test_m2_app_requires_hello_before_other_commands(void)
     request.sequence = 7u;
     request.payload_length = 20u;
     request.payload = hello_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     request.message_type = 0x03u;
     request.sequence = 8u;
     request.payload_length = 0u;
     request.payload = 0;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response[5] == 0x03u);
     CHECK(response[12] == 72u);
@@ -1281,11 +1281,11 @@ static int test_new_hello_nonce_ends_old_session_but_preserves_verified_config(v
     uint8_t index;
     uint16_t response_length;
     usac_mcu_frame_view_t request;
-    usac_m2_app_t app;
+    usac_firmware_app_t app;
 
     hello_payload[16] = 1u;
     hello_payload[17] = 1u;
-    usac_m2_app_init(&app, zero_id, zero_id, 0u, USAC_M2_IDLE_SAFE);
+    usac_firmware_app_init(&app, zero_id, zero_id, 0u, USAC_FIRMWARE_IDLE_SAFE);
     app.safety_context = &safe_calls;
     app.force_safe = fake_force_safe;
     request.message_type = 0x01u;
@@ -1293,13 +1293,13 @@ static int test_new_hello_nonce_ends_old_session_but_preserves_verified_config(v
     request.sequence = 30u;
     request.payload_length = 20u;
     request.payload = hello_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     for (index = 0u; index < 16u; ++index) {
         first_boot_id[index] = app.boot_id[index];
     }
     request.sequence = 30u;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     for (index = 0u; index < 16u; ++index) {
         CHECK(app.boot_id[index] == first_boot_id[index]);
@@ -1310,7 +1310,7 @@ static int test_new_hello_nonce_ends_old_session_but_preserves_verified_config(v
 
     hello_payload[0] = 1u;
     request.sequence = 31u;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(app.config_valid == 1u);
     CHECK(app.profile_active == 0u);
@@ -1319,7 +1319,7 @@ static int test_new_hello_nonce_ends_old_session_but_preserves_verified_config(v
     request.sequence = 32u;
     request.payload_length = 0u;
     request.payload = 0;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response[5] == 0x03u);
     return 0;
@@ -1329,24 +1329,24 @@ static int test_failed_safe_transition_invalidates_config_and_active_profile(voi
 {
     uint8_t zero_id[16] = {0u};
     uint8_t safe_calls = 0u;
-    usac_m2_app_t app;
+    usac_firmware_app_t app;
 
-    usac_m2_app_init(&app, zero_id, zero_id, 0u, USAC_M2_IDLE_SAFE);
+    usac_firmware_app_init(&app, zero_id, zero_id, 0u, USAC_FIRMWARE_IDLE_SAFE);
     app.safety_context = &safe_calls;
     app.force_safe = fake_force_safe_failure;
     CHECK(app.config_valid == 1u);
     CHECK(app.profile_active == 1u);
 
-    usac_m2_app_end_session(&app);
+    usac_firmware_app_end_session(&app);
 
     CHECK(safe_calls == 1u);
-    CHECK(app.core.state == USAC_M2_FAULT);
+    CHECK(app.core.state == USAC_FIRMWARE_FAULT);
     CHECK(app.config_valid == 0u);
     CHECK(app.profile_active == 0u);
     return 0;
 }
 
-static int test_m2_set_config_acks_only_after_apply(void)
+static int test_firmware_set_config_acks_only_after_apply(void)
 {
     uint8_t zero_id[16] = {0u};
     uint8_t hello_payload[20] = {0u};
@@ -1356,9 +1356,9 @@ static int test_m2_set_config_acks_only_after_apply(void)
     uint16_t config_length;
     uint16_t response_length;
     usac_mcu_frame_view_t request;
-    usac_m2_app_t app;
+    usac_firmware_app_t app;
 
-    usac_m2_app_init(&app, zero_id, zero_id, 0u, USAC_M2_IDLE_SAFE);
+    usac_firmware_app_init(&app, zero_id, zero_id, 0u, USAC_FIRMWARE_IDLE_SAFE);
     app.apply_context = &calls;
     app.apply_profile = fake_apply_profile;
     hello_payload[16] = 1u;
@@ -1368,7 +1368,7 @@ static int test_m2_set_config_acks_only_after_apply(void)
     request.sequence = 8u;
     request.payload_length = 20u;
     request.payload = hello_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response[5] == 0x01u);
     for (config_length = 0u; config_length < 32u; ++config_length) {
@@ -1381,7 +1381,7 @@ static int test_m2_set_config_acks_only_after_apply(void)
     request.sequence = 9u;
     request.payload_length = 120u;
     request.payload = request_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(calls == 1u);
     CHECK(response[5] == 0x7Eu);
@@ -1391,7 +1391,7 @@ static int test_m2_set_config_acks_only_after_apply(void)
     return 0;
 }
 
-static int test_m2_retransmitted_set_config_reuses_response_without_reapply(void)
+static int test_firmware_retransmitted_set_config_reuses_response_without_reapply(void)
 {
     uint8_t zero_id[16] = {0u};
     uint8_t hello_payload[20] = {0u};
@@ -1404,9 +1404,9 @@ static int test_m2_retransmitted_set_config_reuses_response_without_reapply(void
     uint16_t retry_length;
     uint16_t index;
     usac_mcu_frame_view_t request;
-    usac_m2_app_t app;
+    usac_firmware_app_t app;
 
-    usac_m2_app_init(&app, zero_id, zero_id, 0u, USAC_M2_IDLE_SAFE);
+    usac_firmware_app_init(&app, zero_id, zero_id, 0u, USAC_FIRMWARE_IDLE_SAFE);
     app.apply_context = &calls;
     app.apply_profile = fake_apply_profile;
     hello_payload[16] = 1u;
@@ -1416,7 +1416,7 @@ static int test_m2_retransmitted_set_config_reuses_response_without_reapply(void
     request.sequence = 40u;
     request.payload_length = 20u;
     request.payload = hello_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, first_response, sizeof(first_response),
               &first_length) == 1u);
     for (index = 0u; index < 16u; ++index) {
@@ -1432,11 +1432,11 @@ static int test_m2_retransmitted_set_config_reuses_response_without_reapply(void
     request.sequence = 41u;
     request.payload_length = 120u;
     request.payload = request_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, first_response, sizeof(first_response),
               &first_length) == 1u);
     CHECK(calls == 1u);
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, retry_response, sizeof(retry_response),
               &retry_length) == 1u);
     CHECK(calls == 1u);
@@ -1447,7 +1447,7 @@ static int test_m2_retransmitted_set_config_reuses_response_without_reapply(void
     return 0;
 }
 
-static int test_m2_failed_apply_invalidates_reported_config(void)
+static int test_firmware_failed_apply_invalidates_reported_config(void)
 {
     uint8_t zero_id[16] = {0u};
     uint8_t hello_payload[20] = {0u};
@@ -1457,9 +1457,9 @@ static int test_m2_failed_apply_invalidates_reported_config(void)
     uint16_t config_length;
     uint16_t response_length;
     usac_mcu_frame_view_t request;
-    usac_m2_app_t app;
+    usac_firmware_app_t app;
 
-    usac_m2_app_init(&app, zero_id, zero_id, 0u, USAC_M2_IDLE_SAFE);
+    usac_firmware_app_init(&app, zero_id, zero_id, 0u, USAC_FIRMWARE_IDLE_SAFE);
     hello_payload[16] = 1u;
     hello_payload[17] = 1u;
     request.message_type = 0x01u;
@@ -1467,7 +1467,7 @@ static int test_m2_failed_apply_invalidates_reported_config(void)
     request.sequence = 20u;
     request.payload_length = 20u;
     request.payload = hello_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
 
     app.apply_profile = fake_apply_profile_failure;
@@ -1481,7 +1481,7 @@ static int test_m2_failed_apply_invalidates_reported_config(void)
     request.sequence = 21u;
     request.payload_length = 120u;
     request.payload = request_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response[5] == 0x7Fu);
 
@@ -1489,7 +1489,7 @@ static int test_m2_failed_apply_invalidates_reported_config(void)
     request.sequence = 22u;
     request.payload_length = 0u;
     request.payload = 0;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response[5] == 0x7Fu);
     CHECK(response[34] == 5u && response[35] == 0u);
@@ -1503,7 +1503,7 @@ static int test_m2_failed_apply_invalidates_reported_config(void)
     request.sequence = 23u;
     request.payload_length = 120u;
     request.payload = request_payload;
-    CHECK(usac_m2_app_handle(
+    CHECK(usac_firmware_app_handle(
               &app, &request, response, sizeof(response), &response_length) == 1u);
     CHECK(response[5] == 0x7Eu);
     CHECK(app.config_valid == 1u);
@@ -1526,7 +1526,7 @@ int main(void)
 
     result = test_reset_is_safe();
     if (result != 0) goto complete;
-    result = test_m2_never_releases_burst();
+    result = test_firmware_never_releases_burst();
     if (result != 0) goto complete;
     result = test_timer_ranges_are_bounded();
     if (result != 0) goto complete;
@@ -1542,9 +1542,9 @@ int main(void)
     if (result != 0) goto complete;
     result = test_configurator_fails_closed_on_identity_readback_and_status();
     if (result != 0) goto complete;
-    result = test_mcu_parser_accepts_m1_hello_vector();
+    result = test_mcu_parser_accepts_v1_hello_vector();
     if (result != 0) goto complete;
-    result = test_mcu_encoder_reproduces_m1_hello_vector();
+    result = test_mcu_encoder_reproduces_v1_hello_vector();
     if (result != 0) goto complete;
     result = test_mcu_parser_bounds_input_and_resynchronizes();
     if (result != 0) goto complete;
@@ -1552,21 +1552,21 @@ int main(void)
     if (result != 0) goto complete;
     result = test_mcu_parser_timeout_discards_partial_candidate();
     if (result != 0) goto complete;
-    result = test_m2_parser_rejects_short_set_config();
+    result = test_firmware_parser_rejects_short_set_config();
     if (result != 0) goto complete;
     result = test_mcu_parser_passes_unknown_bounded_command_to_app();
     if (result != 0) goto complete;
-    result = test_m3_parser_validates_io2_loopback_command();
+    result = test_acquisition_parser_validates_io2_loopback_command();
     if (result != 0) goto complete;
-    result = test_m3_loopback_evaluation_requires_exact_stable_edges();
+    result = test_acquisition_loopback_evaluation_requires_exact_stable_edges();
     if (result != 0) goto complete;
-    result = test_m3_capture_report_requires_exact_dma_evidence();
+    result = test_acquisition_capture_report_requires_exact_dma_evidence();
     if (result != 0) goto complete;
-    result = test_m3_segmented_crc_matches_iso_hdlc_vector();
+    result = test_acquisition_segmented_crc_matches_iso_hdlc_vector();
     if (result != 0) goto complete;
-    result = test_m3_capture_stream_matches_python_fixed_vector();
+    result = test_acquisition_capture_stream_matches_python_fixed_vector();
     if (result != 0) goto complete;
-    result = test_m3_capture_tx_commits_only_completed_segments();
+    result = test_acquisition_capture_tx_commits_only_completed_segments();
     if (result != 0) goto complete;
     result = test_device_identity_and_usb_serial_are_stable();
     if (result != 0) goto complete;
@@ -1574,17 +1574,17 @@ int main(void)
     if (result != 0) goto complete;
     result = test_mcu_sha256_matches_d10x4_canonical_vector();
     if (result != 0) goto complete;
-    result = test_config_v2_round_trip_matches_m1_contract();
+    result = test_config_v2_round_trip_matches_v1_contract();
     if (result != 0) goto complete;
     result = test_config_v2_requires_one_posttrigger_sample();
     if (result != 0) goto complete;
-    result = test_m2_app_replies_and_never_captures();
+    result = test_firmware_app_replies_and_never_captures();
     if (result != 0) goto complete;
-    result = test_m3_app_runs_and_caches_io2_loopback_evidence();
+    result = test_acquisition_app_runs_and_caches_io2_loopback_evidence();
     if (result != 0) goto complete;
-    result = test_m3_app_allows_one_bound_capture_and_returns_ack();
+    result = test_acquisition_app_allows_one_bound_capture_and_returns_ack();
     if (result != 0) goto complete;
-    result = test_m2_app_requires_hello_before_other_commands();
+    result = test_firmware_app_requires_hello_before_other_commands();
     if (result != 0) goto complete;
     result = test_dtr_gate_requires_low_then_rising_edge();
     if (result != 0) goto complete;
@@ -1594,11 +1594,11 @@ int main(void)
     if (result != 0) goto complete;
     result = test_failed_safe_transition_invalidates_config_and_active_profile();
     if (result != 0) goto complete;
-    result = test_m2_set_config_acks_only_after_apply();
+    result = test_firmware_set_config_acks_only_after_apply();
     if (result != 0) goto complete;
-    result = test_m2_retransmitted_set_config_reuses_response_without_reapply();
+    result = test_firmware_retransmitted_set_config_reuses_response_without_reapply();
     if (result != 0) goto complete;
-    result = test_m2_failed_apply_invalidates_reported_config();
+    result = test_firmware_failed_apply_invalidates_reported_config();
 
 complete:
     g_usac_test_result = result;

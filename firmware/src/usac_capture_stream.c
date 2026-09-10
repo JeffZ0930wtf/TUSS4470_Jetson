@@ -1,6 +1,6 @@
-/* Builds a fixed M3 CAPTURE_DATA frame as stable segments. CRC is computed
+/* Builds a fixed acquisition CAPTURE_DATA frame as stable segments. CRC is computed
  * over those same segments before transmission; samples are never copied. */
-#include "usac_m3_capture_stream.h"
+#include "usac_capture_stream.h"
 
 #include "usac_sha256.h"
 
@@ -33,12 +33,12 @@ static void copy_bytes(uint8_t *target, const uint8_t *source, uint8_t length)
     }
 }
 
-uint32_t usac_m3_crc32_begin(void)
+uint32_t usac_crc32_begin(void)
 {
     return 0xFFFFFFFFul;
 }
 
-uint32_t usac_m3_crc32_update(uint32_t crc, const uint8_t *data, uint16_t length)
+uint32_t usac_crc32_update(uint32_t crc, const uint8_t *data, uint16_t length)
 {
     uint16_t index;
     uint8_t bit;
@@ -53,13 +53,13 @@ uint32_t usac_m3_crc32_update(uint32_t crc, const uint8_t *data, uint16_t length
     return crc;
 }
 
-uint32_t usac_m3_crc32_finish(uint32_t crc)
+uint32_t usac_crc32_finish(uint32_t crc)
 {
     return crc ^ 0xFFFFFFFFul;
 }
 
 static void build_capture_id(
-    const usac_m3_capture_descriptor_t *descriptor,
+    const usac_capture_descriptor_t *descriptor,
     uint8_t capture_id[16])
 {
     uint8_t material[36];
@@ -73,8 +73,8 @@ static void build_capture_id(
 }
 
 static void build_metadata(
-    usac_m3_capture_stream_t *stream,
-    const usac_m3_capture_descriptor_t *descriptor)
+    usac_capture_stream_t *stream,
+    const usac_capture_descriptor_t *descriptor)
 {
     uint8_t capture_id[16];
     uint8_t index;
@@ -93,7 +93,7 @@ static void build_metadata(
     write_u32_le(&stream->metadata[offset], descriptor->capture_sequence); offset += 4u;
     write_u16_le(&stream->metadata[offset], descriptor->sample_interval_ticks); offset += 2u;
     write_u16_le(&stream->metadata[offset], descriptor->burst_period_ticks); offset += 2u;
-    write_u16_le(&stream->metadata[offset], USAC_M3_SAMPLE_COUNT); offset += 2u;
+    write_u16_le(&stream->metadata[offset], USAC_CAPTURE_SAMPLE_COUNT); offset += 2u;
     write_u16_le(&stream->metadata[offset], descriptor->pretrigger_count); offset += 2u;
     stream->metadata[offset++] = 12u;
     stream->metadata[offset++] = 1u;
@@ -122,13 +122,13 @@ static void build_metadata(
     stream->metadata[offset++] = 0u;
     stream->metadata[offset++] = 0u;
     stream->metadata[offset++] = 0u;
-    write_u32_le(&stream->metadata[offset], USAC_M3_SAMPLE_COUNT * 2ul); offset += 4u;
+    write_u32_le(&stream->metadata[offset], USAC_CAPTURE_SAMPLE_COUNT * 2ul); offset += 4u;
     for (index = 0u; index < TUSS4470_PROFILE_REGISTER_COUNT; ++index) {
         stream->metadata[offset++] = descriptor->register_pairs[index].address;
         stream->metadata[offset++] = descriptor->register_pairs[index].value;
     }
     for (index = 0u; index < descriptor->event_count; ++index) {
-        const usac_m5_capture_event_t *event = &descriptor->events[index];
+        const usac_capture_event_t *event = &descriptor->events[index];
         stream->metadata[offset++] = event->channel;
         stream->metadata[offset++] = event->edge;
         stream->metadata[offset++] = event->capture_method;
@@ -145,10 +145,10 @@ static void build_metadata(
     stream->metadata_length = offset;
 }
 
-void usac_m3_capture_stream_init(
-    usac_m3_capture_stream_t *stream,
-    const usac_m3_capture_descriptor_t *descriptor,
-    const uint16_t samples[USAC_M3_SAMPLE_COUNT])
+void usac_capture_stream_init(
+    usac_capture_stream_t *stream,
+    const usac_capture_descriptor_t *descriptor,
+    const uint16_t samples[USAC_CAPTURE_SAMPLE_COUNT])
 {
     uint32_t crc;
 
@@ -165,21 +165,21 @@ void usac_m3_capture_stream_init(
     build_metadata(stream, descriptor);
     write_u32_le(
         &stream->frame_header[12],
-        (uint32_t)stream->metadata_length + (USAC_M3_SAMPLE_COUNT * 2ul));
+        (uint32_t)stream->metadata_length + (USAC_CAPTURE_SAMPLE_COUNT * 2ul));
     stream->samples = samples;
 
-    crc = usac_m3_crc32_begin();
-    crc = usac_m3_crc32_update(crc, &stream->frame_header[4], 12u);
-    crc = usac_m3_crc32_update(crc, stream->metadata, stream->metadata_length);
-    crc = usac_m3_crc32_update(
-        crc, (const uint8_t *)samples, USAC_M3_SAMPLE_COUNT * 2u);
-    write_u32_le(stream->frame_crc, usac_m3_crc32_finish(crc));
+    crc = usac_crc32_begin();
+    crc = usac_crc32_update(crc, &stream->frame_header[4], 12u);
+    crc = usac_crc32_update(crc, stream->metadata, stream->metadata_length);
+    crc = usac_crc32_update(
+        crc, (const uint8_t *)samples, USAC_CAPTURE_SAMPLE_COUNT * 2u);
+    write_u32_le(stream->frame_crc, usac_crc32_finish(crc));
     stream->phase = 0u;
     stream->active = 1u;
 }
 
-uint8_t usac_m3_capture_stream_peek(
-    const usac_m3_capture_stream_t *stream,
+uint8_t usac_capture_stream_peek(
+    const usac_capture_stream_t *stream,
     const uint8_t **data,
     uint16_t *length)
 {
@@ -195,7 +195,7 @@ uint8_t usac_m3_capture_stream_peek(
         *length = stream->metadata_length;
     } else if (stream->phase == 2u) {
         *data = (const uint8_t *)stream->samples;
-        *length = USAC_M3_SAMPLE_COUNT * 2u;
+        *length = USAC_CAPTURE_SAMPLE_COUNT * 2u;
     } else if (stream->phase == 3u) {
         *data = stream->frame_crc;
         *length = 4u;
@@ -205,7 +205,7 @@ uint8_t usac_m3_capture_stream_peek(
     return 1u;
 }
 
-uint8_t usac_m3_capture_stream_commit(usac_m3_capture_stream_t *stream)
+uint8_t usac_capture_stream_commit(usac_capture_stream_t *stream)
 {
     if ((stream == 0) || (stream->active == 0u) || (stream->phase >= 4u)) {
         return 0u;

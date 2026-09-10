@@ -4,8 +4,8 @@
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$platformPath = Join-Path $repositoryRoot 'firmware\src\usac_platform_m3_msp430.c'
-$mainPath = Join-Path $repositoryRoot 'firmware\src\m2_main.c'
+$platformPath = Join-Path $repositoryRoot 'firmware\src\usac_acquisition_platform_msp430.c'
+$mainPath = Join-Path $repositoryRoot 'firmware\src\main.c'
 $elf = Join-Path $repositoryRoot 'firmware\build\m3\usac-m3-acceptance.elf'
 
 foreach ($required in @($platformPath, $mainPath, $elf)) {
@@ -21,7 +21,7 @@ $requiredPatterns = @(
     @{ Pattern = 'P1REN\s*&=\s*\(uint8_t\)~LOOPBACK_CAPTURE_BIT'; Label = 'pin38 pull resistor disabled' },
     @{ Pattern = 'TA0CCTL4\s*=\s*CM_2\s*\|\s*CCIS_0\s*\|\s*SCS\s*\|\s*CAP'; Label = 'TA0CCR4 falling-edge capture' },
     @{ Pattern = '#define\s+LOOPBACK_TIMEOUT_TICKS\s+2400u'; Label = '100 us SMCLK timeout' },
-    @{ Pattern = 'index\s*<\s*USAC_M3_LOOPBACK_EDGE_COUNT'; Label = 'finite eight-edge loop' },
+    @{ Pattern = 'index\s*<\s*USAC_LOOPBACK_EDGE_COUNT'; Label = 'finite eight-edge loop' },
     @{ Pattern = 'while\s*\(\(TA0CCTL4\s*&\s*CCIFG\)\s*==\s*0u\)[\s\S]*?TA0CCTL4\s*&=\s*\(uint16_t\)~\(CCIFG\s*\|\s*COV\);[\s\S]*?for\s*\(index\s*=\s*0u'; Label = 'one startup edge discarded before eight evidence edges' },
     @{ Pattern = 'TA2CTL\s*=\s*TACLR;[\s\S]*?P2SEL\s*&=[\s\S]*?P2OUT\s*\|=\s*TUSS_IO2_BIT'; Label = 'timer stop and GPIO-high restore' },
     @{ Pattern = 'tuss4470_force_safe\(bus\)[\s\S]*?read_safety_snapshot'; Label = 'pre-test Standby/Hi-Z gate' },
@@ -42,12 +42,12 @@ if (($captureArm -lt 0) -or ($startTickRead -lt 0) -or
 }
 $settlingStart = $platform.IndexOf('Switching a pin from GPIO to OUTMOD_7')
 $evidenceLoop = $platform.IndexOf(
-    'for (index = 0u; index < USAC_M3_LOOPBACK_EDGE_COUNT;', $settlingStart)
+    'for (index = 0u; index < USAC_LOOPBACK_EDGE_COUNT;', $settlingStart)
 if (($settlingStart -lt 0) -or ($evidenceLoop -lt 0)) {
     throw 'M3 loopback settling/evidence phase boundary is missing'
 }
 $settlingBlock = $platform.Substring($settlingStart, $evidenceLoop - $settlingStart)
-if ($settlingBlock -match 'USAC_M3_LOOPBACK_COV_SEEN') {
+if ($settlingBlock -match 'USAC_LOOPBACK_COV_SEEN') {
     throw 'COV from the explicitly discarded startup phase must not contaminate evidence flags'
 }
 if ($settlingBlock -notmatch 'TA0CCR4') {
@@ -56,7 +56,7 @@ if ($settlingBlock -notmatch 'TA0CCR4') {
 if ($platform -match 'P2OUT\s*&=\s*[^;]*TUSS_IO2_BIT') {
     throw 'M3 loopback must not drive IO2 low through a GPIO write'
 }
-if ($main -notmatch '#ifdef\s+USAC_ENABLE_M3_LOOPBACK[\s\S]*?run_io2_loopback\s*=\s*usac_platform_run_io2_loopback') {
+if ($main -notmatch '#ifdef\s+USAC_ENABLE_LOOPBACK[\s\S]*?run_io2_loopback\s*=\s*usac_platform_run_io2_loopback') {
     throw 'M3 loopback callback is not isolated behind its compile-time gate'
 }
 

@@ -23,12 +23,12 @@ Write-Host 'MSP430 simulator unit tests: compiling'
     '-Wall' `
     '-Wextra' `
     '-Werror' `
-    (Join-Path $repositoryRoot 'firmware\tests\test_m2_core.c') `
-    (Join-Path $repositoryRoot 'firmware\src\usac_m2_core.c') `
-    (Join-Path $repositoryRoot 'firmware\src\usac_m3_loopback.c') `
-    (Join-Path $repositoryRoot 'firmware\src\usac_m3_capture.c') `
-    (Join-Path $repositoryRoot 'firmware\src\usac_m3_capture_stream.c') `
-    (Join-Path $repositoryRoot 'firmware\src\usac_m3_capture_tx.c') `
+    (Join-Path $repositoryRoot 'firmware\tests\test_firmware_core.c') `
+    (Join-Path $repositoryRoot 'firmware\src\usac_firmware_core.c') `
+    (Join-Path $repositoryRoot 'firmware\src\usac_loopback.c') `
+    (Join-Path $repositoryRoot 'firmware\src\usac_capture.c') `
+    (Join-Path $repositoryRoot 'firmware\src\usac_capture_stream.c') `
+    (Join-Path $repositoryRoot 'firmware\src\usac_capture_tx.c') `
     (Join-Path $repositoryRoot 'firmware\src\tuss4470_profile.c') `
     (Join-Path $repositoryRoot 'firmware\src\tuss4470_configurator.c') `
     (Join-Path $repositoryRoot 'firmware\src\usac_platform_msp430.c') `
@@ -36,7 +36,7 @@ Write-Host 'MSP430 simulator unit tests: compiling'
     (Join-Path $repositoryRoot 'firmware\src\usac_identity.c') `
     (Join-Path $repositoryRoot 'firmware\src\usac_sha256.c') `
     (Join-Path $repositoryRoot 'firmware\src\usac_config_v2.c') `
-    (Join-Path $repositoryRoot 'firmware\src\usac_m2_app.c') `
+    (Join-Path $repositoryRoot 'firmware\src\usac_firmware_app.c') `
     (Join-Path $repositoryRoot 'firmware\src\usac_dtr_gate.c') `
     (Join-Path $repositoryRoot 'firmware\src\usac_tx_gate.c') `
     '-o' $testBinary

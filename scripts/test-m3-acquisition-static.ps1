@@ -4,14 +4,14 @@
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$capturePath = Join-Path $repositoryRoot 'firmware\src\usac_m3_capture.c'
-$captureHeaderPath = Join-Path $repositoryRoot 'firmware\include\usac_m3_capture.h'
-$platformPath = Join-Path $repositoryRoot 'firmware\src\usac_platform_m3_msp430.c'
-$streamPath = Join-Path $repositoryRoot 'firmware\src\usac_m3_capture_stream.c'
-$streamHeaderPath = Join-Path $repositoryRoot 'firmware\include\usac_m3_capture_stream.h'
-$txPath = Join-Path $repositoryRoot 'firmware\src\usac_m3_capture_tx.c'
-$txHeaderPath = Join-Path $repositoryRoot 'firmware\include\usac_m3_capture_tx.h'
-$mainPath = Join-Path $repositoryRoot 'firmware\src\m2_main.c'
+$capturePath = Join-Path $repositoryRoot 'firmware\src\usac_capture.c'
+$captureHeaderPath = Join-Path $repositoryRoot 'firmware\include\usac_capture.h'
+$platformPath = Join-Path $repositoryRoot 'firmware\src\usac_acquisition_platform_msp430.c'
+$streamPath = Join-Path $repositoryRoot 'firmware\src\usac_capture_stream.c'
+$streamHeaderPath = Join-Path $repositoryRoot 'firmware\include\usac_capture_stream.h'
+$txPath = Join-Path $repositoryRoot 'firmware\src\usac_capture_tx.c'
+$txHeaderPath = Join-Path $repositoryRoot 'firmware\include\usac_capture_tx.h'
+$mainPath = Join-Path $repositoryRoot 'firmware\src\main.c'
 $usbDescriptorPath = Join-Path $repositoryRoot 'firmware\build\m3\generated\USB_config\descriptors.h'
 $elfPath = Join-Path $repositoryRoot 'firmware\build\m3\usac-m3-acceptance.elf'
 $compilerRoot = Join-Path $repositoryRoot '.tools\msp430-gcc\msp430-gcc-9.3.1.11_win64'
@@ -33,13 +33,13 @@ $tx = (Get-Content -Raw -LiteralPath $txHeaderPath) + "`n" +
     (Get-Content -Raw -LiteralPath $txPath)
 $main = Get-Content -Raw -LiteralPath $mainPath
 $usbDescriptor = Get-Content -Raw -LiteralPath $usbDescriptorPath
-if (($allSource | Select-String -AllMatches -Pattern 'g_usac_m3_waveform\s*\[\s*USAC_M3_SAMPLE_COUNT\s*\]').Matches.Count -ne 2) {
+if (($allSource | Select-String -AllMatches -Pattern 'g_usac_capture_waveform\s*\[\s*USAC_CAPTURE_SAMPLE_COUNT\s*\]').Matches.Count -ne 2) {
     throw 'waveform buffer must have exactly one extern declaration and one definition'
 }
 $requiredPatterns = @(
-    @{ Pattern = '#define\s+USAC_M3_SAMPLE_COUNT\s+2048u'; Label = '2048 sample constant' },
-    @{ Pattern = '#define\s+USAC_M3_PRETRIGGER_COUNT\s+64u'; Label = '64 sample pretrigger constant' },
-    @{ Pattern = 'g_usac_m3_waveform\s*\[\s*USAC_M3_SAMPLE_COUNT\s*\]\s*__attribute__\s*\(\(section\("\.noinit"\)\)\)'; Label = 'DMA waveform bypasses pre-main BSS clearing' },
+    @{ Pattern = '#define\s+USAC_CAPTURE_SAMPLE_COUNT\s+2048u'; Label = '2048 sample constant' },
+    @{ Pattern = '#define\s+USAC_CAPTURE_DEFAULT_PRETRIGGER_COUNT\s+64u'; Label = '64 sample pretrigger constant' },
+    @{ Pattern = 'g_usac_capture_waveform\s*\[\s*USAC_CAPTURE_SAMPLE_COUNT\s*\]\s*__attribute__\s*\(\(section\("\.noinit"\)\)\)'; Label = 'DMA waveform bypasses pre-main BSS clearing' },
     @{ Pattern = 'P6SEL\s*\|=\s*BIT0'; Label = 'P6.0/A0 analog input' },
     @{ Pattern = 'ADC12SHS_3'; Label = 'TB0.1 ADC trigger' },
     @{ Pattern = 'TB0CCR0\s*=\s*\(uint16_t\)\(sample_interval_ticks\s*-\s*1u\)'; Label = 'Timer_B period equals one sample interval' },
@@ -54,14 +54,14 @@ $requiredPatterns = @(
     @{ Pattern = 'TB0CCTL2\s*=\s*0u'; Label = 'TB0CCR2 interrupt stays disabled for DMA triggering' },
     @{ Pattern = 'DMACTL0\s*=\s*DMA0TSEL_8\s*\|\s*DMA1TSEL_8'; Label = 'DMA0 and DMA1 use the independent TB0CCR2 trigger' },
     @{ Pattern = 'stop_capture_hardware[\s\S]*?TB0CCTL2\s*=\s*0u[\s\S]*?TB0CCR2\s*=\s*0u'; Label = 'capture stop clears the TB0CCR2 trigger state' },
-    @{ Pattern = 'DMA0SZ\s*=\s*USAC_M3_SAMPLE_COUNT'; Label = 'DMA0 exact full-waveform count' },
-    @{ Pattern = 'DMA1SZ\s*=\s*USAC_M3_PRETRIGGER_COUNT'; Label = 'DMA1 hardware pretrigger count' },
-    @{ Pattern = 'DMA0DA[\s\S]*?g_usac_m3_waveform'; Label = 'DMA0 writes directly to unique waveform buffer' },
+    @{ Pattern = 'DMA0SZ\s*=\s*USAC_CAPTURE_SAMPLE_COUNT'; Label = 'DMA0 exact full-waveform count' },
+    @{ Pattern = 'DMA1SZ\s*=\s*USAC_CAPTURE_DEFAULT_PRETRIGGER_COUNT'; Label = 'DMA1 hardware pretrigger count' },
+    @{ Pattern = 'DMA0DA[\s\S]*?g_usac_capture_waveform'; Label = 'DMA0 writes directly to unique waveform buffer' },
     @{ Pattern = 'DMA1DA[\s\S]*?pretrigger_sink'; Label = 'DMA1 counts without a second sample buffer' },
     @{ Pattern = 'case\s+DMAIV_DMA1IFG:[\s\S]*?TA2CTL\s*=\s*TASSEL_2\s*\|\s*MC_1\s*\|\s*TACLR'; Label = 'DMA1 completion starts finite Burst timer' },
     @{ Pattern = 'capture_dma0_completed\s*=\s*0u'; Label = 'DMA0 completion evidence reset before capture' },
     @{ Pattern = 'case\s+DMAIV_DMA0IFG:[\s\S]*?capture_dma0_completed\s*=\s*1u[\s\S]*?capture_complete\s*=\s*1u'; Label = 'DMA0 ISR records exact completion evidence' },
-    @{ Pattern = 'if\s*\(capture_dma0_completed\s*!=\s*0u\)[\s\S]*?report->dma_remaining\s*=\s*0u[\s\S]*?report->captured_samples\s*=\s*USAC_M3_SAMPLE_COUNT'; Label = 'completed DMA block reports 2048 samples and zero remaining' }
+    @{ Pattern = 'if\s*\(capture_dma0_completed\s*!=\s*0u\)[\s\S]*?report->dma_remaining\s*=\s*0u[\s\S]*?report->captured_samples\s*=\s*USAC_CAPTURE_SAMPLE_COUNT'; Label = 'completed DMA block reports 2048 samples and zero remaining' }
 )
 foreach ($check in $requiredPatterns) {
     if ($allSource -notmatch $check.Pattern) {
@@ -78,29 +78,29 @@ if ($allSource -match 'DMA0TSEL_24\s*\|\s*DMA1TSEL_24') {
 if ($allSource -match '(?i)interpolat|repeat_last|fill_missing') {
     throw 'M3 acquisition source contains a forbidden sample synthesis path'
 }
-if ($allSource -match 'report->captured_samples\s*=\s*\(uint16_t\)\(USAC_M3_SAMPLE_COUNT\s*-\s*DMA0SZ\)\s*;\s*report->trigger_sample_index') {
+if ($allSource -match 'report->captured_samples\s*=\s*\(uint16_t\)\(USAC_CAPTURE_SAMPLE_COUNT\s*-\s*DMA0SZ\)\s*;\s*report->trigger_sample_index') {
     throw 'completed M3 capture still derives success count from reloaded DMA0SZ'
 }
 
 if ($stream -match 'USAC_M3_CAPTURE_CHUNK_MAX' -or
-    $stream -match 'usac_m3_capture_stream_next') {
+    $stream -match 'usac_capture_stream_next') {
     throw 'CAPTURE_DATA frame source still exposes advancing 64-byte application chunks'
 }
 if ($stream -notmatch 'stream->samples\s*=\s*samples' -or
     $stream -notmatch '\(const uint8_t \*\)stream->samples') {
     throw 'CAPTURE_DATA does not stream directly from the unique waveform buffer'
 }
-if ($tx -notmatch 'USAC_M3_TX_START_BUSY[\s\S]*?USAC_M3_TX_READY' -or
-    $tx -notmatch 'usac_m3_capture_tx_on_send_completed[\s\S]*?usac_m3_capture_stream_commit') {
+if ($tx -notmatch 'USAC_CAPTURE_TX_START_BUSY[\s\S]*?USAC_CAPTURE_TX_READY' -or
+    $tx -notmatch 'usac_capture_tx_on_send_completed[\s\S]*?usac_capture_stream_commit') {
     throw 'transport-neutral capture session does not retain BUSY or commit on completion'
 }
-if ($main -notmatch 'usac_m3_capture_tx_peek[\s\S]*?USBCDC_sendData') {
+if ($main -notmatch 'usac_capture_tx_peek[\s\S]*?USBCDC_sendData') {
     throw 'M3 main loop does not send the stable segment exposed by the TX session'
 }
-if ($main -notmatch 'USBCDC_INTERFACE_BUSY_ERROR[\s\S]*?USAC_M3_TX_START_BUSY') {
+if ($main -notmatch 'USBCDC_INTERFACE_BUSY_ERROR[\s\S]*?USAC_CAPTURE_TX_START_BUSY') {
     throw 'TI CDC BUSY is not mapped to a non-advancing TX result'
 }
-if ($main -notmatch 'g_usac_usb_send_complete[\s\S]*?USAC_M3_TX_IN_FLIGHT[\s\S]*?usac_m3_capture_tx_on_send_completed') {
+if ($main -notmatch 'g_usac_usb_send_complete[\s\S]*?USAC_CAPTURE_TX_IN_FLIGHT[\s\S]*?usac_capture_tx_on_send_completed') {
     throw 'USB completion does not commit exactly the capture segment in flight'
 }
 if ($usbDescriptor -notmatch '#define\s+USB_DMA_CHAN\s+0xFF') {
@@ -120,9 +120,9 @@ $usbDmaSymbols = [regex]::Matches($symbols, '(?m)\bmemcpyDMA(?:[012])?$')
 if ($usbDmaSymbols.Count -ne 0) {
     throw 'M3 ELF still contains TI USB DMA copy code that can collide with acquisition DMA0/DMA1'
 }
-$waveformMatches = [regex]::Matches($symbols, '(?m)^\S+\s+00001000\s+[Bb]\s+g_usac_m3_waveform$')
+$waveformMatches = [regex]::Matches($symbols, '(?m)^\S+\s+00001000\s+[Bb]\s+g_usac_capture_waveform$')
 if ($waveformMatches.Count -ne 1) {
-    throw 'M3 ELF must contain exactly one 4096-byte g_usac_m3_waveform symbol'
+    throw 'M3 ELF must contain exactly one 4096-byte g_usac_capture_waveform symbol'
 }
 
 Write-Host "M3 acquisition static audit: PASS (static_ram=$staticRam B, one 4096 B waveform; no hardware access)"

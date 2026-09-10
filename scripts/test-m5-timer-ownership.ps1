@@ -5,7 +5,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$mainSource = Join-Path $repositoryRoot 'firmware\src\m2_main.c'
+$mainSource = Join-Path $repositoryRoot 'firmware\src\main.c'
 $main = Get-Content -Raw -LiteralPath $mainSource
 $mainEntryIndex = $main.IndexOf('int main(void)')
 if ($mainEntryIndex -lt 0) {

@@ -1,4 +1,4 @@
-#include "usac_m5_schedule.h"
+#include "usac_capture_schedule.h"
 
 static uint8_t ids_equal(const uint8_t left[16], const uint8_t right[16])
 {
@@ -22,7 +22,7 @@ static uint8_t id_is_nonzero(const uint8_t value[16])
     return (uint8_t)(combined != 0u);
 }
 
-void usac_m5_schedule_init(usac_m5_schedule_t *schedule)
+void usac_capture_schedule_init(usac_capture_schedule_t *schedule)
 {
     uint8_t index;
 
@@ -41,8 +41,8 @@ void usac_m5_schedule_init(usac_m5_schedule_t *schedule)
     schedule->lease_remaining_us = 0ul;
 }
 
-usac_m5_schedule_result_t usac_m5_schedule_start(
-    usac_m5_schedule_t *schedule,
+usac_capture_schedule_result_t usac_capture_schedule_start(
+    usac_capture_schedule_t *schedule,
     const uint8_t schedule_id[16],
     uint32_t period_us,
     uint32_t capture_count,
@@ -51,15 +51,15 @@ usac_m5_schedule_result_t usac_m5_schedule_start(
     uint8_t index;
 
     if (schedule->active != 0u) {
-        return USAC_M5_SCHEDULE_CONFLICT;
+        return USAC_CAPTURE_SCHEDULE_CONFLICT;
     }
     if ((id_is_nonzero(schedule_id) == 0u) ||
-        (period_us < USAC_M5_MIN_PERIOD_US) ||
-        (lease_timeout_ms < USAC_M5_MIN_LEASE_MS) ||
-        (lease_timeout_ms > USAC_M5_MAX_LEASE_MS)) {
-        return USAC_M5_SCHEDULE_INVALID;
+        (period_us < USAC_CAPTURE_MIN_PERIOD_US) ||
+        (lease_timeout_ms < USAC_CAPTURE_MIN_LEASE_MS) ||
+        (lease_timeout_ms > USAC_CAPTURE_MAX_LEASE_MS)) {
+        return USAC_CAPTURE_SCHEDULE_INVALID;
     }
-    usac_m5_schedule_init(schedule);
+    usac_capture_schedule_init(schedule);
     for (index = 0u; index < 16u; ++index) {
         schedule->schedule_id[index] = schedule_id[index];
     }
@@ -69,54 +69,54 @@ usac_m5_schedule_result_t usac_m5_schedule_start(
     schedule->capture_limit = capture_count;
     schedule->last_lease_timeout_ms = lease_timeout_ms;
     schedule->lease_remaining_us = (uint32_t)lease_timeout_ms * 1000ul;
-    return USAC_M5_SCHEDULE_OK;
+    return USAC_CAPTURE_SCHEDULE_OK;
 }
 
-usac_m5_schedule_result_t usac_m5_schedule_renew(
-    usac_m5_schedule_t *schedule,
+usac_capture_schedule_result_t usac_capture_schedule_renew(
+    usac_capture_schedule_t *schedule,
     const uint8_t schedule_id[16],
     uint32_t lease_sequence,
     uint16_t lease_timeout_ms)
 {
     if ((schedule->active == 0u) ||
         (ids_equal(schedule->schedule_id, schedule_id) == 0u)) {
-        return USAC_M5_SCHEDULE_CONFLICT;
+        return USAC_CAPTURE_SCHEDULE_CONFLICT;
     }
     if ((lease_sequence == 0ul) ||
-        (lease_timeout_ms < USAC_M5_MIN_LEASE_MS) ||
-        (lease_timeout_ms > USAC_M5_MAX_LEASE_MS)) {
-        return USAC_M5_SCHEDULE_INVALID;
+        (lease_timeout_ms < USAC_CAPTURE_MIN_LEASE_MS) ||
+        (lease_timeout_ms > USAC_CAPTURE_MAX_LEASE_MS)) {
+        return USAC_CAPTURE_SCHEDULE_INVALID;
     }
     if (lease_sequence == schedule->lease_sequence) {
         return (lease_timeout_ms == schedule->last_lease_timeout_ms) ?
-            USAC_M5_SCHEDULE_OK : USAC_M5_SCHEDULE_INVALID;
+            USAC_CAPTURE_SCHEDULE_OK : USAC_CAPTURE_SCHEDULE_INVALID;
     }
     if (lease_sequence < schedule->lease_sequence) {
-        return USAC_M5_SCHEDULE_INVALID;
+        return USAC_CAPTURE_SCHEDULE_INVALID;
     }
     schedule->lease_sequence = lease_sequence;
     schedule->last_lease_timeout_ms = lease_timeout_ms;
     schedule->lease_remaining_us = (uint32_t)lease_timeout_ms * 1000ul;
-    return USAC_M5_SCHEDULE_OK;
+    return USAC_CAPTURE_SCHEDULE_OK;
 }
 
-usac_m5_schedule_result_t usac_m5_schedule_advance(
-    usac_m5_schedule_t *schedule,
+usac_capture_schedule_result_t usac_capture_schedule_advance(
+    usac_capture_schedule_t *schedule,
     uint32_t elapsed_us)
 {
     uint32_t periods;
 
     if (schedule->active == 0u) {
-        return USAC_M5_SCHEDULE_INVALID;
+        return USAC_CAPTURE_SCHEDULE_INVALID;
     }
     if (elapsed_us >= schedule->lease_remaining_us) {
-        usac_m5_schedule_init(schedule);
-        return USAC_M5_SCHEDULE_EXPIRED;
+        usac_capture_schedule_init(schedule);
+        return USAC_CAPTURE_SCHEDULE_EXPIRED;
     }
     schedule->lease_remaining_us -= elapsed_us;
     if (elapsed_us < schedule->until_due_us) {
         schedule->until_due_us -= elapsed_us;
-        return USAC_M5_SCHEDULE_OK;
+        return USAC_CAPTURE_SCHEDULE_OK;
     }
 
     elapsed_us -= schedule->until_due_us;
@@ -129,10 +129,10 @@ usac_m5_schedule_result_t usac_m5_schedule_advance(
         schedule->due = 1u;
         schedule->missed_count += periods - 1ul;
     }
-    return USAC_M5_SCHEDULE_OK;
+    return USAC_CAPTURE_SCHEDULE_OK;
 }
 
-uint8_t usac_m5_schedule_claim_due(usac_m5_schedule_t *schedule)
+uint8_t usac_capture_schedule_claim_due(usac_capture_schedule_t *schedule)
 {
     if ((schedule->active == 0u) || (schedule->due == 0u)) {
         return 0u;
@@ -149,20 +149,20 @@ uint8_t usac_m5_schedule_claim_due(usac_m5_schedule_t *schedule)
     return 1u;
 }
 
-usac_m5_schedule_result_t usac_m5_schedule_stop(
-    usac_m5_schedule_t *schedule,
+usac_capture_schedule_result_t usac_capture_schedule_stop(
+    usac_capture_schedule_t *schedule,
     const uint8_t schedule_id[16])
 {
     if ((schedule->active != 0u) &&
         (ids_equal(schedule->schedule_id, schedule_id) == 0u)) {
-        return USAC_M5_SCHEDULE_CONFLICT;
+        return USAC_CAPTURE_SCHEDULE_CONFLICT;
     }
-    usac_m5_schedule_init(schedule);
-    return USAC_M5_SCHEDULE_OK;
+    usac_capture_schedule_init(schedule);
+    return USAC_CAPTURE_SCHEDULE_OK;
 }
 
-uint16_t usac_m5_schedule_lease_remaining_ms(
-    const usac_m5_schedule_t *schedule)
+uint16_t usac_capture_schedule_lease_remaining_ms(
+    const usac_capture_schedule_t *schedule)
 {
     if (schedule->active == 0u) {
         return 0u;
@@ -170,15 +170,15 @@ uint16_t usac_m5_schedule_lease_remaining_ms(
     return (uint16_t)(schedule->lease_remaining_us / 1000ul);
 }
 
-uint16_t usac_m5_sync_timeout_guarded_quanta(uint32_t timeout_ms)
+uint16_t usac_sync_timeout_guarded_quanta(uint32_t timeout_ms)
 {
     uint32_t quanta;
 
     if (timeout_ms == 0ul) {
         return 0u;
     }
-    quanta = (timeout_ms * USAC_M5_ACLK_HZ +
-              (1000ul * USAC_M5_ACLK_QUANTUM_TICKS) - 1ul) /
-             (1000ul * USAC_M5_ACLK_QUANTUM_TICKS);
+    quanta = (timeout_ms * USAC_ACLK_HZ +
+              (1000ul * USAC_ACLK_QUANTUM_TICKS) - 1ul) /
+             (1000ul * USAC_ACLK_QUANTUM_TICKS);
     return (uint16_t)(quanta + 1ul);
 }
