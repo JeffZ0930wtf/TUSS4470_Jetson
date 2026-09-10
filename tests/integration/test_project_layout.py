@@ -53,6 +53,23 @@ class ProjectLayoutTests(unittest.TestCase):
             },
         )
 
+    def test_release_metadata_is_v1_0_0(self) -> None:
+        metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+        local_package = next(
+            package
+            for package in lock["package"]
+            if package["name"] == "tuss4470-acquisition"
+        )
+
+        self.assertEqual(metadata["project"]["version"], "1.0.0")
+        self.assertEqual(local_package["version"], "1.0.0")
+        self.assertEqual(local_package["source"], {"editable": "."})
+        self.assertEqual(
+            metadata["project"]["description"],
+            "Cross-platform TUSS4470 ultrasonic acquisition and raw-data service",
+        )
+
     def test_required_v1_files_exist(self) -> None:
         required = [
             "README.md",
