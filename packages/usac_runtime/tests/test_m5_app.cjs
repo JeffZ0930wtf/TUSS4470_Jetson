@@ -17,6 +17,7 @@ function makeHarness() {
   const requests = [];
   const timers = [];
   const responses = [];
+  const canvasOps = [];
 
   function node(selector) {
     if (!nodes.has(selector)) {
@@ -33,8 +34,16 @@ function makeHarness() {
         replaceChildren() {},
         getContext() {
           return {
-            clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
-            strokeStyle: "", lineWidth: 0,
+            clearRect(...args) { canvasOps.push(["clearRect", ...args]); },
+            beginPath() { canvasOps.push(["beginPath"]); },
+            moveTo(...args) { canvasOps.push(["moveTo", ...args]); },
+            lineTo(...args) { canvasOps.push(["lineTo", ...args]); },
+            arc(...args) { canvasOps.push(["arc", ...args]); },
+            stroke() { canvasOps.push(["stroke"]); },
+            fill() { canvasOps.push(["fill"]); },
+            fillText(...args) { canvasOps.push(["fillText", ...args]); },
+            save() {}, restore() {}, setTransform() {},
+            strokeStyle: "", fillStyle: "", lineWidth: 0, font: "",
           };
         },
       });
@@ -64,12 +73,96 @@ function makeHarness() {
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
   return {
-    node, requests, responses, timers,
+    node, requests, responses, timers, canvasOps,
     run: (code) => vm.runInContext(code, sandbox),
   };
 }
 
 async function main() {
+  const waveform = makeHarness();
+  assert.deepEqual(
+    Array.from(waveform.run("decodeSamples(Uint8Array.from([52, 18, 205, 171]), 2)")),
+    [0x1234, 0xabcd],
+  );
+  assert.throws(() => waveform.run("decodeSamples(Uint8Array.from([1]), null)"), /even/);
+  assert.throws(
+    () => waveform.run("decodeSamples(Uint8Array.from([1, 0, 2, 0]), 3)"),
+    /sample count/,
+  );
+  assert.deepEqual(
+    Array.from(waveform.run("normalizeFrame(Uint16Array.from([10, 20, 30]))")),
+    [0, 0.5, 1],
+  );
+  assert.deepEqual(
+    Array.from(waveform.run("normalizeFrame(Uint16Array.from([7, 7]))")),
+    [0, 0],
+  );
+  assert.deepEqual(
+    JSON.parse(waveform.run("JSON.stringify(validatedWindow(4, 3, 10))")),
+    { start: 4, count: 3 },
+  );
+  assert.throws(() => waveform.run("validatedWindow(9, 2, 10)"), /window/);
+  assert.deepEqual(
+    JSON.parse(waveform.run("JSON.stringify(shiftedWindow(6, 4, 10, 1))")),
+    { start: 6, count: 4 },
+  );
+  assert.deepEqual(
+    JSON.parse(waveform.run("JSON.stringify(shiftedWindow(6, 4, 10, -1))")),
+    { start: 2, count: 4 },
+  );
+  assert.deepEqual(
+    Array.from(waveform.run("basisDifferences({sample_interval_ticks: 120, pretrigger_count: 64, sample_count: 2048}, {sample_interval_ticks: 60, pretrigger_count: 64, sample_count: 1024})")),
+    ["sample_interval_ticks", "sample_count"],
+  );
+  waveform.node("#waveform").width = 720;
+  waveform.node("#waveform").height = 280;
+  waveform.run("drawWaveforms(document.querySelector('#waveform'), [{samples: Uint16Array.from([42]), color: '#fff', visible: true}], {start: 0, count: 1}, 'raw')");
+  const marker = waveform.canvasOps.find((operation) => operation[0] === "arc");
+  assert.ok(marker, "one sample must render as a point");
+  assert.equal(marker[1], 360);
+
+  const bounded = makeHarness();
+  bounded.run("resetWaveformGroup('capture-0')");
+  const primaryLoad = bounded.run("reserveWaveform('capture-0')");
+  assert.equal(
+    bounded.run("commitWaveformLoad")(primaryLoad, {
+      samples: Uint16Array.from([1, 2]), color: "#fff", visible: true,
+    }),
+    true,
+  );
+  bounded.run("resetWaveformGroup('capture-0')");
+  bounded.run("reserveWaveform('capture-0')");
+  for (let index = 1; index < 20; index += 1) bounded.run(`reserveWaveform('capture-${index}')`);
+  bounded.run("state.waveforms.set('capture-1', {samples: Uint16Array.from([1]), visible: false}); state.waveformLoads.delete('capture-1')");
+  assert.equal(bounded.run("state.selectedCaptureIds.size"), 20);
+  assert.throws(() => bounded.run("reserveWaveform('capture-20')"), /20/);
+  bounded.run("removeWaveform('capture-1')");
+  assert.equal(bounded.run("state.selectedCaptureIds.size"), 19);
+  bounded.run("reserveWaveform('capture-20')");
+  assert.equal(bounded.run("state.selectedCaptureIds.size"), 20);
+
+  const ownership = makeHarness();
+  ownership.run("resetWaveformGroup('A')");
+  const loadA = ownership.run("reserveWaveform('A')");
+  ownership.run("resetWaveformGroup('B')");
+  const loadB = ownership.run("reserveWaveform('B')");
+  assert.equal(
+    ownership.run("commitWaveformLoad")(loadA, {
+      samples: Uint16Array.from([10]), color: "#aaa", visible: true,
+    }),
+    false,
+  );
+  assert.equal(ownership.run("rejectWaveformLoad")(loadA), false);
+  assert.deepEqual(Array.from(ownership.run("state.selectedCaptureIds")), ["B"]);
+  assert.equal(ownership.run("state.waveformLoads.get('B').token"), loadB.token);
+  assert.equal(
+    ownership.run("commitWaveformLoad")(loadB, {
+      samples: Uint16Array.from([20]), color: "#bbb", visible: true,
+    }),
+    true,
+  );
+  assert.equal(ownership.run("state.waveforms.has('B')"), true);
+
   const pendingStart = makeHarness();
   Object.entries({
     "#capture-mode": "PERIODIC", "#save-policy": "SAVE_ALL",

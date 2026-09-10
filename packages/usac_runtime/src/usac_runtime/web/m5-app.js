@@ -43,9 +43,156 @@ const DEVICE_HEALTH_LABELS = { NOT_DETECTED: "device.health.notDetected", NORMAL
 const ACTIVITY_LABELS = { IDLE: "activity.idle", CONFIGURING: "activity.configuring", CAPTURING_SINGLE: "activity.single", CAPTURING_PERIODIC: "activity.periodic", SWEEPING: "activity.sweep", FAULT: "activity.fault" };
 const BACKEND_LABELS = { SIMULATOR: "backend.simulator", BRIDGE: "backend.bridge" };
 const SESSION_STATE_LABELS = { RUNNING: "session.running", STOPPING: "session.stopping", COMPLETED: "session.completed", STOPPED: "session.stopped", FAILED: "session.failed", INTERRUPTED: "session.interrupted" };
+const MAX_WAVEFORM_IDS = 20;
 const storedLanguage = localStorage.getItem("usac-language");
-const state = { schema: null, config: null, etag: null, edits: {}, connected: false, active: null, historyCursor: null, historyItems: [], language: storedLanguage === "en" ? "en" : "zh", devicePayload: null, counterPayload: {}, captureStatusKey: "capture.status.idle", captureStatusValues: {}, waveformSummary: null, lastRenderedCaptureId: null };
+const state = {
+  schema: null, config: null, etag: null, edits: {}, connected: false, active: null,
+  historyCursor: null, historyItems: [], language: storedLanguage === "en" ? "en" : "zh",
+  devicePayload: null, counterPayload: {}, captureStatusKey: "capture.status.idle",
+  captureStatusValues: {}, waveformSummary: null, lastRenderedCaptureId: null,
+  waveforms: new Map(), waveformLoads: new Map(), selectedCaptureIds: new Set(),
+  primaryCaptureId: null, windowStart: 0, windowCount: 2048, displayMode: "raw",
+  followLatest: true, latestCaptureId: null, viewRevision: 0,
+};
 const $ = (selector) => document.querySelector(selector);
+
+// A view revision plus per-load token prevents a late Promise from an old
+// selection from overwriting or releasing state owned by the current view.
+function resetWaveformGroup(captureId = null) {
+  state.viewRevision += 1;
+  state.waveforms.clear(); state.waveformLoads.clear(); state.selectedCaptureIds.clear();
+  state.primaryCaptureId = captureId;
+  if (captureId !== null) state.selectedCaptureIds.add(captureId);
+  return state.viewRevision;
+}
+
+function reserveWaveform(captureId) {
+  const existing = state.waveformLoads.get(captureId);
+  if (existing) return existing;
+  if (!state.selectedCaptureIds.has(captureId)) {
+    if (state.selectedCaptureIds.size >= MAX_WAVEFORM_IDS) throw new Error(`at most ${MAX_WAVEFORM_IDS} waveforms may be selected`);
+    state.selectedCaptureIds.add(captureId);
+  }
+  const reservation = { captureId, revision: state.viewRevision, token: {} };
+  state.waveformLoads.set(captureId, reservation);
+  return reservation;
+}
+
+function ownsWaveformLoad(reservation) {
+  const current = state.waveformLoads.get(reservation.captureId);
+  return state.viewRevision === reservation.revision
+    && state.selectedCaptureIds.has(reservation.captureId)
+    && current?.token === reservation.token;
+}
+
+function commitWaveformLoad(reservation, entry) {
+  if (!ownsWaveformLoad(reservation)) return false;
+  state.waveformLoads.delete(reservation.captureId);
+  state.waveforms.set(reservation.captureId, entry);
+  return true;
+}
+
+function rejectWaveformLoad(reservation) {
+  if (!ownsWaveformLoad(reservation)) return false;
+  state.waveformLoads.delete(reservation.captureId);
+  if (reservation.captureId !== state.primaryCaptureId) state.selectedCaptureIds.delete(reservation.captureId);
+  return true;
+}
+
+function removeWaveform(captureId) {
+  state.selectedCaptureIds.delete(captureId);
+  state.waveforms.delete(captureId);
+  state.waveformLoads.delete(captureId);
+  if (state.primaryCaptureId === captureId) state.primaryCaptureId = null;
+}
+
+function decodeSamples(bytes, expectedCount = null) {
+  if (bytes.length % 2 !== 0) throw new Error("sample payload must contain an even number of bytes");
+  const sampleCount = bytes.length / 2;
+  if (expectedCount !== null && sampleCount !== expectedCount) throw new Error("sample count does not match metadata");
+  const samples = new Uint16Array(sampleCount);
+  for (let index = 0; index < sampleCount; index += 1) samples[index] = bytes[index * 2] | (bytes[index * 2 + 1] << 8);
+  return samples;
+}
+
+function normalizeFrame(samples) {
+  if (!samples.length) return new Float32Array();
+  let minimum = samples[0]; let maximum = samples[0];
+  for (const value of samples) { minimum = Math.min(minimum, value); maximum = Math.max(maximum, value); }
+  const normalized = new Float32Array(samples.length);
+  if (minimum === maximum) return normalized;
+  const span = maximum - minimum;
+  samples.forEach((value, index) => { normalized[index] = (value - minimum) / span; });
+  return normalized;
+}
+
+function validatedWindow(start, count, sampleCount) {
+  if (!Number.isInteger(start) || !Number.isInteger(count) || !Number.isInteger(sampleCount)
+      || sampleCount < 1 || start < 0 || count < 1 || start + count > sampleCount) {
+    throw new Error("waveform window is outside the available samples");
+  }
+  return { start, count };
+}
+
+function shiftedWindow(start, count, sampleCount, direction) {
+  validatedWindow(start, count, sampleCount);
+  const lastStart = sampleCount - count;
+  return { start: Math.max(0, Math.min(lastStart, start + direction * count)), count };
+}
+
+function basisDifferences(left, right) {
+  return ["sample_interval_ticks", "pretrigger_count", "sample_count"]
+    .filter((name) => left[name] !== right[name]);
+}
+
+function drawWaveforms(canvas, entries, windowState, mode) {
+  const visible = entries.filter((entry) => entry.visible !== false);
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  if (!visible.length) return;
+  const sampleCount = visible[0].samples.length;
+  const selected = validatedWindow(windowState.start, windowState.count, sampleCount);
+  const series = visible.map((entry) => {
+    if (entry.samples.length !== sampleCount) throw new Error("waveform sample count does not match overlay basis");
+    if (mode === "normalized") {
+      if (!entry.normalized) entry.normalized = normalizeFrame(entry.samples);
+      return { entry, values: entry.normalized };
+    }
+    return { entry, values: entry.samples };
+  });
+  let minimum = mode === "normalized" ? 0 : Number.POSITIVE_INFINITY;
+  let maximum = mode === "normalized" ? 1 : Number.NEGATIVE_INFINITY;
+  if (mode !== "normalized") {
+    series.forEach(({ values }) => {
+      for (let index = selected.start; index < selected.start + selected.count; index += 1) {
+        minimum = Math.min(minimum, values[index]); maximum = Math.max(maximum, values[index]);
+      }
+    });
+    if (minimum === maximum) { minimum -= 1; maximum += 1; }
+  }
+  const left = 48; const right = 16; const top = 16; const bottom = 30;
+  const plotWidth = Math.max(1, canvas.width - left - right);
+  const plotHeight = Math.max(1, canvas.height - top - bottom);
+  const yFor = (value) => top + (maximum - value) * plotHeight / (maximum - minimum);
+  context.fillText(String(maximum), 4, top + 4);
+  context.fillText(String(minimum), 4, top + plotHeight);
+  series.forEach(({ entry, values }) => {
+    context.strokeStyle = entry.color; context.fillStyle = entry.color; context.lineWidth = 1.4;
+    if (selected.count === 1) {
+      context.beginPath(); context.arc(canvas.width / 2, yFor(values[selected.start]), 3, 0, Math.PI * 2); context.fill();
+      return;
+    }
+    context.beginPath();
+    // Visit every selected raw index. Canvas connects adjacent points only for
+    // display; no downsampled or interpolated values enter application state.
+    for (let offset = 0; offset < selected.count; offset += 1) {
+      const x = left + offset * plotWidth / (selected.count - 1);
+      const y = yFor(values[selected.start + offset]);
+      if (offset === 0) context.moveTo(x, y); else context.lineTo(x, y);
+    }
+    context.stroke();
+  });
+}
 
 function t(key, values = {}) {
   const template = I18N[state.language][key] || I18N.zh[key] || key;

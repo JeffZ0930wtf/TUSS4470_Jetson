@@ -120,15 +120,15 @@ git commit -m "feat: expose waveform metadata and storage paths"
 - Draw every original point in the selected contiguous window. A one-point window uses a centered marker and never divides by `count - 1`.
 - Raw mode uses one shared auto-fit axis labelled in actual ADC counts; normalized mode uses a fixed `0..1` axis.
 
-- [ ] **Step 1: Extend the Node harness for deterministic drawing assertions**
+- [x] **Step 1: Extend the Node harness for deterministic drawing assertions**
 
 Record Canvas operations needed by the implementation (`moveTo`, `lineTo`, centered marker, labels and resize dimensions) without starting a browser or server.
 
-- [ ] **Step 2: Add failing pure-behavior tests**
+- [x] **Step 2: Add failing pure-behavior tests**
 
 Cover little-endian decoding, odd-byte and count mismatch rejection, valid/invalid window bounds, previous/next window clamping, full-frame min-max normalization, constant-frame zeros, basis differences, all-point drawing and the single-point marker.
 
-- [ ] **Step 3: Run the Node test and confirm failure**
+- [x] **Step 3: Run the Node test and confirm failure**
 
 Run:
 
@@ -138,31 +138,31 @@ node packages/usac_runtime/tests/test_m5_app.cjs
 
 Expected: FAIL because the helpers and multi-waveform renderer are absent.
 
-- [ ] **Step 4: Implement the pure helpers and Canvas renderer**
+- [x] **Step 4: Implement the pure helpers and Canvas renderer**
 
 Keep the functions in `m5-app.js` to match the existing no-build frontend. Cache complete `Uint16Array` frames and lazily computed normalized arrays. Resizing and display-mode/window changes redraw only from cache.
 
-- [ ] **Step 5: Add failing selection-limit and request-ownership tests**
+- [x] **Step 5: Add failing selection-limit and request-ownership tests**
 
 Assert that primary, hidden and in-flight IDs share one 20-ID limit; duplicate IDs count once; hiding does not free a slot; removal does. Reproduce A loading while the view changes to B and separately inject late success, late failure and late cleanup from A; none may alter B, show an A error or release B's reservation.
 
-- [ ] **Step 6: Run the Node test and confirm the new failures**
+- [x] **Step 6: Run the Node test and confirm the new failures**
 
 Run the command from Step 3.
 
 Expected: the new ownership/limit assertions FAIL before state management is added.
 
-- [ ] **Step 7: Implement selection reservations and `viewRevision` isolation**
+- [x] **Step 7: Implement selection reservations and `viewRevision` isolation**
 
 Reserve a distinct-ID slot before network loading. Increment the revision only when rebuilding the view group. Use a unique load token so an old request for the same capture ID cannot release a newer request's reservation.
 
-- [ ] **Step 8: Run the Task 2 test**
+- [x] **Step 8: Run the Task 2 test**
 
 Run the command from Step 3.
 
 Expected: PASS, including late success/failure/finally isolation and one-point rendering.
 
-- [ ] **Step 9: Commit Task 2**
+- [x] **Step 9: Commit Task 2**
 
 ```powershell
 git add -- packages/usac_runtime/tests/test_m5_app.cjs packages/usac_runtime/src/usac_runtime/web/m5-app.js
