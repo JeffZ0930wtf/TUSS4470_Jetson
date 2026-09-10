@@ -50,7 +50,7 @@ class ProjectLayoutTests(unittest.TestCase):
             },
         )
 
-    def test_required_m0_files_exist(self) -> None:
+    def test_required_v1_files_exist(self) -> None:
         required = [
             "README.md",
             ".dockerignore",
@@ -68,6 +68,15 @@ class ProjectLayoutTests(unittest.TestCase):
             "firmware/Makefile",
             "firmware/src/main.c",
             "scripts/build-firmware.ps1",
+            "scripts/flash-firmware.ps1",
+            "scripts/test-firmware-safety.ps1",
+            "scripts/test-firmware-acquisition-static.ps1",
+            "scripts/test-firmware-loopback-safety.ps1",
+            "scripts/test-firmware-timer-ownership.ps1",
+            "scripts/test-firmware-app.ps1",
+            "scripts/test-firmware-burst-plan.ps1",
+            "scripts/test-firmware-capture-schedule.ps1",
+            "scripts/verify-jetson-hil.py",
             "scripts/check-env.ps1",
             "scripts/check-env.sh",
             "scripts/bootstrap-dev.ps1",
@@ -79,6 +88,45 @@ class ProjectLayoutTests(unittest.TestCase):
 
         missing = [path for path in required if not (ROOT / path).is_file()]
         self.assertEqual(missing, [])
+
+    def test_retired_firmware_wrappers_are_absent(self) -> None:
+        retired = [
+            "scripts/build-firmware-m2.ps1",
+            "scripts/build-firmware-m3.ps1",
+            "scripts/build-firmware-m3-adc-dma-diagnostic.ps1",
+            "scripts/build-firmware-m3-small-ram-diagnostic.ps1",
+            "scripts/build-firmware-m3-startup-diagnostic.ps1",
+            "scripts/build-firmware-m5.ps1",
+            "scripts/flash-firmware-m2.ps1",
+            "scripts/flash-firmware-m3.ps1",
+            "scripts/flash-firmware-m3-adc-dma-diagnostic.ps1",
+            "scripts/flash-firmware-m3-small-ram-diagnostic.ps1",
+            "scripts/flash-firmware-m3-startup-diagnostic.ps1",
+            "scripts/flash-firmware-m5.ps1",
+            "scripts/test-m2-safety.ps1",
+            "scripts/test-m3-acquisition-static.ps1",
+            "scripts/test-m3-adc-dma-diagnostic-static.ps1",
+            "scripts/test-m3-loopback-safety.ps1",
+            "scripts/test-m5-timer-ownership.ps1",
+            "scripts/test-firmware-m5-app.ps1",
+            "scripts/test-firmware-m5-burst-plan.ps1",
+            "scripts/test-firmware-m5-schedule.ps1",
+            "scripts/verify-m6-jetson-hil.py",
+        ]
+
+        present = [path for path in retired if (ROOT / path).exists()]
+        self.assertEqual(present, [])
+
+    def test_release_firmware_builder_has_one_production_target(self) -> None:
+        builder = (ROOT / "scripts/build-firmware.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("firmware\\build\\release", builder)
+        self.assertIn("$imageName = 'tuss4470-acquisition-fw-0.2.0.2'", builder)
+        self.assertIn('"$imageName.elf"', builder)
+        self.assertIn("-DUSAC_ENABLE_LOOPBACK", builder)
+        self.assertIn("-DUSAC_ENABLE_ACQUISITION", builder)
+        self.assertNotIn("param(", builder)
+        self.assertNotIn("Diagnostic", builder)
 
     def test_runtime_directories_are_not_hard_coded_to_windows_drive(self) -> None:
         package_root = ROOT / "packages/usac_runtime/src"
@@ -148,38 +196,25 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn(create_parent, windows_test)
         self.assertLess(windows_test.index(create_parent), windows_test.index(pytest_call))
 
-    def test_windows_test_entrypoint_builds_m3_diagnostic_before_audit(self) -> None:
-        windows_test = (ROOT / "scripts/test-all.ps1").read_text(encoding="utf-8")
-
-        build = "build-firmware-m3-adc-dma-diagnostic.ps1"
-        audit = "test-m3-adc-dma-diagnostic-static.ps1"
-        self.assertIn(build, windows_test)
-        self.assertIn(audit, windows_test)
-        self.assertLess(windows_test.index(build), windows_test.index(audit))
-
-    def test_windows_test_entrypoint_includes_m5_firmware_gate(self) -> None:
+    def test_windows_test_entrypoint_includes_v1_firmware_gate(self) -> None:
         windows_test = (ROOT / "scripts/test-all.ps1").read_text(encoding="utf-8")
 
         required_steps = [
-            "build-firmware-m5.ps1",
-            "test-firmware-m5-burst-plan.ps1",
-            "test-firmware-m5-schedule.ps1",
-            "test-firmware-m5-app.ps1",
+            "build-firmware.ps1",
+            "test-firmware-unit.ps1",
+            "test-ti-usb-stack-build.ps1",
+            "test-firmware-safety.ps1",
+            "test-firmware-loopback-safety.ps1",
+            "test-firmware-acquisition-static.ps1",
+            "test-firmware-timer-ownership.ps1",
+            "test-firmware-burst-plan.ps1",
+            "test-firmware-capture-schedule.ps1",
+            "test-firmware-app.ps1",
         ]
         for step in required_steps:
             self.assertIn(step, windows_test)
 
-        self.assertLess(
-            windows_test.index("build-firmware-m5.ps1"),
-            windows_test.index("test-firmware-m5-app.ps1"),
-        )
-
-    def test_m0_firmware_never_configures_a_burst(self) -> None:
-        source = (ROOT / "firmware/src/main.c").read_text(encoding="utf-8")
-
-        self.assertIn("P2OUT |= BIT5", source)
-        self.assertNotIn("TUSS", source)
-        self.assertNotIn("BURST", source.upper())
+        self.assertEqual(windows_test.count("build-firmware.ps1"), 1)
 
     def test_environment_checks_report_versions_and_platform_prerequisites(self) -> None:
         windows_check = (ROOT / "scripts/check-env.ps1").read_text(encoding="utf-8")

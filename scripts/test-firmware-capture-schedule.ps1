@@ -1,4 +1,4 @@
-# Runs only the M5 lease scheduler in the MSP430 simulator. Keeping this test
+# Runs only the lease scheduler in the MSP430 simulator. Keeping this test
 # small makes the safety gate deterministic and avoids involving USB/hardware.
 $ErrorActionPreference = 'Stop'
 
@@ -8,7 +8,7 @@ $supportRoot = Join-Path $repositoryRoot '.tools\msp430-support\msp430-gcc-suppo
 $compiler = Join-Path $compilerRoot 'bin\msp430-elf-gcc.exe'
 $debugger = Join-Path $compilerRoot 'bin\msp430-elf-gdb.exe'
 $buildDirectory = Join-Path $repositoryRoot 'firmware\build\tests'
-$testBinary = Join-Path $buildDirectory 'test_m5_schedule.elf'
+$testBinary = Join-Path $buildDirectory 'test_capture_schedule.elf'
 
 New-Item -ItemType Directory -Force -Path $buildDirectory | Out-Null
 & $compiler `
@@ -19,7 +19,7 @@ New-Item -ItemType Directory -Force -Path $buildDirectory | Out-Null
     (Join-Path $repositoryRoot 'firmware\tests\test_capture_schedule.c') `
     (Join-Path $repositoryRoot 'firmware\src\usac_capture_schedule.c') `
     '-o' $testBinary
-if ($LASTEXITCODE -ne 0) { throw "M5 scheduler compile failed: $LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) { throw "capture scheduler compile failed: $LASTEXITCODE" }
 
 $gdbScript = Join-Path $repositoryRoot 'firmware\tests\msp430-sim-test.gdb'
 $savedErrorPreference = $ErrorActionPreference
@@ -27,11 +27,11 @@ $ErrorActionPreference = 'Continue'
 $testOutput = (& $debugger '-batch' '-x' $gdbScript $testBinary 2>&1) -join "`n"
 $gdbExitCode = $LASTEXITCODE
 $ErrorActionPreference = $savedErrorPreference
-if ($gdbExitCode -ne 0) { throw "M5 scheduler debugger failed: $gdbExitCode`n$testOutput" }
+if ($gdbExitCode -ne 0) { throw "capture scheduler debugger failed: $gdbExitCode`n$testOutput" }
 if ($testOutput -notmatch 'USAC_TEST_RESULT=(-?\d+)') {
-    throw "M5 scheduler did not report a result`n$testOutput"
+    throw "capture scheduler did not report a result`n$testOutput"
 }
 if ([int]$Matches[1] -ne 0) {
-    throw "M5 scheduler failed at source line $($Matches[1])`n$testOutput"
+    throw "capture scheduler failed at source line $($Matches[1])`n$testOutput"
 }
-Write-Host 'M5 periodic lease scheduler: PASS'
+Write-Host 'Firmware periodic lease scheduler: PASS'

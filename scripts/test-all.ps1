@@ -1,6 +1,5 @@
-# Windows aggregate gate: host tests, M0 compile, MCU simulator, official USB
-# stack compile, M2 link/no-Burst audit, M3 compile/static audits, and M5
-# configurable-acquisition tests/build. It never
+# Windows aggregate gate: host tests, web tests, the production firmware build,
+# MCU simulator tests, and retained static hardware-safety audits. It never
 # opens a COM port, flashes firmware, or starts a Burst.
 $ErrorActionPreference = 'Stop'
 
@@ -31,37 +30,23 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & (Join-Path $PSScriptRoot 'test-ti-usb-stack-build.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& (Join-Path $PSScriptRoot 'build-firmware-m2.ps1')
+& (Join-Path $PSScriptRoot 'test-firmware-safety.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& (Join-Path $PSScriptRoot 'test-m2-safety.ps1')
+& (Join-Path $PSScriptRoot 'test-firmware-loopback-safety.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& (Join-Path $PSScriptRoot 'build-firmware-m3.ps1')
+& (Join-Path $PSScriptRoot 'test-firmware-acquisition-static.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& (Join-Path $PSScriptRoot 'test-m3-loopback-safety.ps1')
+& (Join-Path $PSScriptRoot 'test-firmware-timer-ownership.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& (Join-Path $PSScriptRoot 'test-m3-acquisition-static.ps1')
+& (Join-Path $PSScriptRoot 'test-firmware-burst-plan.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& (Join-Path $PSScriptRoot 'build-firmware-m3-adc-dma-diagnostic.ps1')
+& (Join-Path $PSScriptRoot 'test-firmware-capture-schedule.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& (Join-Path $PSScriptRoot 'test-m3-adc-dma-diagnostic-static.ps1')
+& (Join-Path $PSScriptRoot 'test-firmware-app.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-& (Join-Path $PSScriptRoot 'build-firmware-m5.ps1')
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-& (Join-Path $PSScriptRoot 'test-m5-timer-ownership.ps1')
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-& (Join-Path $PSScriptRoot 'test-firmware-m5-burst-plan.ps1')
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-& (Join-Path $PSScriptRoot 'test-firmware-m5-schedule.ps1')
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-& (Join-Path $PSScriptRoot 'test-firmware-m5-app.ps1')

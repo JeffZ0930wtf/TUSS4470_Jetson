@@ -78,9 +78,9 @@ $results | Format-Table -AutoSize
 
 $missingRequired = @($results | Where-Object { $_.Required -and -not $_.Available })
 if ($missingRequired.Count -gt 0) {
-    Write-Error "missing required Windows M0 tools: $($missingRequired.Tool -join ', ')"
+    Write-Error "missing required Windows development tools: $($missingRequired.Tool -join ', ')"
     exit 1
 }
 
-Write-Host 'Optional Docker, flashing, and connected USB CDC device checks do not block the Windows M0 role.'
-Write-Host 'M0 never invokes a flashing tool.'
+Write-Host 'Optional Docker, flashing, and connected USB CDC device checks do not block the Windows development role.'
+Write-Host 'Environment checks never invoke a flashing tool.'

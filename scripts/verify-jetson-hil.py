@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run bounded M6 Jetson HIL checkpoints against an already running core.
+"""Run bounded V1 Jetson HIL checkpoints against an already running core.
 
 The tool is deliberately opt-in by phase. It never retries a hardware command,
 never flashes firmware, and never starts work merely by being imported. Every

@@ -1,16 +1,16 @@
-# Static safety gate for the M3 no-Burst acceptance image. It proves that the
-# separately linked path uses pin38/TA0CCR4, has a finite timeout, and restores
+# Static safety gate for the production loopback path. It proves that the
+# linked path uses pin38/TA0CCR4, has a finite timeout, and restores
 # IO2 high; physical loopback behavior is verified only after flashing.
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $platformPath = Join-Path $repositoryRoot 'firmware\src\usac_acquisition_platform_msp430.c'
 $mainPath = Join-Path $repositoryRoot 'firmware\src\main.c'
-$elf = Join-Path $repositoryRoot 'firmware\build\m3\usac-m3-acceptance.elf'
+$elf = Join-Path $repositoryRoot 'firmware\build\release\tuss4470-acquisition-fw-0.2.0.2.elf'
 
 foreach ($required in @($platformPath, $mainPath, $elf)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-        throw "M3 loopback safety input is missing: $required"
+        throw "firmware loopback safety input is missing: $required"
     }
 }
 
@@ -29,7 +29,7 @@ $requiredPatterns = @(
 )
 foreach ($check in $requiredPatterns) {
     if ($platform -notmatch $check.Pattern) {
-        throw "M3 loopback safety invariant missing: $($check.Label)"
+        throw "firmware loopback safety invariant missing: $($check.Label)"
     }
 }
 $captureArm = $platform.IndexOf('TA0CCTL4 = CM_2 | CCIS_0 | SCS | CAP;')
@@ -38,13 +38,13 @@ $preStartFlagClear = $platform.IndexOf(
     'TA0CCTL4 &= (uint16_t)~(CCIFG | COV);', $captureArm)
 if (($captureArm -lt 0) -or ($startTickRead -lt 0) -or
     ($preStartFlagClear -lt 0) -or ($preStartFlagClear -gt $startTickRead)) {
-    throw 'M3 loopback must clear stale TA0CCR4 flags after arming capture and before starting evidence timing'
+    throw 'loopback must clear stale TA0CCR4 flags after arming capture and before starting evidence timing'
 }
 $settlingStart = $platform.IndexOf('Switching a pin from GPIO to OUTMOD_7')
 $evidenceLoop = $platform.IndexOf(
     'for (index = 0u; index < USAC_LOOPBACK_EDGE_COUNT;', $settlingStart)
 if (($settlingStart -lt 0) -or ($evidenceLoop -lt 0)) {
-    throw 'M3 loopback settling/evidence phase boundary is missing'
+    throw 'loopback settling/evidence phase boundary is missing'
 }
 $settlingBlock = $platform.Substring($settlingStart, $evidenceLoop - $settlingStart)
 if ($settlingBlock -match 'USAC_LOOPBACK_COV_SEEN') {
@@ -54,10 +54,10 @@ if ($settlingBlock -notmatch 'TA0CCR4') {
     throw 'discarded startup capture must read TA0CCR4 before the next capture'
 }
 if ($platform -match 'P2OUT\s*&=\s*[^;]*TUSS_IO2_BIT') {
-    throw 'M3 loopback must not drive IO2 low through a GPIO write'
+    throw 'loopback must not drive IO2 low through a GPIO write'
 }
 if ($main -notmatch '#ifdef\s+USAC_ENABLE_LOOPBACK[\s\S]*?run_io2_loopback\s*=\s*usac_platform_run_io2_loopback') {
-    throw 'M3 loopback callback is not isolated behind its compile-time gate'
+    throw 'loopback callback is not isolated behind its compile-time gate'
 }
 
-Write-Host 'M3 loopback static safety audit: PASS (no flashing)'
+Write-Host 'Firmware loopback static safety audit: PASS (no flashing)'

@@ -1,4 +1,4 @@
-# Programs only the reviewed M5 first-version ELF through TI DSLite. The
+# Programs only the reviewed production acquisition ELF through TI DSLite. The
 # caller must physically remove external VPWR; this script sends no serial
 # command and cannot request a Burst by itself.
 param(
@@ -12,7 +12,7 @@ if (-not $ExternalVpwrOffConfirmed) {
 }
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$image = Join-Path $repositoryRoot 'firmware\build\m5\usac-m5-first-version.elf'
+$image = Join-Path $repositoryRoot 'firmware\build\release\tuss4470-acquisition-fw-0.2.0.2.elf'
 $documentsRoot = [Environment]::GetFolderPath('MyDocuments')
 $installedUniflashRoot = Join-Path $documentsRoot `
     'Texas Instruments\TUSS Generation III\TUSS44x0\UNIFLASH'
@@ -37,14 +37,14 @@ $settings = Join-Path $uniflashRoot 'user_files\settings\generated.ufsettings'
 
 foreach ($required in @($image, $dslite, $targetConfig, $settings)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-        throw "required M5 flash input is missing: $required"
+        throw "required firmware flash input is missing: $required"
     }
 }
 
 New-Item -ItemType Directory -Force -Path $tiAppData | Out-Null
 $env:TI_APPDATA_DIR = $tiAppData
 
-Write-Host 'M5 controlled flash: external VPWR confirmed OFF.'
+Write-Host 'Controlled firmware flash: external VPWR confirmed OFF.'
 Write-Host 'Target: MSP430F5529'
 Write-Host "Image:  $image"
 Write-Host 'No serial command or Burst is issued by this script.'
@@ -64,4 +64,4 @@ finally {
     Pop-Location
 }
 
-Write-Host 'M5 flash and verify: PASS'
+Write-Host 'Firmware flash and verify: PASS'

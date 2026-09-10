@@ -1,4 +1,4 @@
-# Structural acceptance gate for the fixed M3 ADC/DMA path. It verifies the
+# Structural acceptance gate for the production ADC/DMA path. It verifies the
 # one-buffer 2048-point layout and 64-sample hardware pretrigger counter; it
 # does not claim analog accuracy or execute a Burst.
 $ErrorActionPreference = 'Stop'
@@ -12,14 +12,14 @@ $streamHeaderPath = Join-Path $repositoryRoot 'firmware\include\usac_capture_str
 $txPath = Join-Path $repositoryRoot 'firmware\src\usac_capture_tx.c'
 $txHeaderPath = Join-Path $repositoryRoot 'firmware\include\usac_capture_tx.h'
 $mainPath = Join-Path $repositoryRoot 'firmware\src\main.c'
-$usbDescriptorPath = Join-Path $repositoryRoot 'firmware\build\m3\generated\USB_config\descriptors.h'
-$elfPath = Join-Path $repositoryRoot 'firmware\build\m3\usac-m3-acceptance.elf'
+$usbDescriptorPath = Join-Path $repositoryRoot 'firmware\build\release\generated\USB_config\descriptors.h'
+$elfPath = Join-Path $repositoryRoot 'firmware\build\release\tuss4470-acquisition-fw-0.2.0.2.elf'
 $compilerRoot = Join-Path $repositoryRoot '.tools\msp430-gcc\msp430-gcc-9.3.1.11_win64'
 $sizeTool = Join-Path $compilerRoot 'bin\msp430-elf-size.exe'
 $nmTool = Join-Path $compilerRoot 'bin\msp430-elf-nm.exe'
 foreach ($required in @($capturePath, $captureHeaderPath, $platformPath, $streamPath, $streamHeaderPath, $txPath, $txHeaderPath, $mainPath, $usbDescriptorPath, $elfPath, $sizeTool, $nmTool)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-        throw "M3 acquisition source is missing: $required"
+        throw "firmware acquisition input is missing: $required"
     }
 }
 
@@ -65,7 +65,7 @@ $requiredPatterns = @(
 )
 foreach ($check in $requiredPatterns) {
     if ($allSource -notmatch $check.Pattern) {
-        throw "M3 acquisition invariant missing: $($check.Label)"
+        throw "firmware acquisition invariant missing: $($check.Label)"
     }
 }
 if ($allSource -match 'ADC12SHS_2' -or
@@ -76,10 +76,10 @@ if ($allSource -match 'DMA0TSEL_24\s*\|\s*DMA1TSEL_24') {
     throw 'ADC12IFG is still configured as the repeated-capture DMA trigger'
 }
 if ($allSource -match '(?i)interpolat|repeat_last|fill_missing') {
-    throw 'M3 acquisition source contains a forbidden sample synthesis path'
+    throw 'firmware acquisition source contains a forbidden sample synthesis path'
 }
 if ($allSource -match 'report->captured_samples\s*=\s*\(uint16_t\)\(USAC_CAPTURE_SAMPLE_COUNT\s*-\s*DMA0SZ\)\s*;\s*report->trigger_sample_index') {
-    throw 'completed M3 capture still derives success count from reloaded DMA0SZ'
+    throw 'completed capture still derives success count from reloaded DMA0SZ'
 }
 
 if ($stream -match 'USAC_M3_CAPTURE_CHUNK_MAX' -or
@@ -95,7 +95,7 @@ if ($tx -notmatch 'USAC_CAPTURE_TX_START_BUSY[\s\S]*?USAC_CAPTURE_TX_READY' -or
     throw 'transport-neutral capture session does not retain BUSY or commit on completion'
 }
 if ($main -notmatch 'usac_capture_tx_peek[\s\S]*?USBCDC_sendData') {
-    throw 'M3 main loop does not send the stable segment exposed by the TX session'
+    throw 'main loop does not send the stable segment exposed by the TX session'
 }
 if ($main -notmatch 'USBCDC_INTERFACE_BUSY_ERROR[\s\S]*?USAC_CAPTURE_TX_START_BUSY') {
     throw 'TI CDC BUSY is not mapped to a non-advancing TX result'
@@ -104,25 +104,25 @@ if ($main -notmatch 'g_usac_usb_send_complete[\s\S]*?USAC_CAPTURE_TX_IN_FLIGHT[\
     throw 'USB completion does not commit exactly the capture segment in flight'
 }
 if ($usbDescriptor -notmatch '#define\s+USB_DMA_CHAN\s+0xFF') {
-    throw 'TI USB CDC must use its CPU-copy path so DMA0/DMA1 remain exclusive to M3 acquisition'
+    throw 'TI USB CDC must use its CPU-copy path so DMA0/DMA1 remain exclusive to acquisition'
 }
 
 $sizeOutput = (& $sizeTool $elfPath 2>&1) -join "`n"
 if ($LASTEXITCODE -ne 0 -or $sizeOutput -notmatch '(?m)^\s*(\d+)\s+(\d+)\s+(\d+)') {
-    throw "unable to inspect M3 image size`n$sizeOutput"
+    throw "unable to inspect firmware image size`n$sizeOutput"
 }
 $staticRam = [int]$Matches[2] + [int]$Matches[3]
 if ($staticRam -gt 7168) {
-    throw "M3 static RAM exceeds guard limit: $staticRam B"
+    throw "firmware static RAM exceeds guard limit: $staticRam B"
 }
 $symbols = (& $nmTool '-S' $elfPath 2>&1) -join "`n"
 $usbDmaSymbols = [regex]::Matches($symbols, '(?m)\bmemcpyDMA(?:[012])?$')
 if ($usbDmaSymbols.Count -ne 0) {
-    throw 'M3 ELF still contains TI USB DMA copy code that can collide with acquisition DMA0/DMA1'
+    throw 'firmware ELF still contains TI USB DMA copy code that can collide with acquisition DMA0/DMA1'
 }
 $waveformMatches = [regex]::Matches($symbols, '(?m)^\S+\s+00001000\s+[Bb]\s+g_usac_capture_waveform$')
 if ($waveformMatches.Count -ne 1) {
-    throw 'M3 ELF must contain exactly one 4096-byte g_usac_capture_waveform symbol'
+    throw 'firmware ELF must contain exactly one 4096-byte g_usac_capture_waveform symbol'
 }
 
-Write-Host "M3 acquisition static audit: PASS (static_ram=$staticRam B, one 4096 B waveform; no hardware access)"
+Write-Host "Firmware acquisition static audit: PASS (static_ram=$staticRam B, one 4096 B waveform; no hardware access)"

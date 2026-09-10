@@ -8,7 +8,7 @@ $supportRoot = Join-Path $repositoryRoot '.tools\msp430-support\msp430-gcc-suppo
 $compiler = Join-Path $compilerRoot 'bin\msp430-elf-gcc.exe'
 $debugger = Join-Path $compilerRoot 'bin\msp430-elf-gdb.exe'
 $buildDirectory = Join-Path $repositoryRoot 'firmware\build\tests'
-$testBinary = Join-Path $buildDirectory 'test_m2_core.elf'
+$testBinary = Join-Path $buildDirectory 'test_firmware_core.elf'
 
 New-Item -ItemType Directory -Force -Path $buildDirectory | Out-Null
 

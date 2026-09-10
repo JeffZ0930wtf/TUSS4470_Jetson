@@ -1,4 +1,4 @@
-# Compiles and runs M5 command/lease semantics in the MSP430 simulator only.
+# Compiles and runs command/lease semantics in the MSP430 simulator only.
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
@@ -7,7 +7,7 @@ $supportRoot = Join-Path $repositoryRoot '.tools\msp430-support\msp430-gcc-suppo
 $compiler = Join-Path $compilerRoot 'bin\msp430-elf-gcc.exe'
 $debugger = Join-Path $compilerRoot 'bin\msp430-elf-gdb.exe'
 $buildDirectory = Join-Path $repositoryRoot 'firmware\build\tests'
-$testBinary = Join-Path $buildDirectory 'test_m5_app.elf'
+$testBinary = Join-Path $buildDirectory 'test_firmware_app.elf'
 
 New-Item -ItemType Directory -Force -Path $buildDirectory | Out-Null
 $sources = @(
@@ -31,7 +31,7 @@ $sources = @(
     "-L$(Join-Path $supportRoot 'include')" `
     '-DUSAC_ENABLE_ACQUISITION' '-mmcu=msp430f5529' '-std=c11' '-g' `
     '-Wall' '-Wextra' '-Werror' @sources '-o' $testBinary
-if ($LASTEXITCODE -ne 0) { throw "M5 app compile failed: $LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) { throw "firmware app compile failed: $LASTEXITCODE" }
 
 $gdbScript = Join-Path $repositoryRoot 'firmware\tests\msp430-sim-test.gdb'
 $savedErrorPreference = $ErrorActionPreference
@@ -39,11 +39,11 @@ $ErrorActionPreference = 'Continue'
 $testOutput = (& $debugger '-batch' '-x' $gdbScript $testBinary 2>&1) -join "`n"
 $gdbExitCode = $LASTEXITCODE
 $ErrorActionPreference = $savedErrorPreference
-if ($gdbExitCode -ne 0) { throw "M5 app debugger failed: $gdbExitCode`n$testOutput" }
+if ($gdbExitCode -ne 0) { throw "firmware app debugger failed: $gdbExitCode`n$testOutput" }
 if ($testOutput -notmatch 'USAC_TEST_RESULT=(-?\d+)') {
-    throw "M5 app did not report a result`n$testOutput"
+    throw "firmware app did not report a result`n$testOutput"
 }
 if ([int]$Matches[1] -ne 0) {
-    throw "M5 app failed at source line $($Matches[1])`n$testOutput"
+    throw "firmware app failed at source line $($Matches[1])`n$testOutput"
 }
-Write-Host 'M5 command and lease application: PASS'
+Write-Host 'Firmware command and lease application: PASS'
