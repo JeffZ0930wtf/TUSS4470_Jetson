@@ -189,15 +189,15 @@ git commit -m "feat: add bounded waveform overlay model"
 - `SAVE_NONE` detail/sample 404 is skipped without ending polling. At `SAVE_LAST` terminal state, re-fetch detail for the same ID and update the label only when `storage="ARCHIVE"`; do not re-download cached samples.
 - Storage UI calls `GET /api/v1/storage`, displays runtime and host paths, and offers copy only.
 
-- [ ] **Step 1: Add failing DOM and lifecycle tests**
+- [x] **Step 1: Add failing DOM and lifecycle tests**
 
 Require the new window controls, mode toggle, overlay counter, legend, resume-latest control, history checkboxes, storage-path card and parameter-bank jump. Test that history view/selection pauses following, live polling continues without replacing the view, and resume latest clears the static group and loads the latest metadata then samples.
 
-- [ ] **Step 2: Add failing transient and `SAVE_LAST` lifecycle tests**
+- [x] **Step 2: Add failing transient and `SAVE_LAST` lifecycle tests**
 
 Assert that real-time frames request detail before samples, use returned frame metadata during Sweep, skip a transient 404 while scheduling the next poll, and update a rolling label only after the same ID's detail returns `ARCHIVE` at terminal state.
 
-- [ ] **Step 3: Run focused Web/API tests and confirm failure**
+- [x] **Step 3: Run focused Web/API tests and confirm failure**
 
 Run:
 
@@ -208,25 +208,25 @@ node packages/usac_runtime/tests/test_m5_app.cjs
 
 Expected: FAIL because the new controls, interaction flow and storage card are not integrated.
 
-- [ ] **Step 4: Restructure the HTML and responsive CSS**
+- [x] **Step 4: Restructure the HTML and responsive CSS**
 
 Place acquisition first, the full-width waveform workbench second, history/storage below it, and the complete parameter bank last. Keep every existing parameter and acquisition control. On narrow screens stack history and storage vertically. Synchronize Canvas backing dimensions to its displayed size and device pixel ratio.
 
-- [ ] **Step 5: Integrate history overlay and follow-latest behavior**
+- [x] **Step 5: Integrate history overlay and follow-latest behavior**
 
 Use “View” to create a one-waveform static group and checkboxes to add/remove compatible rows. Display exact basis mismatches, short IDs, colors and hide/remove actions. Make all manual history analysis static; no live curve is dynamically mixed into that group.
 
-- [ ] **Step 6: Integrate storage display and bilingual text**
+- [x] **Step 6: Integrate storage display and bilingual text**
 
 Load storage information independently from device status. Show host/runtime labels appropriate to `same_as_runtime` or `bind_mount`; copy plain text only. Add Chinese and English strings for every new control, status and error, including “following latest”, “analysis view paused; acquisition continues”, transient/rolling/archive labels and constant-waveform notice.
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run the command from Step 3.
 
 Expected: both commands PASS.
 
-- [ ] **Step 8: Run the complete offline repository gate**
+- [x] **Step 8: Run the complete offline repository gate**
 
 Activate the repository virtual environment, then run:
 
@@ -237,15 +237,23 @@ Activate the repository virtual environment, then run:
 
 Expected: all Python, Node, firmware build/static and simulator checks PASS; the command must not open COM9, flash hardware or produce a Burst.
 
-- [ ] **Step 9: Perform the Windows browser review setup**
+- [x] **Step 9: Perform the Windows browser review setup**
 
 Start the existing simulator-backed Web service on an unused localhost port. Verify the page loads with no browser-console error, then provide the URL to the user. Stop before Jetson synchronization, remote push or any real capture.
 
-- [ ] **Step 10: Update documentation and record evidence**
+- [x] **Step 10: Update documentation and record evidence**
 
 Update `README.md` with the workbench behavior, raw-data guarantee, 20-ID rule, `followLatest` semantics and read-only storage-path display. Mark this plan's completed checkboxes and record exact targeted/full-gate results without claiming hardware verification.
 
-- [ ] **Step 11: Commit Task 3**
+Execution evidence (2026-09-10, Windows, simulator only):
+
+- Targeted Web test: `node packages/usac_runtime/tests/test_m5_app.cjs` -> `M5 Web task lifecycle: PASS`.
+- Targeted API test: `pytest packages/usac_runtime/tests/test_m5_api.py -q` -> `30 passed in 8.07s`.
+- Complete offline gate: `scripts/test-all.ps1` -> exit code `0`; `248 passed in 12.89s`, Node lifecycle PASS, MSP430 simulator PASS, and all M0/M2/M3/M5 compile/static checks PASS.
+- Browser review setup: simulator at `http://127.0.0.1:8019/`; verified apply/read-back, two single captures, window `128..191`, normalized mode, two-waveform historical overlay, paused-follow acquisition, resume-latest, Chinese/English switching, read-only storage paths, and zero browser-console warnings/errors.
+- No COM port was opened, no firmware was flashed, no physical Burst was produced, and no Jetson synchronization or remote push occurred.
+
+- [x] **Step 11: Commit Task 3**
 
 ```powershell
 git add -- packages/usac_runtime/tests/test_m5_app.cjs packages/usac_runtime/tests/test_m5_api.py packages/usac_runtime/src/usac_runtime/web/index.html packages/usac_runtime/src/usac_runtime/web/m5-styles.css packages/usac_runtime/src/usac_runtime/web/m5-app.js README.md docs/superpowers/plans/2026-09-10-waveform-analysis-workbench.md

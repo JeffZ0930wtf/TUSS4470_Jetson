@@ -10,6 +10,8 @@ const vm = require("node:vm");
 const sourcePath = path.join(__dirname, "..", "src", "usac_runtime", "web", "m5-app.js");
 const source = fs.readFileSync(sourcePath, "utf8")
   .replace(/init\(\)\.catch\(\(error\) => toast\(error\.message\)\);\s*$/, "");
+const htmlPath = path.join(__dirname, "..", "src", "usac_runtime", "web", "index.html");
+const html = fs.readFileSync(htmlPath, "utf8");
 
 function makeHarness() {
   const nodes = new Map();
@@ -30,6 +32,8 @@ function makeHarness() {
         dataset: {},
         listeners: {},
         addEventListener(event, handler) { this.listeners[event] = handler; },
+        append() {},
+        setAttribute(name, value) { this[name] = value; },
         querySelectorAll() { return selector === "#capture-counters" ? counters : []; },
         replaceChildren() {},
         getContext() {
@@ -53,7 +57,16 @@ function makeHarness() {
 
   const sandbox = {
     console,
-    document: { querySelector: node, querySelectorAll: () => [] },
+    document: {
+      documentElement: {}, querySelector: node, querySelectorAll: () => [],
+      createElement: (tagName) => ({
+        tagName, className: "", textContent: "", checked: false, disabled: false,
+        dataset: {}, listeners: {}, children: [], style: {},
+        addEventListener(event, handler) { this.listeners[event] = handler; },
+        append(...children) { this.children.push(...children); },
+        setAttribute(name, value) { this[name] = value; },
+      }),
+    },
     localStorage: { getItem: () => null, setItem() {} },
     window: { setTimeout(handler, delay) { timers.push({ handler, delay }); return timers.length; } },
     URLSearchParams,
@@ -65,6 +78,8 @@ function makeHarness() {
       const response = await responses.shift();
       return {
         ok: response.ok !== false,
+        status: response.status ?? (response.ok === false ? 500 : 200),
+        headers: { get: () => null },
         json: async () => response.payload ?? {},
         arrayBuffer: async () => Uint8Array.from(response.bytes ?? [1, 0, 2, 0]).buffer,
       };
@@ -79,6 +94,16 @@ function makeHarness() {
 }
 
 async function main() {
+  [
+    "waveform-workbench", "window-start", "window-count", "waveform-mode",
+    "waveform-previous", "waveform-next", "waveform-apply-window",
+    "overlay-count", "waveform-legend", "resume-latest", "storage-paths",
+    "parameter-bank-jump",
+  ].forEach((id) => assert.match(html, new RegExp(`id=["']${id}["']`)));
+  assert.ok(html.indexOf("acquisition-card") < html.indexOf("waveform-workbench"));
+  assert.ok(html.indexOf("waveform-workbench") < html.indexOf("capture-history"));
+  assert.ok(html.indexOf("capture-history") < html.indexOf('id="parameter-bank"'));
+
   const waveform = makeHarness();
   assert.deepEqual(
     Array.from(waveform.run("decodeSamples(Uint8Array.from([52, 18, 205, 171]), 2)")),
@@ -163,6 +188,59 @@ async function main() {
   );
   assert.equal(ownership.run("state.waveforms.has('B')"), true);
 
+  const historyView = makeHarness();
+  const savedSummary = {
+    capture_id: "history-a", capture_sequence: 7, sample_count: 2,
+    sample_interval_ticks: 120, pretrigger_count: 64, storage: "ARCHIVE",
+  };
+  historyView.responses.push({ bytes: [10, 0, 20, 0] });
+  await historyView.run("viewHistoricalCapture")(savedSummary);
+  assert.equal(historyView.run("state.followLatest"), false);
+  assert.equal(historyView.run("state.primaryCaptureId"), "history-a");
+  assert.equal(historyView.requests.at(-1).path, "/api/v1/captures/history-a/samples");
+
+  const incompatible = makeHarness();
+  incompatible.node("#toast").hidden = true;
+  incompatible.run(`
+    state.followLatest = false;
+    state.primaryCaptureId = "basis-a";
+    state.selectedCaptureIds.add("basis-a");
+    state.waveforms.set("basis-a", {metadata: {capture_id: "basis-a", sample_count: 2048, sample_interval_ticks: 120, pretrigger_count: 64}, samples: new Uint16Array(2048), color: "#fff", visible: true});
+  `);
+  await incompatible.run("toggleHistoryCapture")({
+    capture_id: "basis-b", sample_count: 2048, sample_interval_ticks: 60, pretrigger_count: 64,
+  }, true);
+  assert.equal(incompatible.requests.length, 0, "incompatible history is rejected before sample download");
+  assert.match(incompatible.node("#toast").textContent, /sample_interval_ticks/);
+
+  const paused = makeHarness();
+  paused.run("state.followLatest = false; state.latestCaptureId = 'old';");
+  await paused.run("refreshLatestWaveform")({ last_capture_id: "new-live" });
+  assert.equal(paused.run("state.latestCaptureId"), "new-live");
+  assert.equal(paused.requests.length, 0);
+
+  const resumed = makeHarness();
+  resumed.run("state.followLatest = false; state.latestCaptureId = 'latest-b'; resetWaveformGroup('history-b');");
+  resumed.responses.push(
+    { payload: { capture_id: "latest-b", sample_count: 2, sample_interval_ticks: 60, pretrigger_count: 32, storage: "TRANSIENT" } },
+    { bytes: [30, 0, 40, 0] },
+  );
+  await resumed.run("resumeLatestWaveform()") ;
+  assert.equal(resumed.run("state.followLatest"), true);
+  assert.deepEqual(Array.from(resumed.run("state.selectedCaptureIds")), ["latest-b"]);
+  assert.deepEqual(resumed.requests.map((request) => request.path), [
+    "/api/v1/captures/latest-b", "/api/v1/captures/latest-b/samples",
+  ]);
+
+  const storage = makeHarness();
+  storage.responses.push({ payload: {
+    backend: "sqlite", runtime_database_path: "/var/lib/usac/database/acquisition.sqlite3",
+    host_database_path: "D:/Desktop/TUSS4470_data/core/acquisition.sqlite3", path_mapping: "bind_mount",
+  } });
+  await storage.run("loadStorage()") ;
+  assert.equal(storage.node("#storage-host-path").textContent, "D:/Desktop/TUSS4470_data/core/acquisition.sqlite3");
+  assert.equal(storage.node("#storage-runtime-path").textContent, "/var/lib/usac/database/acquisition.sqlite3");
+
   const pendingStart = makeHarness();
   Object.entries({
     "#capture-mode": "PERIODIC", "#save-policy": "SAVE_ALL",
@@ -233,11 +311,13 @@ async function main() {
   live.run('state.active = {mode: "PERIODIC", session_id: "session-2", schedule_id: "schedule-2"};');
   live.responses.push(
     { payload: { state: "RUNNING", acquired_count: 1, last_capture_id: "capture-1" } },
+    { payload: { capture_id: "capture-1", sample_count: 2, sample_interval_ticks: 120, pretrigger_count: 64, storage: "ROLLING_LATEST" } },
     { bytes: [1, 0, 2, 0] },
   );
   await live.run("pollSession()");
   live.responses.push(
     { payload: { state: "RUNNING", acquired_count: 2, last_capture_id: "capture-2" } },
+    { payload: { capture_id: "capture-2", sample_count: 2, sample_interval_ticks: 60, pretrigger_count: 64, storage: "ROLLING_LATEST" } },
     { bytes: [3, 0, 4, 0] },
   );
   await live.run("pollSession()");
@@ -245,18 +325,42 @@ async function main() {
     live.requests.filter((request) => request.path.endsWith("/samples")).map((request) => request.path),
     ["/api/v1/captures/capture-1/samples", "/api/v1/captures/capture-2/samples"],
   );
+  assert.deepEqual(
+    live.requests.filter((request) => !request.path.endsWith("/samples")).map((request) => request.path),
+    ["/api/v1/sessions/session-2", "/api/v1/captures/capture-1", "/api/v1/sessions/session-2", "/api/v1/captures/capture-2"],
+  );
+  assert.equal(live.run("state.waveforms.get('capture-2').metadata.sample_interval_ticks"), 60);
   assert.equal(live.run('Object.hasOwn(state, "waveformSamples")'), false);
 
   const retry = makeHarness();
+  retry.node("#toast").hidden = true;
   retry.run('state.active = {mode: "PERIODIC", session_id: "session-3", schedule_id: "schedule-3"};');
   retry.responses.push(
     { payload: { state: "RUNNING", acquired_count: 1, last_capture_id: "capture-3" } },
-    { ok: false },
+    { ok: false, status: 404, payload: { detail: "transient frame was replaced" } },
   );
   const timersBeforeFailure = retry.timers.length;
   await retry.run("pollSession()");
   assert.ok(retry.timers.length > timersBeforeFailure);
   assert.equal(retry.run("state.active.session_id"), "session-3");
+  assert.equal(retry.node("#toast").hidden, true, "a replaced transient frame is skipped without an error toast");
+  assert.equal(retry.run("state.selectedCaptureIds.size"), 0);
+
+  const saveLastTerminal = makeHarness();
+  saveLastTerminal.run(`
+    state.active = {mode: "PERIODIC", session_id: "session-save-last", schedule_id: "schedule-save-last", save_policy: "SAVE_LAST"};
+    resetWaveformGroup("capture-last");
+    state.latestCaptureId = "capture-last";
+    state.waveforms.set("capture-last", {metadata: {capture_id: "capture-last", storage: "ROLLING_LATEST"}, samples: Uint16Array.from([1, 2]), color: "#fff", visible: true});
+  `);
+  saveLastTerminal.responses.push(
+    { payload: { state: "COMPLETED", acquired_count: 1, last_capture_id: "capture-last" } },
+    { payload: { capture_id: "capture-last", sample_count: 2, sample_interval_ticks: 120, pretrigger_count: 64, storage: "ARCHIVE" } },
+    { payload: { items: [], next_cursor: null } },
+  );
+  await saveLastTerminal.run("pollSession()") ;
+  assert.equal(saveLastTerminal.run("state.waveforms.get('capture-last').metadata.storage"), "ARCHIVE");
+  assert.equal(saveLastTerminal.requests.filter((request) => request.path.endsWith("/samples")).length, 0);
 
   const terminal = makeHarness();
   terminal.run('state.active = {mode: "SWEEP", session_id: "session-4"};');

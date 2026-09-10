@@ -91,6 +91,17 @@ ownership/live waveform behavior, and terminating Jetson automation are
 recorded in `docs/verification/M6/external-review-remediation.md`. They do not
 change firmware, the wire protocol, or the M6 hardware acceptance boundary.
 
+The post-M6 waveform workbench keeps analysis in the browser and preserves the
+stored bytes unchanged. It can display any continuous window of original
+sample indices, switch between raw ADC values and a per-frame full-2048-point
+`0..1` normalization, and overlay at most 20 compatible capture IDs. The limit
+includes the primary waveform, hidden selections, and in-flight loads; hiding
+does not free a slot. Opening or selecting history pauses only visual
+`followLatest` behavior—capture and session polling continue—and **Resume
+latest** rebuilds a single-current-frame view. The page also reports the
+configured host and runtime SQLite paths as read-only text sourced from the
+same `USAC_CORE_DATA_DIR` deployment setting used by Compose.
+
 ## Review the M6 host increment without hardware
 
 Activate this worktree's environment and start the deterministic simulator.

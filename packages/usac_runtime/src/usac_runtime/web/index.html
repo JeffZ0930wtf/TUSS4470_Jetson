@@ -14,6 +14,7 @@
       <p class="subhead" data-i18n="app.subtitle">配置设备并采集未经插值或修改的包络原始数据。</p>
     </div>
     <div class="header-tools">
+      <a id="parameter-bank-jump" class="header-link" href="#parameter-bank" data-i18n="bank.jump">参数设置</a>
       <button id="language-toggle" class="language-toggle" data-i18n-aria-label="language.aria">English</button>
       <div class="device-badge" aria-live="polite">
         <span id="device-dot" class="status-dot"></span>
@@ -25,24 +26,8 @@
     <span data-stage="draft" data-i18n="stages.draft">草稿</span><i></i><span data-stage="validated" data-i18n="stages.validated">已校验</span><i></i>
     <span data-stage="applied" data-i18n="stages.applied">已应用并回读</span><i></i><span data-stage="captured" data-i18n="stages.captured">已采集</span>
   </nav>
-  <main class="console-grid">
-    <section class="parameter-bank" aria-labelledby="parameters-title">
-      <div class="section-head">
-        <div><p class="eyebrow" data-i18n="bank.eyebrow">设备 + 波形</p><h2 id="parameters-title" data-i18n="bank.title">参数库</h2></div>
-        <div class="action-row">
-          <button id="baseline-button" class="quiet" data-i18n="bank.baseline">载入 D10×4 基线</button>
-          <button id="reset-button" class="quiet" data-i18n="bank.reset">放弃编辑</button>
-          <button id="save-draft-button" data-i18n="bank.saveDraft">保存草稿</button>
-          <button id="validate-button" data-i18n="bank.validate">校验</button>
-          <button id="apply-button" class="primary" data-i18n="bank.apply">应用并回读</button>
-        </div>
-      </div>
-      <p class="hint bank-hint" data-i18n="bank.hint">这里只设置 TUSS4470 设备属性和单帧波形参数；运行次数、间隔和保存策略统一在右侧采集模块设置。</p>
-      <div id="validation" class="message" hidden></div>
-      <div id="parameter-groups" class="parameter-groups" aria-live="polite"></div>
-    </section>
-    <aside class="run-rail">
-      <section class="rail-card acquisition-card">
+  <main class="workspace-shell">
+      <section class="panel acquisition-card">
         <div class="section-head compact">
           <div><p class="eyebrow" data-i18n="capture.eyebrow">统一运行入口</p><h2 data-i18n="capture.title">采集</h2></div>
           <span id="capture-status">空闲</span>
@@ -73,12 +58,34 @@
           <span><small data-i18n="counter.planned">计划</small><strong>—</strong></span><span><small data-i18n="counter.acquired">已采集</small><strong>0</strong></span><span><small data-i18n="counter.saved">已保存</small><strong>0</strong></span><span><small data-i18n="counter.discarded">按策略丢弃</small><strong>0</strong></span>
         </div>
       </section>
-      <section class="rail-card waveform-card">
-        <div class="section-head compact"><div><p class="eyebrow" data-i18n="waveform.eyebrow">最近一次</p><h2 data-i18n="waveform.title">原始包络</h2></div><span id="sample-label">暂无波形</span></div>
-        <canvas id="waveform" width="720" height="280" aria-label="原始 ADC 波形" data-i18n-aria-label="waveform.aria"></canvas>
-        <p class="hint" data-i18n="waveform.hint">显示 2048 个原始 ADC 点；画布缩放不会改变采集值或已保存数据。</p>
+
+      <section id="waveform-workbench" class="panel waveform-card">
+        <div class="section-head waveform-heading">
+          <div><p class="eyebrow" data-i18n="waveform.eyebrow">波形分析</p><h2 data-i18n="waveform.title">原始包络工作台</h2></div>
+          <div class="waveform-state"><strong id="sample-label">暂无波形</strong><span id="follow-status" data-i18n="waveform.following">跟随最新波形</span></div>
+        </div>
+        <div class="waveform-toolbar">
+          <label><span data-i18n="waveform.windowStart">起始样本</span><input id="window-start" type="number" min="0" value="0"></label>
+          <label><span data-i18n="waveform.windowCount">显示点数</span><input id="window-count" type="number" min="1" value="2048"></label>
+          <label><span data-i18n="waveform.mode">纵轴模式</span><select id="waveform-mode"><option value="raw" data-i18n="waveform.raw">原始 ADC</option><option value="normalized" data-i18n="waveform.normalized">归一化 0–1</option></select></label>
+          <div class="action-row waveform-actions">
+            <button id="waveform-previous" class="quiet" data-i18n="waveform.previous">上一窗口</button>
+            <button id="waveform-next" class="quiet" data-i18n="waveform.next">下一窗口</button>
+            <button id="waveform-apply-window" data-i18n="waveform.applyWindow">应用窗口</button>
+            <button id="resume-latest" class="primary" data-i18n="waveform.resume">恢复跟随最新</button>
+          </div>
+        </div>
+        <div class="plot-frame"><canvas id="waveform" width="1200" height="420" aria-label="原始 ADC 波形" data-i18n-aria-label="waveform.aria"></canvas></div>
+        <div class="waveform-footer">
+          <p class="hint" data-i18n="waveform.hint">横轴为原始样本序号；窗口仅选择连续原始点，不插值、不降采样。</p>
+          <span id="overlay-count">0 / 20</span>
+        </div>
+        <p id="waveform-notice" class="waveform-notice" hidden></p>
+        <div id="waveform-legend" class="waveform-legend" aria-live="polite"></div>
       </section>
-      <section class="rail-card">
+
+      <div class="records-grid">
+      <section class="panel history-card">
         <div class="section-head compact">
           <div><p class="eyebrow" data-i18n="history.eyebrow">SQLite 数据库</p><h2 data-i18n="history.title">已保存记录</h2></div>
           <button id="history-refresh" class="quiet" data-i18n="history.refresh">刷新</button>
@@ -86,7 +93,32 @@
         <div id="capture-history" class="history-list" aria-live="polite"></div>
         <button id="history-more" class="quiet full" hidden data-i18n="history.more">加载更早记录</button>
       </section>
-    </aside>
+      <section class="panel storage-card">
+        <div class="section-head compact"><div><p class="eyebrow" data-i18n="storage.eyebrow">数据落盘</p><h2 data-i18n="storage.title">SQLite 存储位置</h2></div></div>
+        <p class="hint" data-i18n="storage.hint">这里只显示当前配置路径；路径修改通过部署配置完成。</p>
+        <dl id="storage-paths" class="storage-paths">
+          <div><dt data-i18n="storage.host">宿主机路径</dt><dd><code id="storage-host-path">—</code><button id="copy-storage-host" class="quiet" data-i18n="storage.copy">复制</button></dd></div>
+          <div><dt data-i18n="storage.runtime">运行时路径</dt><dd><code id="storage-runtime-path">—</code><button id="copy-storage-runtime" class="quiet" data-i18n="storage.copy">复制</button></dd></div>
+        </dl>
+        <p id="storage-mapping" class="storage-mapping">—</p>
+      </section>
+      </div>
+
+    <section id="parameter-bank" class="panel parameter-bank" aria-labelledby="parameters-title">
+      <div class="section-head">
+        <div><p class="eyebrow" data-i18n="bank.eyebrow">设备 + 波形</p><h2 id="parameters-title" data-i18n="bank.title">参数库</h2></div>
+        <div class="action-row">
+          <button id="baseline-button" class="quiet" data-i18n="bank.baseline">载入 D10×4 基线</button>
+          <button id="reset-button" class="quiet" data-i18n="bank.reset">放弃编辑</button>
+          <button id="save-draft-button" data-i18n="bank.saveDraft">保存草稿</button>
+          <button id="validate-button" data-i18n="bank.validate">校验</button>
+          <button id="apply-button" class="primary" data-i18n="bank.apply">应用并回读</button>
+        </div>
+      </div>
+      <p class="hint bank-hint" data-i18n="bank.hint">这里只设置 TUSS4470 设备属性和单帧波形参数；运行次数、间隔和保存策略统一在采集模块设置。</p>
+      <div id="validation" class="message" hidden></div>
+      <div id="parameter-groups" class="parameter-groups" aria-live="polite"></div>
+    </section>
   </main>
   <div id="toast" class="toast" role="status" hidden></div>
   <script src="/assets/m5-app.js" defer></script>
