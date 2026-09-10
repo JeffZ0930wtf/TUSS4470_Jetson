@@ -1,4 +1,4 @@
-"""Versioned REST adapter for the shared M5 acquisition application service."""
+"""Versioned REST adapter for the shared acquisition application service."""
 
 from __future__ import annotations
 
@@ -88,13 +88,13 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
     def web_console() -> FileResponse:
         return FileResponse(_WEB_ROOT / "index.html", media_type="text/html")
 
-    @api.get("/assets/m5-app.js", include_in_schema=False)
+    @api.get("/assets/app.js", include_in_schema=False)
     def web_script() -> FileResponse:
-        return FileResponse(_WEB_ROOT / "m5-app.js", media_type="text/javascript")
+        return FileResponse(_WEB_ROOT / "app.js", media_type="text/javascript")
 
-    @api.get("/assets/m5-styles.css", include_in_schema=False)
+    @api.get("/assets/styles.css", include_in_schema=False)
     def web_styles() -> FileResponse:
-        return FileResponse(_WEB_ROOT / "m5-styles.css", media_type="text/css")
+        return FileResponse(_WEB_ROOT / "styles.css", media_type="text/css")
 
     @api.get("/api/v1/health")
     def health() -> dict[str, str]:

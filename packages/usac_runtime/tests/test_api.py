@@ -122,12 +122,16 @@ def test_web_console_is_served_without_hardcoded_parameter_table() -> None:
     api = client()
 
     page = api.get("/")
-    script = api.get("/assets/m5-app.js")
-    styles = api.get("/assets/m5-styles.css")
+    script = api.get("/assets/app.js")
+    styles = api.get("/assets/styles.css")
+    old_script = api.get("/assets/m5-app.js")
+    old_styles = api.get("/assets/m5-styles.css")
 
     assert page.status_code == 200
     assert "超声采集控制台" in page.text
     assert script.status_code == 200
+    assert old_script.status_code == 404
+    assert old_styles.status_code == 404
     assert 'fetchJson("/api/v1/config/schema")' in script.text
     assert "BPF_HPF_FREQ" not in script.text
     assert 'id="capture-mode"' in page.text

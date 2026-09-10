@@ -13,7 +13,7 @@ if [ "${VIRTUAL_ENV:-}" != "$expected_environment" ]; then
 fi
 
 .venv/bin/python -m pytest
-node packages/usac_runtime/tests/test_m5_app.cjs
+node packages/usac_runtime/tests/test_web_app.cjs
 ./scripts/test-c-vectors.sh
 
 docker build --platform linux/arm64 \

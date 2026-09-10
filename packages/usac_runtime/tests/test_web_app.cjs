@@ -7,7 +7,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const sourcePath = path.join(__dirname, "..", "src", "usac_runtime", "web", "m5-app.js");
+const sourcePath = path.join(__dirname, "..", "src", "usac_runtime", "web", "app.js");
 const source = fs.readFileSync(sourcePath, "utf8")
   .replace(/init\(\)\.catch\(\(error\) => toast\(error\.message\)\);\s*$/, "");
 const htmlPath = path.join(__dirname, "..", "src", "usac_runtime", "web", "index.html");
@@ -483,7 +483,7 @@ async function main() {
 }
 
 main().then(() => {
-  process.stdout.write("M5 Web task lifecycle: PASS\n");
+  process.stdout.write("Web task lifecycle: PASS\n");
 }).catch((error) => {
   console.error(error);
   process.exitCode = 1;
