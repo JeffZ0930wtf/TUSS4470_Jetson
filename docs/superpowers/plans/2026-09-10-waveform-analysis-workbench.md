@@ -309,6 +309,17 @@ Maintenance verification (2026-09-10, Windows, simulator only):
 - `git diff --check` -> PASS; only the repository's existing Windows LF-to-CRLF conversion notices were emitted.
 - The maintenance commit is local only. No push, merge or Jetson synchronization was performed.
 
+- [x] **Step 7: Reject overlays while the primary basis is unresolved**
+
+If a primary capture has been selected but its metadata is still loading, reject any non-primary waveform before its sample request is sent. Once the primary metadata is available, retain the existing three-field compatibility check. This is a logic-level invariant and does not rely on a disabled checkbox or other presentation-only guard.
+
+Interleaving regression and verification (2026-09-10, Windows, simulator only):
+
+- RED: while live primary A's metadata request was pending, selecting history B sent `/samples` and failed the assertion `history overlay must wait until the primary sampling basis is known`.
+- GREEN: `node packages/usac_runtime/tests/test_m5_app.cjs` -> `M5 Web task lifecycle: PASS`; B sends no sample request, a bilingual pending-primary message is produced, and A remains the sole selected waveform after it completes.
+- Complete offline gate after the fix: `scripts/test-all.ps1` -> exit code `0`; `249 passed in 12.79s`, Node lifecycle PASS, MSP430 simulator PASS, and all M0/M2/M3/M5 compile/static checks PASS.
+- No COM access, capture, firmware flashing, Burst, remote push or Jetson synchronization occurred.
+
 ## Completion checkpoint
 
 Before asking for UI review, verify:

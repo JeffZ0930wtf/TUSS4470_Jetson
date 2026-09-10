@@ -223,6 +223,32 @@ async function main() {
   assert.deepEqual(Array.from(staleMetadata.run("state.selectedCaptureIds")), ["history-b"]);
   assert.equal(staleMetadata.requests.some((request) => request.path === "/api/v1/captures/live-a/samples"), false);
 
+  const pendingPrimaryBasis = makeHarness();
+  let resolvePrimaryMetadata;
+  pendingPrimaryBasis.responses.push(
+    new Promise((resolve) => { resolvePrimaryMetadata = resolve; }),
+    { bytes: [70, 0, 80, 0] },
+    { bytes: [90, 0, 100, 0] },
+  );
+  const loadingPrimary = pendingPrimaryBasis.run("refreshLatestWaveform")({ last_capture_id: "live-primary" });
+  await Promise.resolve();
+  await pendingPrimaryBasis.run("toggleHistoryCapture")({
+    capture_id: "history-incompatible", capture_sequence: 4, sample_count: 2,
+    sample_interval_ticks: 240, pretrigger_count: 64,
+  }, true);
+  assert.equal(
+    pendingPrimaryBasis.requests.some((request) => request.path === "/api/v1/captures/history-incompatible/samples"),
+    false,
+    "history overlay must wait until the primary sampling basis is known",
+  );
+  assert.match(pendingPrimaryBasis.node("#toast").textContent, /主波形/);
+  resolvePrimaryMetadata({ payload: {
+    capture_id: "live-primary", sample_count: 2, sample_interval_ticks: 120,
+    pretrigger_count: 64, storage: "TRANSIENT",
+  } });
+  await loadingPrimary;
+  assert.deepEqual(Array.from(pendingPrimaryBasis.run("state.selectedCaptureIds")), ["live-primary"]);
+
   const staleMetadataFailure = makeHarness();
   staleMetadataFailure.node("#toast").hidden = true;
   let rejectMetadataA;
