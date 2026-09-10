@@ -45,7 +45,7 @@ function makeHarness() {
             arc(...args) { canvasOps.push(["arc", ...args]); },
             stroke() { canvasOps.push(["stroke"]); },
             fill() { canvasOps.push(["fill"]); },
-            fillText(...args) { canvasOps.push(["fillText", ...args]); },
+            fillText(...args) { canvasOps.push(["fillText", ...args, this.fillStyle, this.font]); },
             save() {}, restore() {}, setTransform() {},
             strokeStyle: "", fillStyle: "", lineWidth: 0, font: "",
           };
@@ -97,7 +97,8 @@ async function main() {
   [
     "waveform-workbench", "window-start", "window-count", "waveform-mode",
     "waveform-previous", "waveform-next", "waveform-apply-window",
-    "overlay-count", "waveform-legend", "resume-latest", "storage-paths",
+    "overlay-count", "waveform-legend", "resume-latest", "waveform-show-all",
+    "waveform-clear-overlays", "storage-paths",
     "parameter-bank-jump",
   ].forEach((id) => assert.match(html, new RegExp(`id=["']${id}["']`)));
   assert.ok(html.indexOf("acquisition-card") < html.indexOf("waveform-workbench"));
@@ -145,6 +146,9 @@ async function main() {
   const marker = waveform.canvasOps.find((operation) => operation[0] === "arc");
   assert.ok(marker, "one sample must render as a point");
   assert.equal(marker[1], 360);
+  const firstAxisLabel = waveform.canvasOps.find((operation) => operation[0] === "fillText");
+  assert.equal(firstAxisLabel.at(-2), "#b8c6c1");
+  assert.match(firstAxisLabel.at(-1), /px/);
 
   const bounded = makeHarness();
   bounded.run("resetWaveformGroup('capture-0')");
@@ -198,6 +202,71 @@ async function main() {
   assert.equal(historyView.run("state.followLatest"), false);
   assert.equal(historyView.run("state.primaryCaptureId"), "history-a");
   assert.equal(historyView.requests.at(-1).path, "/api/v1/captures/history-a/samples");
+
+  const staleMetadata = makeHarness();
+  let resolveMetadataA;
+  staleMetadata.responses.push(
+    new Promise((resolve) => { resolveMetadataA = resolve; }),
+    { bytes: [30, 0, 40, 0] },
+  );
+  const loadingA = staleMetadata.run("refreshLatestWaveform")({ last_capture_id: "live-a" });
+  await Promise.resolve();
+  await staleMetadata.run("viewHistoricalCapture")({
+    capture_id: "history-b", capture_sequence: 2, sample_count: 2,
+    sample_interval_ticks: 120, pretrigger_count: 64,
+  });
+  resolveMetadataA({ payload: {
+    capture_id: "live-a", sample_count: 2, sample_interval_ticks: 120,
+    pretrigger_count: 64, storage: "TRANSIENT",
+  } });
+  await loadingA;
+  assert.deepEqual(Array.from(staleMetadata.run("state.selectedCaptureIds")), ["history-b"]);
+  assert.equal(staleMetadata.requests.some((request) => request.path === "/api/v1/captures/live-a/samples"), false);
+
+  const staleMetadataFailure = makeHarness();
+  staleMetadataFailure.node("#toast").hidden = true;
+  let rejectMetadataA;
+  staleMetadataFailure.responses.push(
+    new Promise((resolve) => { rejectMetadataA = resolve; }),
+    { bytes: [50, 0, 60, 0] },
+  );
+  const failingA = staleMetadataFailure.run("refreshLatestWaveform")({ last_capture_id: "live-fail" });
+  await Promise.resolve();
+  await staleMetadataFailure.run("viewHistoricalCapture")({
+    capture_id: "history-c", capture_sequence: 3, sample_count: 2,
+    sample_interval_ticks: 120, pretrigger_count: 64,
+  });
+  rejectMetadataA({ ok: false, status: 500, payload: { detail: "old metadata failed" } });
+  await failingA;
+  assert.equal(staleMetadataFailure.node("#toast").hidden, true);
+
+  const preservedWindow = makeHarness();
+  preservedWindow.run("state.windowStart = 128; state.windowCount = 64; resetWaveformGroup('window-a');");
+  preservedWindow.responses.push({ bytes: Array.from({ length: 512 }, (_value, index) => index % 256) });
+  await preservedWindow.run("loadWaveform")({
+    capture_id: "window-a", sample_count: 256, sample_interval_ticks: 120,
+    pretrigger_count: 64, storage: "ARCHIVE",
+  });
+  assert.deepEqual(Array.from(preservedWindow.run("[state.windowStart, state.windowCount]")), [128, 64]);
+  preservedWindow.run("showAllWaveform()") ;
+  assert.deepEqual(Array.from(preservedWindow.run("[state.windowStart, state.windowCount]")), [0, 256]);
+
+  const clearOverlay = makeHarness();
+  clearOverlay.run(`
+    state.primaryCaptureId = "primary";
+    ["primary", "extra"].forEach((id) => { state.selectedCaptureIds.add(id); state.waveforms.set(id, {metadata: {capture_id: id}, samples: Uint16Array.from([1, 2]), color: "#fff", visible: true}); });
+    clearWaveformOverlays();
+  `);
+  assert.deepEqual(Array.from(clearOverlay.run("state.selectedCaptureIds")), ["primary"]);
+
+  const invalidWindow = makeHarness();
+  invalidWindow.run(`
+    state.language = "zh"; state.primaryCaptureId = "invalid";
+    state.selectedCaptureIds.add("invalid");
+    state.waveforms.set("invalid", {metadata: {capture_id: "invalid"}, samples: Uint16Array.from([1, 2]), color: "#fff", visible: true});
+  `);
+  invalidWindow.node("#window-start").value = "2"; invalidWindow.node("#window-count").value = "1";
+  assert.throws(() => invalidWindow.run("applyWaveformWindow()"), /波形窗口/);
 
   const incompatible = makeHarness();
   incompatible.node("#toast").hidden = true;

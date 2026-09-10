@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import asdict, dataclass, field, is_dataclass
 from enum import Enum
+from pathlib import PurePosixPath, PureWindowsPath
 import struct
 import threading
 import time
@@ -29,6 +30,16 @@ from .device_executor import (
 from .parameter_service import ConfigurationSnapshot, ParameterService, ValidationResult
 from .periodic_lease import PeriodicLeaseController, PeriodicSchedule
 from .run_plan import RunPlanV1, SweepPlan, compile_run_steps
+
+
+def _same_path_location(left: str, right: str) -> bool:
+    """Compare display paths lexically without resolving either filesystem."""
+
+    left_windows = bool(PureWindowsPath(left).drive)
+    right_windows = bool(PureWindowsPath(right).drive)
+    if left_windows or right_windows:
+        return left_windows and right_windows and PureWindowsPath(left) == PureWindowsPath(right)
+    return PurePosixPath(left) == PurePosixPath(right)
 
 
 class ApplicationDevice(Protocol):
@@ -191,7 +202,9 @@ class AcquisitionApplication:
             "runtime_database_path": runtime_path,
             "host_database_path": host_path,
             "path_mapping": (
-                "same_as_runtime" if host_path == runtime_path else "bind_mount"
+                "same_as_runtime"
+                if _same_path_location(host_path, runtime_path)
+                else "bind_mount"
             ),
         }
 

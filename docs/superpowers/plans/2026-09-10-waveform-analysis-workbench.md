@@ -260,6 +260,55 @@ git add -- packages/usac_runtime/tests/test_m5_app.cjs packages/usac_runtime/tes
 git commit -m "feat: add waveform analysis workbench"
 ```
 
+---
+
+### Task 4: Close Windows review gaps without expanding scope
+
+**Files:**
+- Modify: `packages/usac_runtime/tests/test_m5_app.cjs`
+- Modify: `packages/usac_runtime/tests/test_m5_api.py`
+- Modify: `packages/usac_runtime/src/usac_runtime/application.py`
+- Modify: `packages/usac_runtime/src/usac_runtime/web/index.html`
+- Modify: `packages/usac_runtime/src/usac_runtime/web/m5-app.js`
+- Update after verification: `docs/superpowers/plans/2026-09-10-waveform-analysis-workbench.md`
+
+This maintenance task addresses the bounded findings from the first Windows UI review. It does not change acquisition, persistence, protocol or hardware-control behavior.
+
+- [x] **Step 1: Add focused failing regressions**
+
+Cover stale metadata success and failure after the view has changed, preservation of a valid analysis window across replacement of the latest primary waveform, explicit “Show all” and “Clear overlays” actions, deterministic Canvas axis styling, localized invalid-window errors, and slash-insensitive comparison of equivalent Windows storage paths.
+
+- [x] **Step 2: Bind metadata loading to the originating view**
+
+Reserve the capture ID before requesting its metadata and carry the same `{captureId, revision, token}` ownership through metadata, sample loading, commit and error cleanup. Late success and failure from an obsolete request must not alter the new view, show an obsolete error or release a newer reservation.
+
+- [x] **Step 3: Preserve valid windows and add the two direct controls**
+
+Do not reset the window when a compatible latest frame replaces the primary waveform. Clamp only when the new sample count makes the current window invalid. “Show all” restores the full current primary frame; “Clear overlays” removes selected/loading secondary curves while preserving the primary waveform and current follow state.
+
+- [x] **Step 4: Correct presentation-only defects**
+
+Set Canvas tick color and font explicitly on every redraw, return the invalid-window message through the current locale, and compare configured Windows host/runtime paths lexically after separator normalization rather than inferring a bind mount from slash style alone.
+
+- [x] **Step 5: Run focused automated and browser checks**
+
+Focused automated results (2026-09-10, Windows, simulator only):
+
+- `node packages/usac_runtime/tests/test_m5_app.cjs` -> `M5 Web task lifecycle: PASS`.
+- `pytest packages/usac_runtime/tests/test_m5_api.py -q` -> `31 passed in 8.17s`.
+- Browser at `http://127.0.0.1:8019/`: verified window `128..191` remains while adding an overlay; clearing overlays leaves one primary; “Show all” restores `0 / 2048`; the Chinese invalid-window message is shown; equivalent slash variants display “same path”; axis text remains visible on the dark Canvas; browser console is empty.
+- Existing saved simulator records were used. No capture, COM access, firmware flashing, Burst, remote push or Jetson synchronization occurred.
+
+- [x] **Step 6: Run the complete offline gate and commit the maintenance fix**
+
+Run `scripts/test-all.ps1`, `git diff --check`, record the exact results below, then create one local maintenance commit. Stop before push, merge or Jetson synchronization so the user can perform the second Windows review.
+
+Maintenance verification (2026-09-10, Windows, simulator only):
+
+- Complete offline gate: `scripts/test-all.ps1` -> exit code `0`; `249 passed in 13.25s`, Node lifecycle PASS, MSP430 simulator PASS, and all M0/M2/M3/M5 compile/static checks PASS.
+- `git diff --check` -> PASS; only the repository's existing Windows LF-to-CRLF conversion notices were emitted.
+- The maintenance commit is local only. No push, merge or Jetson synchronization was performed.
+
 ## Completion checkpoint
 
 Before asking for UI review, verify:

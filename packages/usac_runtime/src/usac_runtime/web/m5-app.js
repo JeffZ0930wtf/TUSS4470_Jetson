@@ -13,7 +13,7 @@ const I18N = {
     "mode.single": "单次采集", "mode.periodic": "周期采集", "mode.sweep": "单参数扫描", "save.all": "保存每一次", "save.last": "只保存最后一次", "save.none": "不保存", "trigger.software": "软件触发", "trigger.slave": "外部同步从机", "trigger.master": "外部同步主机",
     "periodic.period": "周期（µs）", "periodic.count": "次数（0 = 无限）", "periodic.lease": "租约（ms）", "periodic.triggerHint": "周期采集由固件内部定时器触发，不使用外部同步设置。", "sweep.field": "扫描参数", "sweep.values": "扫描值（JSON 数组）", "sweep.loops": "每个值采集次数", "sweep.startDelay": "开始延时（ms）", "sweep.loopDelay": "循环间隔（ms）",
     "counter.planned": "计划", "counter.acquired": "已采集", "counter.saved": "已保存", "counter.discarded": "按策略丢弃",
-    "waveform.eyebrow": "波形分析", "waveform.title": "原始包络工作台", "waveform.empty": "暂无波形", "waveform.aria": "原始 ADC 波形", "waveform.hint": "横轴为原始样本序号；窗口仅选择连续原始点，不插值、不降采样。", "waveform.summary": "{count} 点 · {id}", "waveform.downloadFailed": "原始采样下载失败", "waveform.metadataFailed": "波形元数据加载失败", "waveform.windowStart": "起始样本", "waveform.windowCount": "显示点数", "waveform.mode": "纵轴模式", "waveform.raw": "原始 ADC", "waveform.normalized": "归一化 0–1", "waveform.previous": "上一窗口", "waveform.next": "下一窗口", "waveform.applyWindow": "应用窗口", "waveform.resume": "恢复跟随最新", "waveform.following": "跟随最新波形", "waveform.paused": "分析视图已暂停跟随；采集继续", "waveform.hidden": "显示", "waveform.hide": "隐藏", "waveform.remove": "移除", "waveform.limit": "最多可选择 20 条波形", "waveform.incompatible": "无法叠加：{fields} 不一致", "waveform.constant": "该帧为常量波形，归一化结果全部为 0", "waveform.storage.transient": "临时", "waveform.storage.rolling": "滚动最后帧", "waveform.storage.archive": "已归档",
+    "waveform.eyebrow": "波形分析", "waveform.title": "原始包络工作台", "waveform.empty": "暂无波形", "waveform.aria": "原始 ADC 波形", "waveform.hint": "横轴为原始样本序号；窗口仅选择连续原始点，不插值、不降采样。", "waveform.summary": "{count} 点 · {id}", "waveform.downloadFailed": "原始采样下载失败", "waveform.metadataFailed": "波形元数据加载失败", "waveform.windowStart": "起始样本", "waveform.windowCount": "显示点数", "waveform.invalidWindow": "波形窗口超出当前原始采样范围", "waveform.mode": "纵轴模式", "waveform.raw": "原始 ADC", "waveform.normalized": "归一化 0–1", "waveform.previous": "上一窗口", "waveform.next": "下一窗口", "waveform.applyWindow": "应用窗口", "waveform.showAll": "显示全部", "waveform.clearOverlays": "清除叠加", "waveform.resume": "恢复跟随最新", "waveform.following": "跟随最新波形", "waveform.paused": "分析视图已暂停跟随；采集继续", "waveform.hidden": "显示", "waveform.hide": "隐藏", "waveform.remove": "移除", "waveform.limit": "最多可选择 20 条波形", "waveform.incompatible": "无法叠加：{fields} 不一致", "waveform.constant": "该帧为常量波形，归一化结果全部为 0", "waveform.storage.transient": "临时", "waveform.storage.rolling": "滚动最后帧", "waveform.storage.archive": "已归档",
     "history.eyebrow": "SQLite 数据库", "history.title": "已保存记录", "history.refresh": "刷新", "history.more": "加载更早记录", "history.empty": "数据库中暂无已保存采集。", "history.detail": "序号 {sequence} · {count} 点", "history.view": "查看", "history.overlay": "叠加", "history.download": "原始 .u16le",
     "storage.eyebrow": "数据落盘", "storage.title": "SQLite 存储位置", "storage.hint": "这里只显示当前配置路径；路径修改通过部署配置完成。", "storage.host": "宿主机路径", "storage.runtime": "运行时路径", "storage.copy": "复制", "storage.same": "宿主机与运行时使用同一路径", "storage.mount": "宿主目录挂载到容器运行时路径", "storage.copied": "路径已复制",
     "field.draft": "草稿 {value}", "field.requested": "请求值 {value}", "field.actual": "请求 {requested} · 实际 {actual}", "field.readback": "请求 {requested} · 回读 {readback}", "field.applied": "请求 {value} · 已应用", "field.invalidJson": "{field} 必须是有效 JSON", "field.semantic": "语义参数",
@@ -32,7 +32,7 @@ const I18N = {
     "mode.single": "Single capture", "mode.periodic": "Periodic capture", "mode.sweep": "Single-parameter sweep", "save.all": "Save every capture", "save.last": "Save last capture only", "save.none": "Do not save", "trigger.software": "Software trigger", "trigger.slave": "External sync slave", "trigger.master": "External sync master",
     "periodic.period": "Period (µs)", "periodic.count": "Count (0 = unlimited)", "periodic.lease": "Lease (ms)", "periodic.triggerHint": "Periodic acquisition uses the firmware's internal timer; external synchronization does not apply.", "sweep.field": "Sweep parameter", "sweep.values": "Sweep values (JSON array)", "sweep.loops": "Captures per value", "sweep.startDelay": "Start delay (ms)", "sweep.loopDelay": "Loop interval (ms)",
     "counter.planned": "Planned", "counter.acquired": "Acquired", "counter.saved": "Saved", "counter.discarded": "Discarded by policy",
-    "waveform.eyebrow": "Waveform analysis", "waveform.title": "Raw envelope workbench", "waveform.empty": "No waveform", "waveform.aria": "Raw ADC waveform", "waveform.hint": "The x-axis is the original sample index. Windows select contiguous raw points without interpolation or downsampling.", "waveform.summary": "{count} samples · {id}", "waveform.downloadFailed": "Raw sample download failed", "waveform.metadataFailed": "Waveform metadata failed to load", "waveform.windowStart": "Start sample", "waveform.windowCount": "Displayed points", "waveform.mode": "Vertical scale", "waveform.raw": "Raw ADC", "waveform.normalized": "Normalized 0–1", "waveform.previous": "Previous window", "waveform.next": "Next window", "waveform.applyWindow": "Apply window", "waveform.resume": "Resume latest", "waveform.following": "Following latest waveform", "waveform.paused": "Analysis view paused; acquisition continues", "waveform.hidden": "Show", "waveform.hide": "Hide", "waveform.remove": "Remove", "waveform.limit": "At most 20 waveforms may be selected", "waveform.incompatible": "Cannot overlay: {fields} differ", "waveform.constant": "This frame is constant; its normalized values are all zero", "waveform.storage.transient": "Transient", "waveform.storage.rolling": "Rolling latest", "waveform.storage.archive": "Archived",
+    "waveform.eyebrow": "Waveform analysis", "waveform.title": "Raw envelope workbench", "waveform.empty": "No waveform", "waveform.aria": "Raw ADC waveform", "waveform.hint": "The x-axis is the original sample index. Windows select contiguous raw points without interpolation or downsampling.", "waveform.summary": "{count} samples · {id}", "waveform.downloadFailed": "Raw sample download failed", "waveform.metadataFailed": "Waveform metadata failed to load", "waveform.windowStart": "Start sample", "waveform.windowCount": "Displayed points", "waveform.invalidWindow": "The waveform window is outside the available raw samples", "waveform.mode": "Vertical scale", "waveform.raw": "Raw ADC", "waveform.normalized": "Normalized 0–1", "waveform.previous": "Previous window", "waveform.next": "Next window", "waveform.applyWindow": "Apply window", "waveform.showAll": "Show all", "waveform.clearOverlays": "Clear overlays", "waveform.resume": "Resume latest", "waveform.following": "Following latest waveform", "waveform.paused": "Analysis view paused; acquisition continues", "waveform.hidden": "Show", "waveform.hide": "Hide", "waveform.remove": "Remove", "waveform.limit": "At most 20 waveforms may be selected", "waveform.incompatible": "Cannot overlay: {fields} differ", "waveform.constant": "This frame is constant; its normalized values are all zero", "waveform.storage.transient": "Transient", "waveform.storage.rolling": "Rolling latest", "waveform.storage.archive": "Archived",
     "history.eyebrow": "SQLite database", "history.title": "Saved captures", "history.refresh": "Refresh", "history.more": "Load earlier records", "history.empty": "No saved captures in the database.", "history.detail": "Sequence {sequence} · {count} samples", "history.view": "View", "history.overlay": "Overlay", "history.download": "Raw .u16le",
     "storage.eyebrow": "Persistence", "storage.title": "SQLite storage paths", "storage.hint": "These are read-only configured paths. Change them through deployment configuration.", "storage.host": "Host path", "storage.runtime": "Runtime path", "storage.copy": "Copy", "storage.same": "Host and runtime use the same path", "storage.mount": "Host directory is mounted at the container runtime path", "storage.copied": "Path copied",
     "field.draft": "Draft {value}", "field.requested": "Requested {value}", "field.actual": "Requested {requested} · actual {actual}", "field.readback": "Requested {requested} · read back {readback}", "field.applied": "Requested {value} · applied", "field.invalidJson": "{field} must be valid JSON", "field.semantic": "semantic",
@@ -73,7 +73,7 @@ function reserveWaveform(captureId) {
   const existing = state.waveformLoads.get(captureId);
   if (existing) return existing;
   if (!state.selectedCaptureIds.has(captureId)) {
-    if (state.selectedCaptureIds.size >= MAX_WAVEFORM_IDS) throw new Error(`at most ${MAX_WAVEFORM_IDS} waveforms may be selected`);
+    if (state.selectedCaptureIds.size >= MAX_WAVEFORM_IDS) throw new Error(t("waveform.limit"));
     state.selectedCaptureIds.add(captureId);
   }
   const reservation = { captureId, revision: state.viewRevision, token: {} };
@@ -173,10 +173,14 @@ function drawWaveforms(canvas, entries, windowState, mode) {
     });
     if (minimum === maximum) { minimum -= 1; maximum += 1; }
   }
-  const left = 48; const right = 16; const top = 16; const bottom = 30;
+  const coordinateScale = canvas.width / (canvas.clientWidth || canvas.width);
+  const left = 48 * coordinateScale; const right = 16 * coordinateScale;
+  const top = 16 * coordinateScale; const bottom = 30 * coordinateScale;
   const plotWidth = Math.max(1, canvas.width - left - right);
   const plotHeight = Math.max(1, canvas.height - top - bottom);
   const yFor = (value) => top + (maximum - value) * plotHeight / (maximum - minimum);
+  context.fillStyle = "#b8c6c1";
+  context.font = `${12 * coordinateScale}px "Cascadia Mono", monospace`;
   context.fillText(String(maximum), 4, top + 4);
   context.fillText(String(minimum), 4, top + plotHeight);
   context.fillText(String(selected.start), left, canvas.height - 8);
@@ -268,11 +272,12 @@ function ensureCompatible(metadata) {
   if (differences.length) throw new Error(t("waveform.incompatible", { fields: differences.join(", ") }));
 }
 
-async function loadWaveform(metadata) {
-  ensureCompatible(metadata);
-  const reservation = reserveWaveform(metadata.capture_id);
-  reservation.metadata = metadata;
+async function completeWaveformLoad(reservation, metadataPromise) {
   try {
+    const metadata = await metadataPromise;
+    if (!ownsWaveformLoad(reservation)) return false;
+    ensureCompatible(metadata);
+    reservation.metadata = metadata;
     const response = await fetch(`/api/v1/captures/${metadata.capture_id}/samples`);
     if (!response.ok) {
       const error = new Error(t("waveform.downloadFailed")); error.status = response.status; throw error;
@@ -280,9 +285,6 @@ async function loadWaveform(metadata) {
     const samples = decodeSamples(new Uint8Array(await response.arrayBuffer()), metadata.sample_count);
     const entry = { metadata: { ...metadata }, samples, color: WAVEFORM_COLORS[[...state.selectedCaptureIds].indexOf(metadata.capture_id) % WAVEFORM_COLORS.length], visible: true };
     if (!commitWaveformLoad(reservation, entry)) return false;
-    if (state.primaryCaptureId === metadata.capture_id) {
-      state.windowStart = 0; state.windowCount = samples.length;
-    }
     renderWaveformWorkbench(); renderHistory();
     return true;
   } catch (error) {
@@ -290,6 +292,18 @@ async function loadWaveform(metadata) {
     renderWaveformWorkbench(); renderHistory();
     throw error;
   }
+}
+
+function loadWaveform(metadata) {
+  const reservation = reserveWaveform(metadata.capture_id);
+  return completeWaveformLoad(reservation, Promise.resolve(metadata));
+}
+
+function loadWaveformById(captureId) {
+  // Reserve before requesting metadata so every asynchronous stage belongs to
+  // the same view revision and token.
+  const reservation = reserveWaveform(captureId);
+  return completeWaveformLoad(reservation, fetchCaptureMetadata(captureId));
 }
 
 async function fetchCaptureMetadata(captureId) {
@@ -320,8 +334,7 @@ async function resumeLatestWaveform() {
   const captureId = state.latestCaptureId;
   const revision = resetWaveformGroup(captureId); renderWaveformWorkbench();
   try {
-    const metadata = await fetchCaptureMetadata(captureId);
-    await loadWaveform(metadata);
+    await loadWaveformById(captureId);
   } catch (error) {
     if (state.viewRevision === revision && state.primaryCaptureId === captureId) removeWaveform(captureId);
     renderWaveformWorkbench();
@@ -353,8 +366,7 @@ async function refreshLatestWaveform(payload) {
   try {
     // Frame metadata is authoritative. In particular, a Sweep may change the
     // sampling basis after the page configuration was rendered.
-    const metadata = await fetchCaptureMetadata(captureId);
-    await loadWaveform(metadata);
+    await loadWaveformById(captureId);
   } catch (error) {
     // SAVE_NONE can replace a transient frame between the session and detail
     // requests. Skipping that frame preserves the polling chain.
@@ -378,7 +390,9 @@ function resizeWaveformCanvas() {
 function applyWaveformWindow() {
   const primary = state.waveforms.get(state.primaryCaptureId);
   if (!primary) return;
-  const next = validatedWindow(Number($("#window-start").value), Number($("#window-count").value), primary.samples.length);
+  let next;
+  try { next = validatedWindow(Number($("#window-start").value), Number($("#window-count").value), primary.samples.length); }
+  catch (_error) { throw new Error(t("waveform.invalidWindow")); }
   state.windowStart = next.start; state.windowCount = next.count; renderWaveformWorkbench();
 }
 
@@ -387,6 +401,20 @@ function moveWaveformWindow(direction) {
   if (!primary) return;
   const next = shiftedWindow(state.windowStart, state.windowCount, primary.samples.length, direction);
   state.windowStart = next.start; renderWaveformWorkbench();
+}
+
+function showAllWaveform() {
+  const primary = state.waveforms.get(state.primaryCaptureId);
+  if (!primary) return;
+  state.windowStart = 0; state.windowCount = primary.samples.length;
+  renderWaveformWorkbench();
+}
+
+function clearWaveformOverlays() {
+  [...state.selectedCaptureIds].forEach((captureId) => {
+    if (captureId !== state.primaryCaptureId) removeWaveform(captureId);
+  });
+  renderWaveformWorkbench(); renderHistory();
 }
 
 async function loadStorage() {
@@ -746,6 +774,7 @@ function bindActions() {
   $("#history-refresh").addEventListener("click", guarded(() => loadHistory(true))); $("#history-more").addEventListener("click", guarded(() => loadHistory(false)));
   $("#waveform-apply-window").addEventListener("click", guarded(async () => applyWaveformWindow()));
   $("#waveform-previous").addEventListener("click", () => moveWaveformWindow(-1)); $("#waveform-next").addEventListener("click", () => moveWaveformWindow(1));
+  $("#waveform-show-all").addEventListener("click", showAllWaveform); $("#waveform-clear-overlays").addEventListener("click", clearWaveformOverlays);
   $("#waveform-mode").addEventListener("change", () => { state.displayMode = $("#waveform-mode").value; renderWaveformWorkbench(); });
   $("#resume-latest").addEventListener("click", guarded(resumeLatestWaveform));
   $("#copy-storage-host").addEventListener("click", guarded(async () => { await navigator.clipboard.writeText($("#storage-host-path").textContent); toast(t("storage.copied")); }));

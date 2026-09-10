@@ -91,6 +91,17 @@ def test_storage_endpoint_reports_runtime_and_opaque_host_paths(
     assert mapped.json()["path_mapping"] == "bind_mount"
 
 
+def test_storage_endpoint_treats_windows_separator_variants_as_same_path(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "captures.sqlite3"
+    api = client(database, host_database_path=str(database).replace("\\", "/"))
+
+    payload = api.get("/api/v1/storage").json()
+
+    assert payload["path_mapping"] == "same_as_runtime"
+
+
 def test_storage_endpoint_does_not_require_a_connected_device(tmp_path: Path) -> None:
     service = ParameterService.from_schema_file(SCHEMA_PATH, smclk_hz=24_000_000)
     device = ReconnectableBridgeDeviceClient()
