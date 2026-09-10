@@ -108,7 +108,9 @@ class CaptureSummary:
     device_id: str
     boot_id: str
     capture_sequence: int
+    sample_interval_ticks: int
     sample_count: int
+    pretrigger_count: int
     stored_utc_ns: int
     session_id: str | None
 
@@ -1231,7 +1233,8 @@ class CaptureStore:
                 rows = connection.execute(
                     """
                     SELECT row_id, capture_id, device_id, boot_id, capture_sequence,
-                           sample_count, stored_utc_ns, session_id
+                           sample_interval_ticks, sample_count, pretrigger_count,
+                           stored_utc_ns, session_id
                     FROM captures
                     WHERE row_id > ?
                     ORDER BY row_id
@@ -1243,7 +1246,8 @@ class CaptureStore:
                 rows = connection.execute(
                     """
                     SELECT row_id, capture_id, device_id, boot_id, capture_sequence,
-                           sample_count, stored_utc_ns, session_id
+                           sample_interval_ticks, sample_count, pretrigger_count,
+                           stored_utc_ns, session_id
                     FROM captures
                     WHERE row_id > ? AND session_id = ?
                     ORDER BY row_id
@@ -1260,9 +1264,11 @@ class CaptureStore:
                 device_id=bytes(row[2]).hex(),
                 boot_id=bytes(row[3]).hex(),
                 capture_sequence=int(row[4]),
-                sample_count=int(row[5]),
-                stored_utc_ns=int(row[6]),
-                session_id=str(row[7]) or None,
+                sample_interval_ticks=int(row[5]),
+                sample_count=int(row[6]),
+                pretrigger_count=int(row[7]),
+                stored_utc_ns=int(row[8]),
+                session_id=str(row[9]) or None,
             )
             for row in page
         )

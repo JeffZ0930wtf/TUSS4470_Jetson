@@ -139,6 +139,7 @@ def test_accept_replacement_bridge_publishes_only_initialized_session() -> None:
 
 def test_bridge_server_starts_http_before_accepting_a_bridge(tmp_path: Path, monkeypatch) -> None:
     calls: list[tuple[str, str]] = []
+    applications = []
 
     class Listener:
         def setsockopt(self, *_args) -> None:
@@ -163,7 +164,10 @@ def test_bridge_server_starts_http_before_accepting_a_bridge(tmp_path: Path, mon
     monkeypatch.setattr("usac_runtime.m5_server.socket.socket", lambda *_args: Listener())
     monkeypatch.setattr(
         "usac_runtime.m5_server.uvicorn.run",
-        lambda *_args, **_kwargs: calls.append(("http", threading.current_thread().name)),
+        lambda application, *_args, **_kwargs: (
+            applications.append(application),
+            calls.append(("http", threading.current_thread().name)),
+        ),
     )
 
     result = main(
@@ -174,9 +178,17 @@ def test_bridge_server_starts_http_before_accepting_a_bridge(tmp_path: Path, mon
             str(ROOT / "protocol/schema/tuss4470-parameters-v1.yaml"),
             "--database",
             str(tmp_path / "captures.sqlite3"),
+            "--host-database-path",
+            "D:/Desktop/TUSS4470_data/core/acquisition.sqlite3",
         ]
     )
 
     assert result == 0
     assert ("http", threading.current_thread().name) in calls
     assert all(name != threading.current_thread().name for kind, name in calls if kind == "accept")
+    storage_route = next(
+        route for route in applications[0].routes if route.path == "/api/v1/storage"
+    )
+    assert storage_route.endpoint()["host_database_path"] == (
+        "D:/Desktop/TUSS4470_data/core/acquisition.sqlite3"
+    )

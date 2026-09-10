@@ -31,7 +31,12 @@ from .simulated_device_client import SimulatedDeviceClient
 _LOGGER = logging.getLogger(__name__)
 
 
-def create_simulator_api(*, schema_path: Path, database_path: Path):
+def create_simulator_api(
+    *,
+    schema_path: Path,
+    database_path: Path,
+    host_database_path: str | None = None,
+):
     """Build the complete host stack without opening serial or USB devices."""
 
     service = ParameterService.from_schema_file(schema_path, smclk_hz=24_000_000)
@@ -41,6 +46,7 @@ def create_simulator_api(*, schema_path: Path, database_path: Path):
         SingleDeviceExecutor(service, device),
         device,
         store=CaptureStore(database_path),
+        host_database_path=host_database_path,
     )
     return create_api(application)
 
@@ -51,6 +57,7 @@ def create_bridge_api(
     database_path: Path,
     connection: socket.socket | None,
     timeout_s: float,
+    host_database_path: str | None = None,
 ):
     """Build the same application around one physical bridge connection."""
 
@@ -67,6 +74,7 @@ def create_bridge_api(
         SingleDeviceExecutor(service, device),
         device,
         store=store,
+        host_database_path=host_database_path,
     )
     api = create_api(application)
     # The process entry point owns the listener, while the API keeps one stable
@@ -128,6 +136,10 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("runtime/core/captures.sqlite3"),
     )
+    parser.add_argument(
+        "--host-database-path",
+        help="opaque host-side SQLite path displayed by the Web console",
+    )
     parser.add_argument("--backend", choices=("simulator", "bridge"), default="simulator")
     parser.add_argument("--bridge-host", default="0.0.0.0")
     parser.add_argument("--bridge-port", type=int, default=8765)
@@ -142,6 +154,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         api = create_simulator_api(
             schema_path=args.schema,
             database_path=args.database,
+            host_database_path=args.host_database_path,
         )
     else:
         if args.bridge_wait_s <= 0:
@@ -155,6 +168,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             database_path=args.database,
             connection=None,
             timeout_s=args.bridge_wait_s,
+            host_database_path=args.host_database_path,
         )
         device = api.state.bridge_device
         store = api.state.capture_store

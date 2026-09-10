@@ -177,6 +177,11 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn("127.0.0.1:8765:8765", compose)
         self.assertIn("127.0.0.1:8000:8000", compose)
         self.assertIn("USAC_CORE_DATA_DIR", compose)
+        self.assertIn("--host-database-path", compose)
+        self.assertIn(
+            "${USAC_CORE_DATA_DIR:-D:/Desktop/TUSS4470_data/core}/acquisition.sqlite3",
+            compose,
+        )
         self.assertIn("/var/lib/usac/database", compose)
         self.assertIn("usac_runtime.m5_server", compose + dockerfile)
         self.assertNotIn("usac-core-m1:ready", compose + dockerfile)
@@ -185,6 +190,11 @@ class ProjectLayoutTests(unittest.TestCase):
         compose = (ROOT / "deploy/compose.jetson.yaml").read_text(encoding="utf-8")
 
         self.assertIn("/var/lib/tuss4470/core", compose)
+        self.assertIn("--host-database-path", compose)
+        self.assertIn(
+            "${USAC_CORE_DATA_DIR:-/var/lib/tuss4470/core}/acquisition.sqlite3",
+            compose,
+        )
         self.assertIn("/var/lib/tuss4470/bridge/spool", compose)
         self.assertIn("/var/lib/usac/database", compose)
         self.assertIn("/var/lib/usac/spool", compose)

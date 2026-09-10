@@ -32,6 +32,7 @@ This plan implements the approved design in `docs/superpowers/specs/2026-09-10-w
 
 **Files:**
 - Modify: `packages/usac_runtime/tests/test_m5_api.py`
+- Modify: `packages/usac_runtime/tests/test_m5_server.py`
 - Modify: `tests/integration/test_project_layout.py`
 - Modify: `packages/usac_runtime/src/usac_runtime/core_store.py`
 - Modify: `packages/usac_runtime/src/usac_runtime/application.py`
@@ -49,11 +50,11 @@ This plan implements the approved design in `docs/superpowers/specs/2026-09-10-w
 - Add `host_database_path: str | None = None` to `create_simulator_api` and `create_bridge_api`, plus CLI option `--host-database-path`; when absent, use the resolved runtime SQLite path.
 - In Windows Compose, pass `${USAC_CORE_DATA_DIR:-D:/Desktop/TUSS4470_data/core}/acquisition.sqlite3` as display text; in Jetson Compose use `${USAC_CORE_DATA_DIR:-/var/lib/tuss4470/core}/acquisition.sqlite3`. Retain `/var/lib/usac/database/acquisition.sqlite3` as the runtime database in both containers.
 
-- [ ] **Step 1: Add failing history and capture-detail contract tests**
+- [x] **Step 1: Add failing history and capture-detail contract tests**
 
 Extend the stable history-page test to require `sample_interval_ticks` and `pretrigger_count`. Extend capture metadata coverage so archived data returns `storage="ARCHIVE"`, and use the existing periodic `SAVE_LAST` scenario to assert the same capture ID reports `ROLLING_LATEST` before finalization and `ARCHIVE` after the terminal summary freezes it.
 
-- [ ] **Step 2: Run the focused API tests and confirm failure**
+- [x] **Step 2: Run the focused API tests and confirm failure**
 
 Run:
 
@@ -63,21 +64,21 @@ Run:
 
 Expected: FAIL because the history summary lacks two fields and archived detail lacks `storage`.
 
-- [ ] **Step 3: Implement the additive capture metadata fields**
+- [x] **Step 3: Implement the additive capture metadata fields**
 
 Update both `list_captures` SELECT variants and row mapping. In the archived branch of `AcquisitionApplication.capture`, add `storage: "ARCHIVE"` to the returned payload without changing `_capture_payload`, database rows or resolution decisions.
 
-- [ ] **Step 4: Run the capture metadata tests and confirm success**
+- [x] **Step 4: Run the capture metadata tests and confirm success**
 
 Run the command from Step 2.
 
 Expected: all `test_m5_api.py` tests PASS.
 
-- [ ] **Step 5: Add failing storage endpoint and Compose source tests**
+- [x] **Step 5: Add failing storage endpoint and Compose source tests**
 
 Test bare-host equality, explicit bind-mount mapping, device-disconnected access, and opaque Windows path handling. Update the project-layout test to require each Compose file to use `USAC_CORE_DATA_DIR` for both the mount source and displayed host database path.
 
-- [ ] **Step 6: Run the focused storage/layout tests and confirm failure**
+- [x] **Step 6: Run the focused storage/layout tests and confirm failure**
 
 Run:
 
@@ -87,20 +88,20 @@ Run:
 
 Expected: FAIL because `/api/v1/storage` and the display-path startup input do not exist.
 
-- [ ] **Step 7: Implement the storage endpoint and startup wiring**
+- [x] **Step 7: Implement the storage endpoint and startup wiring**
 
 Keep the host path as an opaque string: never call `Path.resolve()` on a Windows host path inside Linux. Derive `path_mapping` from whether the explicit display path differs from the runtime path. The endpoint must not acquire the device executor or inspect USB state.
 
-- [ ] **Step 8: Run the Task 1 tests**
+- [x] **Step 8: Run the Task 1 tests**
 
 Run the command from Step 6.
 
 Expected: PASS with no database migration and no device access.
 
-- [ ] **Step 9: Commit Task 1**
+- [x] **Step 9: Commit Task 1**
 
 ```powershell
-git add -- packages/usac_runtime/tests/test_m5_api.py tests/integration/test_project_layout.py packages/usac_runtime/src/usac_runtime/core_store.py packages/usac_runtime/src/usac_runtime/application.py packages/usac_runtime/src/usac_runtime/m5_api.py packages/usac_runtime/src/usac_runtime/m5_server.py deploy/compose.yaml deploy/compose.jetson.yaml
+git add -- packages/usac_runtime/tests/test_m5_api.py packages/usac_runtime/tests/test_m5_server.py tests/integration/test_project_layout.py packages/usac_runtime/src/usac_runtime/core_store.py packages/usac_runtime/src/usac_runtime/application.py packages/usac_runtime/src/usac_runtime/m5_api.py packages/usac_runtime/src/usac_runtime/m5_server.py deploy/compose.yaml deploy/compose.jetson.yaml
 git commit -m "feat: expose waveform metadata and storage paths"
 ```
 

@@ -100,6 +100,13 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
     def health() -> dict[str, str]:
         return application.health()
 
+    @api.get("/api/v1/storage")
+    def storage() -> dict[str, str]:
+        try:
+            return application.storage()
+        except CaptureStorageUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
     @api.get("/api/v1/device")
     def device() -> dict[str, object]:
         return application.device()

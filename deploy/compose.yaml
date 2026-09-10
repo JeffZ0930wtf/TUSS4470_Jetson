@@ -21,6 +21,8 @@ services:
       - "300"
       - --database
       - /var/lib/usac/database/acquisition.sqlite3
+      - --host-database-path
+      - ${USAC_CORE_DATA_DIR:-D:/Desktop/TUSS4470_data/core}/acquisition.sqlite3
     ports:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:8765:8765"

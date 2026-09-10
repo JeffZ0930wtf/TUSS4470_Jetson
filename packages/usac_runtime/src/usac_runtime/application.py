@@ -133,6 +133,7 @@ class AcquisitionApplication:
         *,
         store: CaptureStore | None = None,
         session_history_limit: int = 100,
+        host_database_path: str | None = None,
     ) -> None:
         if session_history_limit < 1:
             raise ValueError("session_history_limit must be positive")
@@ -140,6 +141,9 @@ class AcquisitionApplication:
         self._executor = executor
         self._device = device
         self._store = store
+        # A container cannot infer the host side of a bind mount. Keep this
+        # optional value as opaque display text; only CaptureStore opens files.
+        self._host_database_path = host_database_path
         self._local_spool_record_id = 0
         self._session_lock = threading.Lock()
         self._session_history_limit = session_history_limit
@@ -175,6 +179,21 @@ class AcquisitionApplication:
 
     def health(self) -> dict[str, str]:
         return {"status": "ok"}
+
+    def storage(self) -> dict[str, str]:
+        """Describe the configured SQLite location without touching hardware."""
+
+        store = self._require_store()
+        runtime_path = str(store.path)
+        host_path = self._host_database_path or runtime_path
+        return {
+            "backend": "sqlite",
+            "runtime_database_path": runtime_path,
+            "host_database_path": host_path,
+            "path_mapping": (
+                "same_as_runtime" if host_path == runtime_path else "bind_mount"
+            ),
+        }
 
     def device(self) -> dict[str, object]:
         with self._session_lock:
@@ -1163,10 +1182,12 @@ class AcquisitionApplication:
             payload = dict(transient.payload)
             payload["storage"] = transient.storage
             return payload
-        return self._capture_payload(
+        payload = self._capture_payload(
             record,
             events=store.get_capture_events(identifier),
         )
+        payload["storage"] = "ARCHIVE"
+        return payload
 
     def captures(
         self,

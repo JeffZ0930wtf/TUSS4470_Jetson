@@ -29,6 +29,7 @@ def client(
     *,
     session_history_limit: int = 100,
     raise_server_exceptions: bool = True,
+    host_database_path: str | None = None,
 ) -> TestClient:
     service = ParameterService.from_schema_file(SCHEMA_PATH, smclk_hz=24_000_000)
     device = SimulatedDeviceClient(SimulatedDevice())
@@ -39,6 +40,7 @@ def client(
         device,
         store=store,
         session_history_limit=session_history_limit,
+        host_database_path=host_database_path,
     )
     return TestClient(
         create_api(application),
@@ -59,6 +61,50 @@ def test_schema_device_and_draft_config_share_one_application_state() -> None:
     assert len(schema.json()["fields"]) == 47
     assert config.json()["state"] == "DRAFT"
     assert config.headers["etag"] == ZERO_ETAG
+
+
+def test_storage_endpoint_reports_runtime_and_opaque_host_paths(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "captures.sqlite3"
+    bare = client(database).get("/api/v1/storage")
+
+    assert bare.status_code == 200
+    assert bare.json() == {
+        "backend": "sqlite",
+        "runtime_database_path": str(database.resolve()),
+        "host_database_path": str(database.resolve()),
+        "path_mapping": "same_as_runtime",
+    }
+
+    windows_host_path = "D:/Desktop/TUSS4470_data/core/acquisition.sqlite3"
+    mapped = client(
+        tmp_path / "container.sqlite3",
+        host_database_path=windows_host_path,
+    ).get("/api/v1/storage")
+
+    assert mapped.status_code == 200
+    assert mapped.json()["runtime_database_path"] == str(
+        (tmp_path / "container.sqlite3").resolve()
+    )
+    assert mapped.json()["host_database_path"] == windows_host_path
+    assert mapped.json()["path_mapping"] == "bind_mount"
+
+
+def test_storage_endpoint_does_not_require_a_connected_device(tmp_path: Path) -> None:
+    service = ParameterService.from_schema_file(SCHEMA_PATH, smclk_hz=24_000_000)
+    device = ReconnectableBridgeDeviceClient()
+    application = AcquisitionApplication(
+        service,
+        SingleDeviceExecutor(service, device),
+        device,
+        store=CaptureStore(tmp_path / "offline.sqlite3"),
+    )
+
+    response = TestClient(create_api(application)).get("/api/v1/storage")
+
+    assert response.status_code == 200
+    assert response.json()["backend"] == "sqlite"
 
 
 def test_web_console_is_served_without_hardcoded_parameter_table() -> None:
@@ -447,10 +493,15 @@ def test_archived_and_transient_capture_metadata_have_the_same_contract(
             },
         )
         assert response.status_code == 201
-        return response.json()
+        capture_id = response.json()["capture_id"]
+        detail = api.get(f"/api/v1/captures/{capture_id}")
+        assert detail.status_code == 200
+        return detail.json()
 
     archived = capture_with_policy("archived", "SAVE_ALL")
     transient = capture_with_policy("transient", "SAVE_NONE")
+    assert archived["storage"] == "ARCHIVE"
+    assert transient["storage"] == "TRANSIENT"
     for name in (
         "adc_bits",
         "sample_encoding",
@@ -611,6 +662,64 @@ def test_periodic_save_last_archives_only_the_final_capture(tmp_path: Path) -> N
     assert [item["capture_id"] for item in history] == [session["last_capture_id"]]
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT COUNT(*) FROM configuration_contexts").fetchone()[0] == 0
+
+
+def test_periodic_save_last_detail_changes_from_rolling_to_archive(
+    tmp_path: Path,
+) -> None:
+    api = client(tmp_path / "captures.sqlite3")
+    applied = api.put(
+        "/api/v1/config", headers={"If-Match": ZERO_ETAG}, json={"changes": {}}
+    ).json()
+    started = api.post(
+        "/api/v1/periodic/start",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"][
+                "device_config_crc32"
+            ],
+            "period_us": 1_000_000,
+            "capture_count": 0,
+            "lease_timeout_ms": 3_000,
+            "save_policy": "SAVE_LAST",
+        },
+    ).json()
+
+    deadline = time.monotonic() + 2.0
+    rolling_id = None
+    while time.monotonic() < deadline:
+        session = api.get(f"/api/v1/sessions/{started['session_id']}").json()
+        if session["acquired_count"] >= 1:
+            rolling_id = session["last_capture_id"]
+            break
+        time.sleep(0.01)
+
+    assert rolling_id is not None
+    rolling = api.get(f"/api/v1/captures/{rolling_id}")
+    assert rolling.status_code == 200
+    assert rolling.json()["storage"] == "ROLLING_LATEST"
+
+    stopped = api.post(
+        "/api/v1/periodic/stop",
+        json={
+            "session_id": started["session_id"],
+            "schedule_id": started["schedule_id"],
+        },
+    )
+    assert stopped.status_code == 200
+
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        session = api.get(f"/api/v1/sessions/{started['session_id']}").json()
+        if session["state"] == "STOPPED":
+            break
+        time.sleep(0.01)
+
+    assert session["state"] == "STOPPED"
+    assert session["last_capture_id"] == rolling_id
+    archived = api.get(f"/api/v1/captures/{rolling_id}")
+    assert archived.status_code == 200
+    assert archived.json()["storage"] == "ARCHIVE"
 
 
 def test_periodic_save_none_keeps_only_bounded_transient_latest(tmp_path: Path) -> None:
@@ -858,6 +967,8 @@ def test_capture_history_is_stably_paginated(tmp_path: Path) -> None:
     )
 
     assert [item["capture_id"] for item in first.json()["items"]] == capture_ids[:2]
+    assert all(item["sample_interval_ticks"] == 120 for item in first.json()["items"])
+    assert all(item["pretrigger_count"] == 64 for item in first.json()["items"])
     assert first.json()["next_cursor"] is not None
     assert [item["capture_id"] for item in second.json()["items"]] == capture_ids[2:]
     assert second.json()["next_cursor"] is None
