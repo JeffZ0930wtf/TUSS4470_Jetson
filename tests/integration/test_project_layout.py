@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import tomllib
@@ -12,7 +13,39 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _resolve_uv_executable(
+    *,
+    platform_name: str | None = None,
+    path_lookup=None,
+) -> Path:
+    """Locate uv using the repository tool on Windows or PATH elsewhere."""
+
+    active_platform = platform_name or os.name
+    lookup = path_lookup or shutil.which
+    bundled_windows_uv = ROOT / ".tools/uv/uv.exe"
+    if active_platform == "nt" and bundled_windows_uv.is_file():
+        return bundled_windows_uv
+
+    uv_on_path = lookup("uv")
+    if uv_on_path:
+        return Path(uv_on_path)
+
+    raise AssertionError(
+        "uv was not found; bootstrap the repository tool on Windows or install uv on PATH"
+    )
+
+
 class ProjectLayoutTests(unittest.TestCase):
+    def test_uv_resolution_uses_path_on_linux(self) -> None:
+        resolved = _resolve_uv_executable(
+            platform_name="posix",
+            path_lookup=lambda executable: "/usr/local/bin/uv"
+            if executable == "uv"
+            else None,
+        )
+
+        self.assertEqual(resolved, Path("/usr/local/bin/uv"))
+
     def test_active_firmware_has_no_milestone_component_identities(self) -> None:
         firmware_root = ROOT / "firmware"
         active_files = [
@@ -87,7 +120,6 @@ class ProjectLayoutTests(unittest.TestCase):
             "requirements-container.lock.txt",
             "docs/deployment/windows.md",
             "docs/deployment/jetson.md",
-            "firmware/Makefile",
             "firmware/src/main.c",
             "scripts/build-firmware.ps1",
             "scripts/flash-firmware.ps1",
@@ -133,6 +165,7 @@ class ProjectLayoutTests(unittest.TestCase):
 
     def test_retired_firmware_wrappers_are_absent(self) -> None:
         retired = [
+            "firmware/Makefile",
             "scripts/build-firmware-m2.ps1",
             "scripts/build-firmware-m3.ps1",
             "scripts/build-firmware-m3-adc-dma-diagnostic.ps1",
@@ -216,9 +249,8 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn(".tools", dockerignore)
 
     def test_container_lock_is_exact_export_of_uv_lock(self) -> None:
-        uv = ROOT / ".tools/uv/uv.exe"
+        uv = _resolve_uv_executable()
         expected = ROOT / "requirements-container.lock.txt"
-        self.assertTrue(uv.is_file())
         self.assertTrue(expected.is_file())
 
         with tempfile.TemporaryDirectory() as directory:
