@@ -1,5 +1,5 @@
 # Compiles TI's official CDC C4 example with the pinned MSP430 toolchain to
-# prove the vendor USB sources used by M2 remain build-compatible.
+# prove the vendor USB sources used by the firmware remain build-compatible.
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot

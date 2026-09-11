@@ -117,7 +117,7 @@ static tuss4470_config_result_t fail_safe_result(
     return result;
 }
 
-tuss4470_config_result_t tuss4470_configure_m2(
+tuss4470_config_result_t tuss4470_configure_firmware(
     const tuss4470_bus_t *bus,
     const tuss4470_profile_t *profile,
     uint16_t vdrv_ready_poll_limit,

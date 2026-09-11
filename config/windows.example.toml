@@ -1,9 +1,11 @@
+# Replace COM9 if Windows assigns the verified LaunchPad CDC interface another port.
 [serial]
-port = "COM7"
+port = "COM9"
 baudrate = 115200
 timeout_ms = 2000
 
 [storage]
+# Host paths remain outside the source repository.
 data_dir = "D:/Desktop/TUSS4470_data"
 spool_dir = "D:/Desktop/TUSS4470_data/bridge/spool"
 sqlite_path = "D:/Desktop/TUSS4470_data/core/acquisition.sqlite3"

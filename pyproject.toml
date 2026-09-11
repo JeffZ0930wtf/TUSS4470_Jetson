@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tuss4470-acquisition"
-version = "0.0.0"
-description = "Cross-platform host skeleton for the TUSS4470 ultrasonic acquisition module"
+version = "1.0.0"
+description = "Cross-platform TUSS4470 ultrasonic acquisition and raw-data service"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi<1",
@@ -14,14 +14,10 @@ dependencies = [
 ]
 
 [project.scripts]
-usac-m2-smoke = "usac_runtime.m2_cli:main"
-usac-m3-capture = "usac_runtime.m3_cli:main"
-usac-m3-loopback = "usac_runtime.m3_loopback_cli:main"
-usac-m4 = "usac_runtime.m4_cli:main"
-usac-m5 = "usac_runtime.m5_cli:main"
-usac-m5-server = "usac_runtime.m5_server:main"
-usac-core = "usac_runtime.core_service:main"
+usac-core = "usac_runtime.core_server:main"
 usac-bridge = "usac_runtime.bridge_cli:main"
+usac-cli = "usac_runtime.client_cli:main"
+usac-export = "usac_runtime.export_cli:main"
 
 [project.optional-dependencies]
 dev = [

@@ -1,9 +1,9 @@
-/* Contains the only first-party direct MSP430 register access used by M2.
+/* Contains the only first-party direct MSP430 register access used by firmware.
  * It establishes IO2 high before output direction, keeps acquisition timers
  * stopped, and maps the TUSS4470 mode-1 16-bit SPI transactions to USCI. */
 #include <msp430.h>
 
-#include "usac_m2_core.h"
+#include "usac_firmware_core.h"
 #include "usac_platform_msp430.h"
 
 #define TUSS_NCS_BIT BIT7
@@ -51,14 +51,14 @@ void usac_platform_spi_init(void)
 }
 
 uint8_t usac_platform_stage_timing(
-    const usac_m2_timing_stage_t *requested,
-    usac_m2_timing_stage_t *readback)
+    const usac_firmware_timing_stage_t *requested,
+    usac_firmware_timing_stage_t *readback)
 {
     if ((requested == 0) || (readback == 0)) {
         return 0u;
     }
 
-    /* M2 only preloads divisors. Both timers remain stopped and IO2 stays GPIO-high. */
+    /* firmware only preloads divisors. Both timers remain stopped and IO2 stays GPIO-high. */
     P2OUT |= TUSS_IO2_BIT;
     P2SEL &= (uint8_t)~TUSS_IO2_BIT;
     P2DIR |= TUSS_IO2_BIT;

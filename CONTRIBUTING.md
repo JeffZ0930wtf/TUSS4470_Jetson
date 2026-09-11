@@ -3,17 +3,17 @@
 ## Document overview
 
 This document defines repository-wide maintenance rules for the TUSS4470
-ultrasonic acquisition submodule. It applies to M4 and every later milestone,
-as well as maintenance changes to completed milestones. It complements the
-controlled design and staged roadmap; it does not replace their technical
-requirements.
+ultrasonic acquisition submodule. It applies to V1 and all later development,
+including release maintenance and work that follows the archived milestones.
+It complements current release, protocol, deployment, ADR, and implementation
+plans; it does not replace their technical requirements.
 
 ## Milestone workflow
 
-Every milestone starts from and closes against the controlled staged roadmap
-`2026-08-20-tuss4470-ultrasonic-acquisition-module-roadmap.md`. An implementation
-plan or ADR may refine how a requirement is met, but it must not silently
-remove, weaken, or mark a roadmap requirement complete.
+Every development milestone or release starts from and closes against its
+controlled roadmap or implementation plan. A task plan or ADR may refine how
+a requirement is met, but it must not silently remove, weaken, or mark a
+requirement complete.
 
 Before milestone implementation:
 
@@ -93,6 +93,10 @@ stop if machine code changes unexpectedly.
 
 Use `docs/archive/` for small historical documents and reviewable textual
 evidence that remain useful for traceability. Use ignored `archive/local/` for
-raw local logs or bulky machine-generated evidence that should not be committed.
-Archived material is non-normative unless it is restored to an active location
-and reviewed again.
+ordinary raw local logs or bulky machine-generated evidence that should not be
+committed. Version-release artifacts and hashes belong under the separately
+managed `D:/Desktop/TUSS4470_data/release/<version>/` evidence directory.
+Git history is the source archive for deleted superseded code and scripts;
+do not copy dead code back into the active tree merely as an archive. Archived
+material is non-normative unless restored to an active location and reviewed
+again.

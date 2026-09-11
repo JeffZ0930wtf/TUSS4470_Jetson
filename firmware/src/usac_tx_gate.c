@@ -1,4 +1,4 @@
-/* Minimal side-effect gate used to prevent overlapping command encoding. M2
+/* Minimal side-effect gate used to prevent overlapping command encoding. firmware
  * never starts a transmitter; the type preserves the one-in-flight invariant
  * required by later protocol state without providing a Burst implementation. */
 #include "usac_tx_gate.h"

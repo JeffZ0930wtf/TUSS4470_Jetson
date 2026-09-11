@@ -4,7 +4,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.core
-    image: tuss4470-acquisition-core:m5
+    image: ${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.0.0}
     command:
       - --backend
       - bridge
@@ -34,10 +34,9 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.core
-    image: tuss4470-acquisition-core:m5
+    image: ${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.0.0}
     entrypoint: ["python", "-m", "usac_runtime.bridge_cli"]
     command:
-      - serve
       - --config
       - /etc/usac/runtime.toml
       - --core-host

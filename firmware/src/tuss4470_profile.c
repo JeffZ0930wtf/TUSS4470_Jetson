@@ -1,4 +1,4 @@
-/* Defines the verified D10x4 M2 register profile and validates its immutable
+/* Defines the verified D10x4 firmware register profile and validates its immutable
  * address/mask/value relationships. It is a bring-up baseline, not a public
  * raw-register interface or the only future transducer configuration. */
 #include "tuss4470_profile.h"
