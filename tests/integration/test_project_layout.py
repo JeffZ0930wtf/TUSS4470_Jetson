@@ -15,14 +15,16 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def _resolve_uv_executable(
     *,
+    repository_root: Path | None = None,
     platform_name: str | None = None,
     path_lookup=None,
 ) -> Path:
-    """Locate uv using the repository tool on Windows or PATH elsewhere."""
+    """Locate uv using the platform bootstrap's supported tool locations."""
 
+    root = repository_root or ROOT
     active_platform = platform_name or os.name
     lookup = path_lookup or shutil.which
-    bundled_windows_uv = ROOT / ".tools/uv/uv.exe"
+    bundled_windows_uv = root / ".tools/uv/uv.exe"
     if active_platform == "nt" and bundled_windows_uv.is_file():
         return bundled_windows_uv
 
@@ -30,12 +32,33 @@ def _resolve_uv_executable(
     if uv_on_path:
         return Path(uv_on_path)
 
+    bundled_linux_uv = root / ".tools/uv/uv"
+    if active_platform != "nt" and bundled_linux_uv.is_file():
+        return bundled_linux_uv
+
     raise AssertionError(
-        "uv was not found; bootstrap the repository tool on Windows or install uv on PATH"
+        "uv was not found; bootstrap the repository tool or install uv on PATH"
     )
 
 
 class ProjectLayoutTests(unittest.TestCase):
+    def test_uv_resolution_uses_repository_tool_on_linux_when_path_is_empty(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository_root = Path(directory)
+            bundled_uv = repository_root / ".tools/uv/uv"
+            bundled_uv.parent.mkdir(parents=True)
+            bundled_uv.write_bytes(b"test uv executable")
+
+            resolved = _resolve_uv_executable(
+                repository_root=repository_root,
+                platform_name="posix",
+                path_lookup=lambda executable: None,
+            )
+
+        self.assertEqual(resolved, bundled_uv)
+
     def test_uv_resolution_uses_path_on_linux(self) -> None:
         resolved = _resolve_uv_executable(
             platform_name="posix",
