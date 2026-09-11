@@ -26,7 +26,7 @@ bridge 和 core 不共享可写目录。bridge 只拥有串口、协议校验和
 先用 `udevadm info --attribute-walk --name=/dev/ttyACM0` 核对实际设备的 `idVendor` 和 32 位小写十六进制 USB 序列号。随后可创建 `/etc/udev/rules.d/99-tuss4470.rules`：
 
 ```udev
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0451", ATTRS{serial}=="替换为本板32位小写序列号", SYMLINK+="tuss4470", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2047", ATTRS{idProduct}=="0300", ATTRS{serial}=="替换为本板32位小写序列号", SYMLINK+="tuss4470", GROUP="dialout", MODE="0660"
 ```
 
 不得照抄占位序列号。规则加载后重新插拔设备，并确认 `/dev/tuss4470` 指向预期的 `/dev/ttyACM*`。

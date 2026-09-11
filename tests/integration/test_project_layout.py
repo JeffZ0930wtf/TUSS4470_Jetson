@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import tomllib
 import unittest
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 
 
@@ -101,6 +102,27 @@ class ProjectLayoutTests(unittest.TestCase):
 
         self.assertEqual(
             metadata["project"]["scripts"],
+            {
+                "usac-core": "usac_runtime.core_server:main",
+                "usac-bridge": "usac_runtime.bridge_cli:main",
+                "usac-cli": "usac_runtime.client_cli:main",
+                "usac-export": "usac_runtime.export_cli:main",
+            },
+        )
+
+    def test_active_environment_has_v1_distribution_and_commands(self) -> None:
+        """Catch a stale editable install before operator commands are used."""
+
+        distribution = importlib_metadata.distribution("tuss4470-acquisition")
+        installed_commands = {
+            entry_point.name: entry_point.value
+            for entry_point in distribution.entry_points
+            if entry_point.group == "console_scripts"
+        }
+
+        self.assertEqual(distribution.version, "1.0.0")
+        self.assertEqual(
+            installed_commands,
             {
                 "usac-core": "usac_runtime.core_server:main",
                 "usac-bridge": "usac_runtime.bridge_cli:main",
