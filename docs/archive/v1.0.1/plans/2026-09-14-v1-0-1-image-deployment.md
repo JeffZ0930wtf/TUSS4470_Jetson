@@ -1,5 +1,8 @@
 # V1.0.1 Image Deployment Follow-up
 
+> Historical status: completed. Current deployment state and limitations are
+> summarized in `docs/release/v1.0.1-release-notes.md`.
+
 ## Document overview
 
 This plan completes the user's request to run the latest version on Jetson.
@@ -47,3 +50,14 @@ both containers' image identity and the HTTP/device state. Preserve the
 database/spool mounts and old image. Record actual completion outside Git under
 the V1.0.1 deployment evidence directory; a published tag is not rewritten to
 update an operational checklist.
+
+## Completion record
+
+Follow-up commit `759262b140f570e55abe3a4645af7cc2924a397a` selected the
+new image by default after 29 targeted checks. On 2026-09-14 the Jetson Core
+and Bridge were recreated with
+`sha256:bedb07481ddcb78362b98127d3fdb50acc863479ad5acb5d34193d72431768a8`.
+Persistent mounts were unchanged, the device was `NORMAL / IDLE`, capture
+sequence remained `0` before and after, and no Apply, acquisition, or firmware
+flash occurred. The evidence is
+`D:/Desktop/TUSS4470_data/release/v1.0.1/jetson-image-deployment.json`.

@@ -1,6 +1,6 @@
 # ADR-0001: Cross-platform M0 toolchain
 
-Status: Accepted for M0
+Status: Accepted; historical M0 scope with V1 principles still active
 
 ## Document overview
 
@@ -8,6 +8,12 @@ This ADR records the cross-platform toolchain and environment decision that
 made the M0 repository reproducible on Windows and Jetson. It applies to all
 later milestones unless replaced by another accepted ADR and complements the
 repository bootstrap scripts and development standards.
+
+The M0 statements about a standard-library-only runtime, a minimal unflashed
+firmware image, and then-current image contents are historical. V1 still keeps
+separate repository-local environments, Windows/Jetson parity, pinned tooling,
+and the acquisition module isolated from the future BMS environment. Current
+installation commands are maintained in `CONTRIBUTING.md`.
 
 ## Decision
 

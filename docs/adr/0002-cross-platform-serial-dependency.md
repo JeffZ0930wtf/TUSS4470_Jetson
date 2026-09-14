@@ -1,6 +1,6 @@
 # ADR-0002: Cross-platform serial dependency
 
-Status: Accepted for M2
+Status: Accepted for V1; M2 smoke procedure is historical
 
 ## Document overview
 
@@ -34,3 +34,8 @@ The M2 smoke entry point has no CAPTURE implementation. Its default mode sends
 HELLO and GET_CONFIG; `--hello-only` sends HELLO alone; and the explicit
 `--apply-same-config` mode can only reapply the configuration it just read and
 verified. Hardware transmission remains prohibited independently in firmware.
+
+That smoke command was retired during V1 consolidation. The decision to use
+pyserial, treat port names as opaque configuration, isolate transport access,
+and require a fresh DTR session edge remains current; use `usac-bridge` and the
+platform deployment guides for present operation.

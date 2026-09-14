@@ -19,10 +19,11 @@ root README, active ADRs, protocol, deployment guides, and `docs/release/`.
 | `docs/adr/0007-m3-adc-dma-software-trigger-diagnostic.md` | `adr/` | One-time diagnostic decision |
 | `docs/archive/M2` | `prior-archive/M2` | Material already superseded before V1 |
 
-The active V1 consolidation plan remains outside this archive until the
-release is complete. Deleted superseded source and scripts remain recoverable
-from Git history at the baseline recorded in
-`docs/release/v1.0.0-baseline.md`.
+The V1 release is complete. Its consolidation plan and pre-consolidation
+baseline now live under `docs/archive/v1.0.0/`; V1.0.1 release/deployment plans
+live under `docs/archive/v1.0.1/`. Deleted superseded source and scripts remain
+recoverable from Git history at the baseline recorded in
+`docs/archive/v1.0.0/v1.0.0-baseline.md`.
 
 ## Evidence status
 

@@ -1,5 +1,8 @@
 # TUSS4470 Acquisition Module V1.0 Consolidation Implementation Plan
 
+> Historical status: completed. This plan is retained as implementation
+> history; current requirements live in the active V1 documents.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Convert the accepted post-M6 acquisition module into a coherent, reproducible `v1.0.0` release by removing milestone names from active code and tooling, preserving offline export and safety evidence, consolidating current documentation, and publishing one verified release baseline without changing acquisition behavior.

@@ -1,6 +1,6 @@
 # ADR-0004: Leave TUSS4470 in Standby at the no-Burst safety boundary
 
-Status: Accepted for M2 candidate re-verification
+Status: Accepted for V1; candidate re-verification procedure is historical
 
 ## Document overview
 
@@ -8,6 +8,10 @@ This ADR documents the reset fault that required TUSS4470 to finish every M2
 safe transition in Standby. It applies to session termination, configuration
 failure, and reset recovery in the no-Burst firmware and provides the rationale
 behind the corresponding safety code and verification record.
+
+The Standby/VDRV Hi-Z cleanup requirement remains active in the V1 production
+state machine. References below to flashing or re-verifying the M2 candidate
+describe the original investigation and are not current maintenance steps.
 
 ## Context
 

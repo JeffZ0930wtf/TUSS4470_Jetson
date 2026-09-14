@@ -60,6 +60,23 @@ usac-core --backend simulator --host 127.0.0.1 --port 8000 --database D:/Desktop
 
 模拟器不需要 Bridge，也不得被描述为真实波形采集。
 
+网页地址为 `http://127.0.0.1:8000/`，交互式 API 文档为
+`http://127.0.0.1:8000/docs`。`usac-cli --help` 列出状态、配置、采集、
+会话、历史和样本下载入口；真实模式与模拟器使用同一 REST 契约。
+
+## 数据检查与离线导出
+
+Core 运行时可通过网页、REST 或 `usac-cli` 查询记录。Core 停止后，使用
+`usac-export` 直接读取已提交的 SQLite；它不连接 Bridge 或硬件：
+
+```powershell
+usac-export show --sqlite D:/Desktop/TUSS4470_data/core/acquisition.sqlite3 --capture-id <capture_id>
+usac-export download --sqlite D:/Desktop/TUSS4470_data/core/acquisition.sqlite3 --capture-id <capture_id> --output-dir D:/Desktop/TUSS4470_data/exports
+```
+
+导出目录应位于源码仓库之外。`.usac` 保留完整线帧，`.u16le` 是原始样本
+字节，`.json` 是对应元数据；导出不会修改 SQLite。
+
 ## 固件构建与刷写边界
 
 `scripts/build-firmware.ps1` 只编译正式固件，不访问串口或硬件。`scripts/flash-firmware.ps1` 只有在外部 VPWR 已物理关闭，并显式传入 `-ExternalVpwrOffConfirmed` 后才允许调用 TI DSLite；刷写脚本不会发送采集命令或产生 Burst。

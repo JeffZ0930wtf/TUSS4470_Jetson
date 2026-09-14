@@ -98,30 +98,9 @@ V1 安装后只提供四个正式命令：
 
 ## 开发环境与验证
 
-每个 Windows 检出目录使用自己的仓库内 `.venv`：
-
-```powershell
-./scripts/bootstrap-dev.ps1
-. ./.venv/Scripts/Activate.ps1
-./scripts/check-env.ps1
-./scripts/test-all.ps1
-```
-
-Windows 完整门禁覆盖 Python、网页、MSP430 模拟器、TI USB 栈、正式固件构建
-和静态安全检查，不打开 COM 口、不刷写固件、不产生 Burst，也不要求安装
-Docker。
-
-Jetson 使用自己的仓库内环境：
-
-```sh
-./scripts/bootstrap-dev.sh
-. .venv/bin/activate
-./scripts/check-env.sh
-./scripts/test-all.sh
-```
-
-Jetson 门禁还包括 C 协议向量、ARM64 镜像构建/运行检查和 AMD64 OCI
-交叉构建。
+每个检出目录使用自己的仓库内 `.venv`。环境初始化、Windows/Jetson
+测试分工和固件检查职责统一由 [CONTRIBUTING.md](CONTRIBUTING.md) 维护。
+完整离线门禁不会打开串口、刷写固件或产生 Burst。
 
 ## 固件构建与刷写
 
@@ -158,29 +137,10 @@ firmware/build/release/tuss4470-acquisition-fw-0.2.0.2.elf
 脚本会通过 SSH 调用 Jetson 启动脚本，复用或创建本地隧道，并打开
 `http://127.0.0.1:18080/`。它不会自动应用配置、采集或产生 Burst。
 
-Windows 本机仍可通过命令行分别运行 Core 和 Bridge：
-
-```powershell
-usac-core --backend bridge --host 127.0.0.1 --port 8000 --bridge-host 127.0.0.1 --bridge-port 8765 --database D:/Desktop/TUSS4470_data/core/acquisition.sqlite3 --host-database-path D:/Desktop/TUSS4470_data/core/acquisition.sqlite3
-usac-bridge --config config/windows.example.toml --core-host 127.0.0.1 --core-port 8765 --confirm-external-vpwr-7v
-```
-
-本机网页地址为 `http://127.0.0.1:8000/`。详细说明见
-[Windows 部署](docs/deployment/windows.md)。
-
-## 不接硬件使用模拟器
-
-```powershell
-usac-core --backend simulator --host 127.0.0.1 --port 8000 --database D:/Desktop/TUSS4470_data/core/simulator.sqlite3 --host-database-path D:/Desktop/TUSS4470_data/core/simulator.sqlite3
-```
-
-浏览器访问：
-
-- 网页：`http://127.0.0.1:8000/`
-- 自动生成的 API 文档：`http://127.0.0.1:8000/docs`
-
-模拟器不会访问 USB/SPI、刷写固件或产生 Burst，适合新人先熟悉 Draft、
-Validate、Apply/Read-back、单次采集、周期采集、Sweep、历史和导出流程。
+Windows 本机 Core/Bridge 和无硬件模拟器仍可通过命令行运行。完整命令、
+本机网页/API 地址、数据路径和停止方法统一见
+[Windows 部署](docs/deployment/windows.md)。模拟器不会访问 USB/SPI、
+刷写固件或产生 Burst。
 
 ## Jetson 使用
 
@@ -195,6 +155,21 @@ Jetson 通过稳定的 `/dev/serial/by-id/...` 身份选择 LaunchPad，不应�
 宿主机/容器路径、停止方式和手动 Compose 命令见
 [Jetson 部署](docs/deployment/jetson.md)。
 
+## 网页工作台语义
+
+- 横轴始终是原始样本序号；V1 不把它表示为经过校准的物理时间。
+- 原始模式显示数据库中的 ADC 码值。归一化模式对每条完整 2048 点波形
+  使用自身最小值和最大值独立映射到 `0–1`；常量波形显示为零。两种显示
+  都不会修改原始样本。
+- 只有 `sample_interval_ticks`、`pretrigger_count` 和 `sample_count`
+  三项完全相同的波形才能叠加；V1 不进行对齐或插值。
+- 同时最多选择 20 个不同的 capture ID。主波形、已隐藏但仍选择的波形、
+  以及正在加载的已选择波形都占用名额；只有移除后才释放。
+- 查看历史记录只会暂停画布“跟随最新”，不会暂停或停止采集。恢复跟随
+  后，画布会以最新帧重新建立显示集合。
+- 画布中可见的波形可能仍是临时帧或滚动最新帧；“可见”不等于已经作为
+  归档记录持久保存到 SQLite。
+
 ## 数据位置和离线导出
 
 运行数据不写入源码仓库：
@@ -205,12 +180,8 @@ Jetson 通过稳定的 `/dev/serial/by-id/...` 身份选择 LaunchPad，不应�
 - Jetson Bridge spool 宿主目录：`/var/lib/tuss4470/bridge/spool`
 
 可以使用 `USAC_CORE_DATA_DIR`、`USAC_BRIDGE_SPOOL_DIR` 和
-`USAC_SERIAL_DEVICE` 修改部署路径。Core 停止后仍可离线导出：
-
-```powershell
-usac-export show --sqlite D:/Desktop/TUSS4470_data/core/acquisition.sqlite3 --capture-id <capture_id>
-usac-export download --sqlite D:/Desktop/TUSS4470_data/core/acquisition.sqlite3 --capture-id <capture_id> --output-dir D:/Desktop/TUSS4470_data/exports
-```
+`USAC_SERIAL_DEVICE` 修改部署路径。离线导出的完整命令见 Windows 部署
+指南；`usac-export` 可在 Core 停止时直接读取已提交的 SQLite 数据。
 
 ## 硬件安全边界
 

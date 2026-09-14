@@ -1,30 +1,31 @@
 # USAC protocol and parameter contract
 
-Status: frozen for M1
+Status: implemented and frozen for V1
 Wire protocol version: 1
 Parameter schema: `tuss4470-parameters-v1`
 
 ## Document overview
 
-This document freezes the M1 wire-protocol and parameter contract shared by
-the MSP430 firmware, host libraries, simulator, and future bridge/core. It
+This document defines the implemented V1 wire-protocol and parameter contract
+shared by the MSP430 firmware, host libraries, simulator, Bridge, and Core. It
 solves byte-level interoperability and configuration-traceability problems for
 the acquisition module. The machine-readable schemas and fixed vectors are
 authoritative when prose and encoded bytes must be compared.
 
 ## Scope
 
-This contract connects future MSP430 firmware, bridge, core, and the M1
-software simulator. It transports raw acquisition data and its exact hardware
+This contract connects the deployed MSP430 firmware, Bridge, Core, clients,
+and software simulator. It transports raw acquisition data and its exact hardware
 configuration. It does not calculate peaks, TOF, energy, SOC, or SOH.
 
-M1 is software-only. Nothing in the protocol tests opens USB/SPI or authorizes
-a real Burst.
+Protocol/vector tests are software-only: they do not open USB/SPI or authorize
+a real Burst. Real operation additionally requires the firmware safety state
+machine and the platform procedures in the deployment guides.
 
 ## Authoritative artifacts
 
 - `protocol/schema/usac-protocol-v1.json`: frame fields, CRC parameters,
-  endpoint limits, and first M1 message layouts.
+  endpoint limits, and implemented V1 message layouts.
 - `protocol/schema/tuss4470-parameters-v1.yaml`: every public TUSS4470 user bit
   plus all approved acquisition/run fields. The file uses the JSON-compatible
   subset of YAML 1.2 so the runtime can parse it without another dependency.
@@ -103,8 +104,9 @@ boundary:
   sample count other than 2048;
 - stable configurations with CMD trigger, standby, or sleep asserted.
 
-M1 enforces these rules in the simulator. Real supply, VDRV_READY, SPI readback,
-fault, and Burst gates belong to the M2 firmware state machine.
+The simulator enforces the configuration boundary without touching hardware.
+Real supply, VDRV_READY, SPI readback, fault, and Burst gates are enforced by
+the deployed firmware state machine.
 
 ## Deterministic simulator
 

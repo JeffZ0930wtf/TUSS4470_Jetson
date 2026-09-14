@@ -1,6 +1,6 @@
 # ADR-0005: Separate valid configuration from active hardware profile
 
-Status: Accepted for M2 final candidate
+Status: Accepted for V1; M2 validation SHA remains historical evidence
 
 ## Document overview
 
@@ -8,6 +8,10 @@ This ADR separates a reportable verified configuration from a register profile
 that is currently active in hardware. It solves an M2 cross-session state bug
 and defines an invariant that later milestones must preserve when they add
 acquisition states.
+
+V1 preserves this distinction in the production state machine. The M2 test
+sequence and hashes below remain evidence for the original correction; they
+are not replaced with a current release SHA or treated as operating steps.
 
 ## Context
 

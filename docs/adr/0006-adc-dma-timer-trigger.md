@@ -15,7 +15,8 @@ M3 已确认 `TB0.1` 能稳定触发一次真实采集。M5 连续采集验收�
 
 ## 决定
 
-- 使用 `TB0CCR0 = sample_interval_ticks - 1` 定义 120 个 SMCLK tick 的采样周期；
+- 使用 `TB0CCR0 = sample_interval_ticks - 1` 定义采样周期；V1 接受
+  `120–960` 个 SMCLK tick，`120` tick（200 kS/s）是 D10×4 基线值；
 - 使用 `TB0CCR1 = 1` 和 `TB0CCTL1 = OUTMOD_3`，每周期产生一个明确的
   TB0.1 上升沿；
 - ADC12触发源保持`ADC12SHS_3`（TB0.1）；
@@ -24,7 +25,9 @@ M3 已确认 `TB0.1` 能稳定触发一次真实采集。M5 连续采集验收�
   8 tick保护间隔；DMA0和DMA1均选择`TB0CCR2.IFG`（DMA trigger 8）；
 - `TB0CCTL2.CCIE`必须保持0，使CCIFG可作为DMA触发；ADC12IFG0只作为诊断证据；
 - 停止采集时显式关闭TB0.1输出模式并清理TB0CCR2/CCIFG；
-- 保持 200 kS/s、2048 点、64 点预触发、DMA0/DMA1 和单脉冲 Burst 不变。
+- 保持 2048 点原始缓冲和 DMA0/DMA1 所有权不变。采样间隔、预触发点数与
+  1–63 个有限 Burst 由已应用配置决定；200 kS/s、64 点预触发、Pulse=1
+  是默认基线，不是 V1 的唯一合法端点。
 
 ## 备选方案
 

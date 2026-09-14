@@ -77,30 +77,10 @@ V1 exposes exactly four installed commands:
 
 ## Development and verification
 
-Each checkout owns a repository-local `.venv`:
-
-```powershell
-./scripts/bootstrap-dev.ps1
-. ./.venv/Scripts/Activate.ps1
-./scripts/check-env.ps1
-./scripts/test-all.ps1
-```
-
-The Windows aggregate gate runs Python, Web, MSP430 simulator, TI USB-stack,
-production firmware, and static safety checks. It does not open a COM port,
-flash firmware, or produce a Burst. Windows does not require Docker.
-
-Jetson uses its own checkout-local environment:
-
-```sh
-./scripts/bootstrap-dev.sh
-. .venv/bin/activate
-./scripts/check-env.sh
-./scripts/test-all.sh
-```
-
-The Jetson gate runs the same host tests, C protocol vectors, one native ARM64
-image build/runtime check, and one AMD64 OCI cross-build.
+Each checkout owns a repository-local `.venv`. Bootstrap, environment checks,
+the Windows/Jetson test split, and firmware verification responsibilities are
+maintained in [CONTRIBUTING.md](CONTRIBUTING.md). The aggregate gates do not
+open a serial port, flash firmware, or produce a Burst.
 
 ## Firmware
 
@@ -134,26 +114,11 @@ The script asks the Jetson launcher to start the containers, reuses or creates
 the local SSH tunnel, and opens `http://127.0.0.1:18080/`. It never starts a
 capture or Burst.
 
-Native Windows operation remains available through the command line. It uses
-Core with `--backend bridge` and a separate native Bridge. The current
-configuration example uses `COM9`; replace it if the verified LaunchPad
-application CDC port changes.
-
-```powershell
-usac-core --backend bridge --host 127.0.0.1 --port 8000 --bridge-host 127.0.0.1 --bridge-port 8765 --database D:/Desktop/TUSS4470_data/core/acquisition.sqlite3 --host-database-path D:/Desktop/TUSS4470_data/core/acquisition.sqlite3
-usac-bridge --config config/windows.example.toml --core-host 127.0.0.1 --core-port 8765 --confirm-external-vpwr-7v
-```
-
-Open `http://127.0.0.1:8000/`. Detailed host/container alternatives are in
-[Windows deployment](docs/deployment/windows.md).
-
-For UI/API checks without hardware:
-
-```powershell
-usac-core --backend simulator --host 127.0.0.1 --port 8000 --database D:/Desktop/TUSS4470_data/core/simulator.sqlite3 --host-database-path D:/Desktop/TUSS4470_data/core/simulator.sqlite3
-```
-
-The simulator never opens USB/SPI, flashes firmware, or produces a Burst.
+Native Windows Core/Bridge operation and the no-hardware simulator remain
+available through the command line. Their complete commands, data paths, and
+stop procedure are maintained in
+[Windows deployment](docs/deployment/windows.md). The simulator never opens
+USB/SPI, flashes firmware, or produces a Burst.
 
 ## Run on Jetson
 
@@ -171,6 +136,25 @@ prints the local URL otherwise. Follow
 [Jetson deployment](docs/deployment/jetson.md) for host/container paths,
 launcher configuration, and manual Compose commands.
 
+## Web workbench semantics
+
+- The horizontal axis is the original sample index; V1 does not present it as
+  calibrated physical time.
+- Raw mode displays the stored ADC codes. Normalized mode independently maps
+  the complete 2048-point frame to `0–1` using its own minimum and maximum; a
+  constant frame is shown as zero. Neither mode changes stored samples.
+- Overlay compatibility requires exact equality of `sample_interval_ticks`,
+  `pretrigger_count`, and `sample_count`. V1 performs no alignment or
+  interpolation.
+- At most 20 distinct capture IDs may be selected at once. The main trace,
+  hidden selected traces, and selected traces still loading all count toward
+  that limit; removing a trace releases its slot.
+- Viewing historical data pauses `follow latest` only for the canvas. It does
+  not pause or stop acquisition. Restoring follow-latest rebuilds the display
+  around the newest frame.
+- A frame visible in the canvas may be transient or rolling-latest data; being
+  visible does not by itself mean that the frame has been archived in SQLite.
+
 ## Data and offline export
 
 Runtime data stays outside the source repository:
@@ -181,13 +165,9 @@ Runtime data stays outside the source repository:
 - Jetson Bridge spool host directory: `/var/lib/tuss4470/bridge/spool`
 
 Use `USAC_CORE_DATA_DIR`, `USAC_BRIDGE_SPOOL_DIR`, and
-`USAC_SERIAL_DEVICE` to change deployment paths. To export a committed frame
-without running Core:
-
-```powershell
-usac-export show --sqlite D:/Desktop/TUSS4470_data/core/acquisition.sqlite3 --capture-id <capture_id>
-usac-export download --sqlite D:/Desktop/TUSS4470_data/core/acquisition.sqlite3 --capture-id <capture_id> --output-dir D:/Desktop/TUSS4470_data/exports
-```
+`USAC_SERIAL_DEVICE` to change deployment paths. The exact offline export
+commands are in the Windows deployment guide. `usac-export` reads committed
+SQLite data without requiring Core.
 
 ## Hardware safety
 

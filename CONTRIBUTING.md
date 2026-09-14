@@ -8,43 +8,82 @@ including release maintenance and work that follows the archived milestones.
 It complements current release, protocol, deployment, ADR, and implementation
 plans; it does not replace their technical requirements.
 
-## Milestone workflow
+## V1 maintenance workflow
 
-Every development milestone or release starts from and closes against its
-controlled roadmap or implementation plan. A task plan or ADR may refine how
-a requirement is met, but it must not silently remove, weaken, or mark a
-requirement complete.
+M0-M6 are complete and their milestone process is historical. Current work
+starts from the published V1 contract: read the affected README, protocol,
+deployment guide, ADR, release acceptance, and known limitations before
+changing behavior. A plan is appropriate for multi-step or high-risk work;
+small, bounded documentation or maintenance changes do not require a new plan.
 
-Before milestone implementation:
+For every change:
 
-1. Read the roadmap's global constraints, current milestone, exit gate, and
-   adjacent milestone boundaries.
-2. Require the preceding `milestone(Mx)` commit to be present on `origin/main`,
-   with local and remote SHA equal and a clean main worktree.
-3. Mark the new milestone `in progress` in the roadmap and confirm its task
-   checklist, exclusions, hardware conditions, and evidence plan before code.
-4. Create the milestone branch/worktree from the verified main commit.
+1. Start from a clean, current `main` and use an isolated branch/worktree for
+   non-trivial work. Preserve unrelated local files and external evidence.
+2. State the scope and classify the change as documentation-only, host
+   software, firmware/hardware-control, deployment, or release work.
+3. Update the current normative document with the implementation. Completed
+   plans and investigation notes belong in `docs/archive/`, not the active
+   documentation set.
+4. Run the checks appropriate to the changed surface, then inspect whitespace,
+   links, diff scope, and sensitive literals. A device-to-CLI frame is not
+   evidence of Bridge/Core/SQLite success.
+5. Integrate without rewriting history, push, verify local/remote SHA equality,
+   and synchronize Jetson when the deployed source or instructions changed.
 
-Before milestone closure:
+Documentation-only work runs link/layout checks and the relevant host tests;
+it does not require a firmware rebuild when no firmware input changed. Host
+software changes run targeted tests plus the aggregate platform gate. Firmware
+or hardware-control changes additionally require the production build and all
+retained firmware checks; flashing or Burst requires the documented physical
+power gate and explicit operator authorization. Release work also records the
+exact source SHA, artifacts/images, lock inputs, platform evidence, and known
+limitations.
 
-1. Audit every roadmap item. Use `[x]` only with code, test, or hardware
-   evidence. Leave incomplete items `[ ]` and record the reason, impact,
-   destination milestone, or the user's explicit decision to accept a
-   non-blocking limitation.
-2. Update the roadmap status, README, milestone verification summary, and
-   relevant ADRs. Never describe a device-to-CLI frame as bridge/core/SQLite
-   success.
-3. Run the full milestone verification, whitespace/diff checks, staged-scope
-   review, and sensitive-literal check.
-4. Integrate to `main`, create the exact non-empty `milestone(Mx)` commit named
-   by the roadmap, push `main` without rewriting history, and verify the local
-   and remote 40-character SHA values are identical.
-5. Sync the Jetson repository to the closed main commit, verify a clean
-   worktree, then archive/remove the completed milestone worktree according to
-   ownership rules.
+## Environment and aggregate gates
 
-Only after all closure steps pass may the next milestone be marked ready. Its
-implementation still begins with a fresh execution of the start procedure.
+Each checkout owns its local environment. On Windows:
+
+```powershell
+./scripts/bootstrap-dev.ps1
+. ./.venv/Scripts/Activate.ps1
+./scripts/check-env.ps1
+./scripts/test-all.ps1
+```
+
+On Jetson/Linux:
+
+```sh
+./scripts/bootstrap-dev.sh
+. .venv/bin/activate
+./scripts/check-env.sh
+./scripts/test-all.sh
+```
+
+The Windows gate covers Python, Web, the MSP430 simulator, the pinned TI USB
+stack, production firmware, and static safety checks without requiring Docker.
+The Jetson gate covers host tests, C protocol vectors, one native ARM64 image
+build/runtime check, and one AMD64 OCI cross-build. Neither gate opens a serial
+port, flashes firmware, or requests a Burst.
+
+The retained firmware gate owns these current invariants:
+
+- 24 MHz XT2/FLL clocking, runtime clock-fault shutdown, 1 MHz TUSS4470 SPI,
+  ordered register readback, reset-safe IO2/NCS, Standby/VDRV Hi-Z, and unsafe
+  profile rejection;
+- one 4096-byte buffer containing exactly 2048 unmodified `uint16` samples,
+  variable sample ticks and pretrigger accounting, TB0.1 ADC triggering,
+  TB0CCR2 DMA ownership, exact completion evidence, bounded RAM, and no sample
+  synthesis or interpolation;
+- protocol framing/CRC/resynchronization, segmented CDC transmission, TX buffer
+  ownership, CDC-busy non-advancement, and exclusion of USB DMA;
+- finite 1-63 pulse plans, all IO modes, periodic/STOP/lease behavior,
+  synchronization and events, reset/session invalidation, and TA1 ownership
+  after TI `USB_setup()`.
+
+Diagnostic-only startup, reduced-RAM, software-trigger, and single-word DMA
+checks were retired with those non-production paths. Their rationale remains in
+the archived V1.0.0 firmware-check migration record.
 
 ## Formal documentation
 

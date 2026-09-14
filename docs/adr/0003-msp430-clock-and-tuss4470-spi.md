@@ -1,6 +1,6 @@
 # ADR-0003: M2 LaunchPad clock and TUSS4470 SPI bring-up
 
-Status: Accepted for M2
+Status: Superseded in part by ADR-0006 and the V1 production firmware
 
 ## Document overview
 
@@ -16,8 +16,10 @@ acquisition work; it does not authorize a Burst.
 - Generate 24 MHz MCLK/SMCLK from the 4 MHz XT2 FLL reference with VCORE level
   3 and DCORSEL 6. A missing XT2 or DCO fault blocks USB enumeration and leaves
   the reset-safe outputs active.
-- Use REFO for ACLK. An XT1 fault is therefore diagnostic but not fatal;
-  DCOFFG and XT2OFFG remain fatal.
+- The M2 bring-up baseline used REFO for ACLK. The production acquisition
+  firmware later moved its continuous scheduling/session timebase to the XT1
+  32.768 kHz crystal. Current behavior follows the production source and
+  ADR-0006; the REFO statement is retained only as M2 bring-up history.
 - Operate the TUSS4470 SPI control link at 1 MHz during M2 and subsequent
   acquisition bring-up: 24 MHz SMCLK divided by 24. Keep MSB-first, CPOL 0,
   CPHA 1 (MSP430 UCCKPL=0 and UCCKPH=0).
@@ -43,7 +45,7 @@ the application CDC enumerated with the derived 32-character serial number.
 
 ## Consequences
 
-- M2 and M3 use a stable 1 MHz SPI control bus; any future rate increase needs
+- V1 uses a stable 1 MHz SPI control bus; any future rate increase needs
   logic-analyzer evidence and a separate review.
 - The 200 kS/s ADC timing remains derived independently from the 24 MHz SMCLK
   and is unaffected by this SPI decision.
