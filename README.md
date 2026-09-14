@@ -2,11 +2,17 @@
 
 ## Document overview
 
-This README is the operator and developer entry point for V1.0.0 of the
+This README is the operator and developer entry point for V1.0.1 of the
 standalone ultrasonic acquisition submodule. It explains what the module
 does, how to build and run it on Windows or Jetson, where data is stored, and
 which safety limits remain. Protocol details, platform procedures, release
 evidence, and historical development records live in the linked documents.
+
+V1.0.1 adds one-shot Jetson startup from Windows or the Jetson desktop. It
+continues using the accepted `tuss4470-acquisition-core:1.0.0` runtime image;
+the acquisition runtime and firmware are unchanged. See the
+[V1.0.1 release notes](docs/release/v1.0.1-release-notes.md) for verification
+scope and the distinction between this source release and the runtime image.
 
 The module configures TUSS4470, controls bounded ultrasonic acquisition, and
 outputs exact raw envelope samples plus capture metadata. It does not extract
@@ -170,7 +176,8 @@ usac-export download --sqlite D:/Desktop/TUSS4470_data/core/acquisition.sqlite3 
 - [Wire protocol](docs/protocol.md)
 - [Windows deployment](docs/deployment/windows.md)
 - [Jetson deployment](docs/deployment/jetson.md)
-- [V1 acceptance](docs/release/v1.0.0-acceptance.md)
+- [V1.0.1 release notes](docs/release/v1.0.1-release-notes.md)
+- [V1 runtime baseline acceptance](docs/release/v1.0.0-acceptance.md)
 - [V1 known limitations](docs/release/v1.0.0-known-limitations.md)
 - [Pre-V1 evidence archive](docs/archive/pre-v1/README.md)
 - [Development standards](CONTRIBUTING.md)

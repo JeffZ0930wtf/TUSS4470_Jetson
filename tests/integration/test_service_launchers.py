@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -77,6 +78,7 @@ class ServiceLauncherTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--confirm-external-vpwr-7v", result.stderr)
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows launcher test")
     def test_windows_launcher_requires_explicit_7v_confirmation(self) -> None:
         self.assertIsNotNone(POWERSHELL)
         result = _run(
@@ -152,6 +154,7 @@ class ServiceLauncherTests(unittest.TestCase):
             self.assertIn("http://127.0.0.1:8000/", result.stdout)
             self.assertIn("device ready", result.stdout.lower())
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows launcher test")
     def test_windows_launcher_reuses_a_healthy_existing_tunnel(self) -> None:
         self.assertIsNotNone(POWERSHELL)
         with tempfile.TemporaryDirectory() as directory:

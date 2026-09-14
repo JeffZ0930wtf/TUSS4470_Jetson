@@ -18,11 +18,11 @@ node packages/usac_runtime/tests/test_web_app.cjs
 
 candidate_sha=$(git rev-parse --verify HEAD)
 candidate12=$(printf '%.12s' "$candidate_sha")
-arm64_image="tuss4470-acquisition-core:1.0.0-rc-${candidate12}-arm64"
-amd64_oci=".tools/buildx/tuss4470-acquisition-core-1.0.0-rc-${candidate12}-amd64.tar"
+arm64_image="tuss4470-acquisition-core:1.0.1-rc-${candidate12}-arm64"
+amd64_oci=".tools/buildx/tuss4470-acquisition-core-1.0.1-rc-${candidate12}-amd64.tar"
 
 docker build --platform linux/arm64 \
-    --build-arg VERSION=1.0.0 \
+    --build-arg VERSION=1.0.1 \
     --build-arg VCS_REF="$candidate_sha" \
     -f deploy/Dockerfile.core \
     -t "$arm64_image" .
@@ -31,7 +31,7 @@ docker run --rm --platform linux/arm64 --entrypoint python "$arm64_image" -c \
 
 mkdir -p .tools/buildx
 docker buildx build --platform linux/amd64 \
-    --build-arg VERSION=1.0.0 \
+    --build-arg VERSION=1.0.1 \
     --build-arg VCS_REF="$candidate_sha" \
     --output "type=oci,dest=$amd64_oci" \
     -f deploy/Dockerfile.core .

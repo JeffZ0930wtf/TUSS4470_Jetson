@@ -120,7 +120,7 @@ class ProjectLayoutTests(unittest.TestCase):
             if entry_point.group == "console_scripts"
         }
 
-        self.assertEqual(distribution.version, "1.0.0")
+        self.assertEqual(distribution.version, "1.0.1")
         self.assertEqual(
             installed_commands,
             {
@@ -131,7 +131,7 @@ class ProjectLayoutTests(unittest.TestCase):
             },
         )
 
-    def test_release_metadata_is_v1_0_0(self) -> None:
+    def test_release_metadata_is_v1_0_1(self) -> None:
         metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
         local_package = next(
@@ -140,8 +140,8 @@ class ProjectLayoutTests(unittest.TestCase):
             if package["name"] == "tuss4470-acquisition"
         )
 
-        self.assertEqual(metadata["project"]["version"], "1.0.0")
-        self.assertEqual(local_package["version"], "1.0.0")
+        self.assertEqual(metadata["project"]["version"], "1.0.1")
+        self.assertEqual(local_package["version"], "1.0.1")
         self.assertEqual(local_package["source"], {"editable": "."})
         self.assertEqual(
             metadata["project"]["description"],
@@ -334,8 +334,8 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn("linux/amd64", jetson_test)
         self.assertIn("candidate_sha", jetson_test)
         self.assertIn("candidate12", jetson_test)
-        self.assertIn("1.0.0-rc-${candidate12}-arm64", jetson_test)
-        self.assertIn("1.0.0-rc-${candidate12}-amd64.tar", jetson_test)
+        self.assertIn("1.0.1-rc-${candidate12}-arm64", jetson_test)
+        self.assertIn("1.0.1-rc-${candidate12}-amd64.tar", jetson_test)
         self.assertNotIn("make -C firmware", jetson_test)
         arm64_run = "docker run --rm --platform linux/arm64 --entrypoint python"
         amd64_export = "docker buildx build --platform linux/amd64"

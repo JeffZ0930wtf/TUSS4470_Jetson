@@ -52,6 +52,9 @@ docker compose -f deploy/compose.jetson.yaml up -d --force-recreate bridge
 
 ## Jetson 本机一键启动
 
+V1.0.1 的启动脚本继续使用已验收的 `tuss4470-acquisition-core:1.0.0`
+运行镜像；无需为本次脚本更新重建或更名镜像。
+
 在仓库根目录执行：
 
 ```sh

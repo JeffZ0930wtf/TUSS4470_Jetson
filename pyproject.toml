@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tuss4470-acquisition"
-version = "1.0.0"
+version = "1.0.1"
 description = "Cross-platform TUSS4470 ultrasonic acquisition and raw-data service"
 requires-python = ">=3.12,<3.13"
 dependencies = [
