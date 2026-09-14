@@ -86,9 +86,21 @@ TI DSLite but sends no serial command and cannot request a Burst.
 
 ## Run on Windows
 
-Real operation uses Core with `--backend bridge` and a separate native Bridge.
-The current configuration example uses `COM9`; replace it if the verified
-LaunchPad application CDC port changes.
+To operate the Jetson-hosted real system from Windows, first confirm external
+VPWR is 7 V and press S3 RST after the supply is stable, then run:
+
+```powershell
+.\scripts\start-jetson.ps1 -ExternalVpwr7VConfirmed
+```
+
+The script asks the Jetson launcher to start the containers, reuses or creates
+the local SSH tunnel, and opens `http://127.0.0.1:18080/`. It never starts a
+capture or Burst.
+
+Native Windows operation remains available through the command line. It uses
+Core with `--backend bridge` and a separate native Bridge. The current
+configuration example uses `COM9`; replace it if the verified LaunchPad
+application CDC port changes.
 
 ```powershell
 usac-core --backend bridge --host 127.0.0.1 --port 8000 --bridge-host 127.0.0.1 --bridge-port 8765 --database D:/Desktop/TUSS4470_data/core/acquisition.sqlite3 --host-database-path D:/Desktop/TUSS4470_data/core/acquisition.sqlite3
@@ -110,9 +122,17 @@ The simulator never opens USB/SPI, flashes firmware, or produces a Burst.
 
 Jetson runs Core and Bridge as separate containers. Select the LaunchPad by
 its verified `/dev/serial/by-id/...` identity through `USAC_SERIAL_DEVICE`, not
-by a changing `/dev/ttyACM*` ordinal. Follow
-[Jetson deployment](docs/deployment/jetson.md) for host/container paths and
-Compose commands.
+by a changing `/dev/ttyACM*` ordinal. After checking 7 V and pressing S3 RST,
+run:
+
+```sh
+./scripts/start-jetson.sh --confirm-external-vpwr-7v
+```
+
+The script opens the Jetson browser when a graphical desktop is available and
+prints the local URL otherwise. Follow
+[Jetson deployment](docs/deployment/jetson.md) for host/container paths,
+launcher configuration, and manual Compose commands.
 
 ## Data and offline export
 

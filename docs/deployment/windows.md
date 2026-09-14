@@ -18,7 +18,21 @@
 
 容器内路径分别为 `/var/lib/usac/database` 和 `/var/lib/usac/spool`。宿主路径由 `USAC_CORE_DATA_DIR` 与 `USAC_BRIDGE_SPOOL_DIR` 控制，不写入源码。
 
-## 启动真实服务
+## 从 Windows 拉起 Jetson 实机服务
+
+确认外部 VPWR 为 7 V，并在供电稳定后按过一次 S3 `RST`。在 Windows 仓库根目录执行：
+
+```powershell
+.\scripts\start-jetson.ps1 -ExternalVpwr7VConfirmed
+```
+
+脚本使用现有 SSH 密钥登录 Jetson，调用 Jetson 上的 `scripts/start-jetson.sh`，然后复用或建立 `127.0.0.1:18080` 到 Jetson `127.0.0.1:8000` 的隧道并打开 Windows 默认浏览器。它不在 Windows 启动 Core 或 Bridge，也不应用配置、采集或产生 Burst。
+
+当前实验室默认值为 Jetson `172.20.149.177`、用户 `yizhouzhao`、远端仓库 `/home/yizhouzhao/workspace/TUSS4470_software`。可用参数 `-JetsonHost`、`-JetsonUser`、`-IdentityFile`、`-RemoteRepository` 和 `-LocalPort` 覆盖；密码不会写入脚本或仓库。新隧道 PID 默认记录在 `D:/Desktop/TUSS4470_data/runtime/jetson-ssh-tunnel.pid`。
+
+重复执行时，Jetson Compose 保持幂等；如果本地端口已经返回本项目健康响应，Windows 脚本复用现有隧道。脚本完成后不承担监控任务。
+
+## Windows 本机命令行启动
 
 先激活仓库虚拟环境，并确认 LaunchPad 对应的 `COMx`。外部 7 V、跳线、极性和限流必须人工确认后，才可给 Bridge 传入供电确认参数。
 

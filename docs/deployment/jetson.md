@@ -45,18 +45,37 @@ docker compose -f deploy/compose.jetson.yaml up -d --force-recreate bridge
 
 1. 宿主目录已创建且运行用户可写。
 2. J2=TX、J3=RX、R12 已移除，J1=8 nF、J4=6.8 nF。
-3. VPWR 7 V 的极性、限流和实测电压已人工确认；仅 USB 供电时不得启动带 `--confirm-external-vpwr-7v` 的正式 bridge 服务。
+3. VPWR 7 V 的极性、限流和实测电压已人工确认，并在供电稳定后按过一次 S3 `RST`；仅 USB 供电时不得传入 `--confirm-external-vpwr-7v`。
 4. `USAC_SERIAL_DEVICE` 指向实际的 `/dev/ttyACM*` 或 `/dev/tuss4470`。
 
 `compose.jetson.yaml` 中的确认参数只解除主机侧启动门禁，并不会主动产生 Burst；实际激励仍需经过配置读回、VDRV_READY、故障状态和固件安全状态机。
 
-## 启动结果
+## Jetson 本机一键启动
 
 在仓库根目录执行：
 
 ```sh
+./scripts/start-jetson.sh --confirm-external-vpwr-7v
+```
+
+脚本是启动 Core、Bridge 的唯一自动化实现。它会：
+
+1. 检查 Docker Compose、持久目录和唯一的 `MSP430-USB Example` `by-id` 设备；
+2. 幂等执行 Jetson Compose，不创建重复服务；
+3. 在有限时间内等待健康接口、Bridge 连接、设备 `NORMAL/IDLE` 和启动会话中记录的 `VDRV_READY=1`；
+4. 有图形桌面时调用系统浏览器打开 `http://127.0.0.1:8000/`，纯 SSH 会话则只打印网址；
+5. 就绪后退出，不持续监控，也不应用配置、采集或产生 Burst。
+
+失败诊断默认写入 `/var/lib/tuss4470/launcher/start-failure-*.log`。可通过 `USAC_SERIAL_DEVICE`、`USAC_CORE_DATA_DIR`、`USAC_BRIDGE_SPOOL_DIR`、`USAC_LAUNCHER_LOG_DIR` 和 `USAC_READY_TIMEOUT_SECONDS` 覆盖路径或等待时间。
+
+`VDRV_READY` 是固件在复位、配置或采集检查时保存的状态，不是页面每次刷新时对 VPWR 的实时测量。因此启动确认必须包含供电稳定后的 S3 `RST`；脚本退出后若 7 V 再掉电，本版不会持续监控或立即更新页面状态。
+
+需要手动启动时仍可执行：
+
+```sh
 export USAC_CORE_IMAGE=tuss4470-acquisition-core:1.0.0
-docker compose -f deploy/compose.jetson.yaml up -d
+export USAC_SERIAL_DEVICE=/dev/serial/by-id/usb-Texas_Instruments_MSP430-USB_Example_<本板32位小写十六进制序列号>-if00
+docker compose -f deploy/compose.jetson.yaml up -d --no-build
 ```
 
 启动后：
