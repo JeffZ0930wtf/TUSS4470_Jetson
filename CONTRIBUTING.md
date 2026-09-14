@@ -123,10 +123,13 @@ environments are not modified to satisfy this project rule.
 
 Documentation and comment-only maintenance must not include feature work,
 protocol expansion, unrelated refactoring, or hardware-control behavior
-changes. Run the existing automated suite and relevant static safety checks
-after such maintenance. If a firmware build is expected to be behaviorally
-identical, compare its executable output with the pre-maintenance baseline and
-stop if machine code changes unexpectedly.
+changes. Verification follows the change-classification rules in the V1
+maintenance workflow above: documentation-only changes use fact, link, format,
+layout, and relevant host checks; they do not require the complete automated
+suite or firmware static/build checks. Comment changes use the tests appropriate
+to the implementation they touch. Run firmware build, static, and executable-
+equivalence checks only when firmware/build inputs change or a release claim
+explicitly requires them; stop if machine code changes unexpectedly.
 
 ## Archive policy
 
