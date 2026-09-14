@@ -1,5 +1,7 @@
 # TUSS4470 Ultrasonic Acquisition Module V1
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 ## Document overview
 
 This README is the operator and developer entry point for V1.0.1 of the
@@ -30,6 +32,35 @@ future BMS integration layer.
   CLI, and the bilingual Web workbench.
 - Web workbench: raw/normalized display, continuous sample windows, and up to
   20 compatible overlaid captures without modifying stored bytes.
+
+## Functional code map
+
+This table is the shortest route from a visible function to its maintained
+implementation. Historical M1-M6 material under `docs/archive/pre-v1/` is
+evidence and design history, not the entry point for current development.
+
+| Function | Maintained implementation |
+|---|---|
+| Windows remote Jetson launcher | [`scripts/start-jetson.ps1`](scripts/start-jetson.ps1) |
+| Jetson Core/Bridge launcher | [`scripts/start-jetson.sh`](scripts/start-jetson.sh) |
+| Container deployment | [`deploy/compose.jetson.yaml`](deploy/compose.jetson.yaml), [`deploy/Dockerfile.core`](deploy/Dockerfile.core) |
+| Core process entry | [`core_server.py`](packages/usac_runtime/src/usac_runtime/core_server.py) |
+| REST API routes | [`api.py`](packages/usac_runtime/src/usac_runtime/api.py) |
+| Acquisition orchestration and state | [`application.py`](packages/usac_runtime/src/usac_runtime/application.py) |
+| Parameter validation and application | [`parameter_service.py`](packages/usac_runtime/src/usac_runtime/parameter_service.py) |
+| Periodic and sweep run plans | [`run_plan.py`](packages/usac_runtime/src/usac_runtime/run_plan.py), [`periodic_lease.py`](packages/usac_runtime/src/usac_runtime/periodic_lease.py) |
+| Core SQLite persistence | [`core_store.py`](packages/usac_runtime/src/usac_runtime/core_store.py) |
+| Bridge process and device session | [`bridge_cli.py`](packages/usac_runtime/src/usac_runtime/bridge_cli.py), [`bridge_device_client.py`](packages/usac_runtime/src/usac_runtime/bridge_device_client.py) |
+| Bridge forwarding, reconnect, and pending spool | [`bridge_session.py`](packages/usac_runtime/src/usac_runtime/bridge_session.py), [`reconnect.py`](packages/usac_runtime/src/usac_runtime/reconnect.py), [`spool.py`](packages/usac_runtime/src/usac_runtime/spool.py) |
+| REST CLI and offline SQLite export | [`client_cli.py`](packages/usac_runtime/src/usac_runtime/client_cli.py), [`export_cli.py`](packages/usac_runtime/src/usac_runtime/export_cli.py) |
+| Web page, behavior, and styling | [`index.html`](packages/usac_runtime/src/usac_runtime/web/index.html), [`app.js`](packages/usac_runtime/src/usac_runtime/web/app.js), [`styles.css`](packages/usac_runtime/src/usac_runtime/web/styles.css) |
+| Wire messages and stream parsing | [`packages/usac_protocol`](packages/usac_protocol/src/usac_protocol), [`docs/protocol.md`](docs/protocol.md) |
+| Parameter names, ranges, and dependencies | [`tuss4470-parameters-v1.yaml`](protocol/schema/tuss4470-parameters-v1.yaml) |
+| Firmware entry and command state machine | [`main.c`](firmware/src/main.c), [`usac_firmware_app.c`](firmware/src/usac_firmware_app.c) |
+| TUSS4470 register configuration | [`tuss4470_configurator.c`](firmware/src/tuss4470_configurator.c), [`tuss4470_profile.c`](firmware/src/tuss4470_profile.c) |
+| ADC/DMA capture and MSP430 hardware binding | [`usac_capture.c`](firmware/src/usac_capture.c), [`usac_acquisition_platform_msp430.c`](firmware/src/usac_acquisition_platform_msp430.c) |
+| Burst safety and capture scheduling | [`usac_burst_plan.c`](firmware/src/usac_burst_plan.c), [`usac_capture_schedule.c`](firmware/src/usac_capture_schedule.c) |
+| Firmware build, flash, and full gates | [`build-firmware.ps1`](scripts/build-firmware.ps1), [`flash-firmware.ps1`](scripts/flash-firmware.ps1), [`test-all.ps1`](scripts/test-all.ps1), [`test-all.sh`](scripts/test-all.sh) |
 
 ## Public commands
 
