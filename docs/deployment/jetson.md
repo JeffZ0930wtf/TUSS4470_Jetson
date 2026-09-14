@@ -52,8 +52,9 @@ docker compose -f deploy/compose.jetson.yaml up -d --force-recreate bridge
 
 ## Jetson 本机一键启动
 
-V1.0.1 的启动脚本继续使用已验收的 `tuss4470-acquisition-core:1.0.0`
-运行镜像；无需为本次脚本更新重建或更名镜像。
+启动脚本默认使用从正式 V1.0.1 源码构建的
+`tuss4470-acquisition-core:1.0.1` 镜像。启动前应已在 Jetson 本机完成镜像构建；
+脚本不会自动构建。原 `1.0.0` 镜像保留用于回退。
 
 在仓库根目录执行：
 
@@ -76,7 +77,7 @@ V1.0.1 的启动脚本继续使用已验收的 `tuss4470-acquisition-core:1.0.0`
 需要手动启动时仍可执行：
 
 ```sh
-export USAC_CORE_IMAGE=tuss4470-acquisition-core:1.0.0
+export USAC_CORE_IMAGE=tuss4470-acquisition-core:1.0.1
 export USAC_SERIAL_DEVICE=/dev/serial/by-id/usb-Texas_Instruments_MSP430-USB_Example_<本板32位小写十六进制序列号>-if00
 docker compose -f deploy/compose.jetson.yaml up -d --no-build
 ```

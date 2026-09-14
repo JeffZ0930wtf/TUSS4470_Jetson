@@ -65,7 +65,7 @@ mkdir -p "$core_data_dir" "$spool_dir" "$launcher_log_dir" || fail \
 [ -w "$spool_dir" ] || fail "bridge spool directory is not writable: $spool_dir"
 [ -w "$launcher_log_dir" ] || fail "launcher log directory is not writable: $launcher_log_dir"
 
-export USAC_CORE_IMAGE=${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.0.0}
+export USAC_CORE_IMAGE=${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.0.1}
 export USAC_SERIAL_DEVICE=$serial_device
 export USAC_CORE_DATA_DIR=$core_data_dir
 export USAC_BRIDGE_SPOOL_DIR=$spool_dir

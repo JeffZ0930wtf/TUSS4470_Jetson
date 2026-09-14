@@ -108,7 +108,7 @@ class ServiceLauncherTests(unittest.TestCase):
             serial.touch()
             docker.write_text(
                 "#!/bin/sh\n"
-                'printf "%s\\n" "$*" >> "$FAKE_DOCKER_LOG"\n'
+                'printf "%s\\n" "image=$USAC_CORE_IMAGE $*" >> "$FAKE_DOCKER_LOG"\n'
                 "exit 0\n",
                 encoding="utf-8",
                 newline="\n",
@@ -139,6 +139,7 @@ class ServiceLauncherTests(unittest.TestCase):
                     "USAC_READY_POLL_SECONDS": "0.01",
                 }
             )
+            env.pop("USAC_CORE_IMAGE", None)
             env.pop("DISPLAY", None)
             env.pop("WAYLAND_DISPLAY", None)
 
@@ -151,6 +152,7 @@ class ServiceLauncherTests(unittest.TestCase):
             commands = command_log.read_text(encoding="utf-8").splitlines()
             starts = [line for line in commands if " up -d --no-build" in line]
             self.assertEqual(len(starts), 1)
+            self.assertIn("image=tuss4470-acquisition-core:1.0.1", starts[0])
             self.assertIn("http://127.0.0.1:8000/", result.stdout)
             self.assertIn("device ready", result.stdout.lower())
 

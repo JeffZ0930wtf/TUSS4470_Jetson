@@ -407,7 +407,7 @@ class ProjectLayoutTests(unittest.TestCase):
         compose = (ROOT / "deploy/compose.yaml").read_text(encoding="utf-8")
         dockerfile = (ROOT / "deploy/Dockerfile.core").read_text(encoding="utf-8")
 
-        self.assertIn("${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.0.0}", compose)
+        self.assertIn("${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.0.1}", compose)
         self.assertIn("127.0.0.1:8765:8765", compose)
         self.assertIn("127.0.0.1:8000:8000", compose)
         self.assertIn("USAC_CORE_DATA_DIR", compose)
@@ -436,7 +436,7 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn("/dev/tuss4470", compose)
         self.assertIn("--core-host\n      - core", compose)
         self.assertIn("--core-port\n      - \"8765\"", compose)
-        self.assertIn("${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.0.0}", compose)
+        self.assertIn("${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.0.1}", compose)
         self.assertIn('entrypoint: ["python", "-m", "usac_runtime.bridge_cli"]', compose)
         self.assertNotIn("      - serve\n", compose)
         self.assertIn("--backend\n      - bridge", compose)

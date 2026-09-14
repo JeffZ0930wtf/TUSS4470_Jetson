@@ -9,7 +9,7 @@ which safety limits remain. Protocol details, platform procedures, release
 evidence, and historical development records live in the linked documents.
 
 V1.0.1 adds one-shot Jetson startup from Windows or the Jetson desktop. It
-continues using the accepted `tuss4470-acquisition-core:1.0.0` runtime image;
+uses `tuss4470-acquisition-core:1.0.1`, built from the released V1.0.1 source;
 the acquisition runtime and firmware are unchanged. See the
 [V1.0.1 release notes](docs/release/v1.0.1-release-notes.md) for verification
 scope and the distinction between this source release and the runtime image.
