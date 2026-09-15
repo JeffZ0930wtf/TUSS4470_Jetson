@@ -1,7 +1,7 @@
 """Direction and exact payload-length policy for every USAC message type.
 
-Keeping these checks separate lets host and streaming parsers reject impossible
-frames before allocating or waiting for an attacker-controlled length.
+The incremental parser and protocol tests share these direction and length
+rules. They let the parser reject impossible headers before buffering a payload.
 """
 
 from __future__ import annotations

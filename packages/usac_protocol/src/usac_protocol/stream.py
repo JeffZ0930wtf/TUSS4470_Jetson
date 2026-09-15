@@ -2,6 +2,8 @@
 
 The parser owns a finite buffer, times out incomplete candidates, and discards
 one candidate byte after structural or CRC failure so later magic can be found.
+Protocol tests exercise this parser independently; the runtime bridge adapters
+currently assemble complete frames with their own transport-specific readers.
 """
 
 from __future__ import annotations

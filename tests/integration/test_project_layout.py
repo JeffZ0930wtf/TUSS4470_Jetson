@@ -193,7 +193,9 @@ class ProjectLayoutTests(unittest.TestCase):
         missing = [path for path in required if not (ROOT / path).is_file()]
         self.assertEqual(missing, [])
 
-    def test_completed_milestone_documents_are_archived(self) -> None:
+    def test_retired_document_paths_are_absent(self) -> None:
+        # Exact pre-release paths are retained only to prevent retired
+        # documents from reappearing as active documentation.
         retired_active_paths = [
             "docs/verification/M6/summary.md",
             "docs/m3-capture-transport-design.md",
@@ -209,6 +211,8 @@ class ProjectLayoutTests(unittest.TestCase):
         )
 
     def test_retired_firmware_wrappers_are_absent(self) -> None:
+        # These are retired pre-release entrypoint names, not supported
+        # firmware targets. Keep the literals so their absence is checked.
         retired = [
             "firmware/Makefile",
             "scripts/build-firmware-m2.ps1",
@@ -277,7 +281,7 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn(".tools", windows_bootstrap)
         self.assertIn(".tools", linux_bootstrap)
 
-    def test_container_base_is_digest_pinned_and_registry_is_reachable(self) -> None:
+    def test_container_build_uses_pinned_base_and_locked_dependencies(self) -> None:
         dockerfile = (ROOT / "deploy/Dockerfile.core").read_text(encoding="utf-8")
         dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
 

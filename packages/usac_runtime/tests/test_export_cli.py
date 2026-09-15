@@ -29,7 +29,7 @@ def _stored_capture(database: Path) -> bytes:
     return result.receipt.capture_id
 
 
-def test_m4_show_prints_stored_capture_metadata(
+def test_show_prints_stored_capture_metadata(
     tmp_path: Path, capsys,
 ) -> None:
     database = tmp_path / "acquisition.sqlite3"
@@ -46,7 +46,7 @@ def test_m4_show_prints_stored_capture_metadata(
     assert output["interpolated"] is False
 
 
-def test_m4_download_writes_exact_database_blobs(
+def test_download_writes_exact_database_blobs(
     tmp_path: Path, capsys,
 ) -> None:
     database = tmp_path / "acquisition.sqlite3"

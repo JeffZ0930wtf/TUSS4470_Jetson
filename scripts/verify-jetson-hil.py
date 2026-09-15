@@ -2,8 +2,12 @@
 """Run bounded V1 Jetson HIL checkpoints against an already running core.
 
 The tool is deliberately opt-in by phase. It never retries a hardware command,
-never flashes firmware, and never starts work merely by being imported. Every
-phase leaves the device on the D10x4 Pulse=1 baseline when it completes.
+never flashes firmware, and never starts work merely by being imported.
+Operators must confirm power/reset and the starting configuration before use.
+The range phase starts from the existing configuration; the sweep check assumes
+BPF_HPF_FREQ is 46. BASELINE updates only its listed fields, not a full profile.
+The lease-start phase intentionally leaves a schedule running for a later
+core-pause/lease-verify checkpoint; failures do not guarantee baseline recovery.
 """
 
 from __future__ import annotations

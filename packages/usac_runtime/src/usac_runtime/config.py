@@ -2,6 +2,11 @@
 
 Serial names and storage paths remain opaque so business code does not branch
 on Windows drive letters or Linux device spellings.
+
+The bridge consumes the serial port, baud rate, and spool directory. Its
+--timeout-s option controls I/O timeouts; the core selects its database with
+--database. The parsed timeout_ms, data_dir, and sqlite_path fields remain
+accepted configuration fields but do not override those service options.
 """
 
 from __future__ import annotations

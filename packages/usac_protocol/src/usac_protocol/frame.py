@@ -1,7 +1,8 @@
 """USAC v1 frame header, CRC, and complete-frame validation primitives.
 
-This module handles complete byte strings. Incremental buffering and recovery
-from corrupt candidates belong to :mod:`usac_protocol.stream`.
+This module handles complete byte strings. The reusable incremental parser in
+:mod:`usac_protocol.stream` provides buffering and recovery independently;
+runtime bridge adapters use their own transport-specific frame readers.
 """
 
 from __future__ import annotations

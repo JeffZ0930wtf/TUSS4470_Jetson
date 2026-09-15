@@ -1,4 +1,4 @@
-/* Builds a fixed acquisition CAPTURE_DATA frame as stable segments. CRC is computed
+/* Builds a CAPTURE_DATA frame as stable segments. CRC is computed
  * over those same segments before transmission; samples are never copied. */
 #include "usac_capture_stream.h"
 

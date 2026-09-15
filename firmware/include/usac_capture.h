@@ -1,5 +1,6 @@
-/* Fixed acquisition acquisition contract: one 4096-byte sample buffer and explicit
- * DMA evidence. Later milestones may generalize timing, not this raw layout. */
+/* Raw acquisition contract: one 4096-byte buffer holds 2048 ADC samples.
+ * Timing, pretrigger position, events, and DMA completion are reported
+ * separately; changing acquisition timing does not change the buffer layout. */
 #ifndef USAC_CAPTURE_H
 #define USAC_CAPTURE_H
 

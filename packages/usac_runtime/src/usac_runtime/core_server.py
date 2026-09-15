@@ -1,8 +1,8 @@
-"""Launch the V1 REST/Web core with an explicit device backend.
+"""Launch the REST/Web core with an explicit device backend.
 
 The simulator backend is intentionally named and selected explicitly. It is
 used for software and UI verification only and never claims hardware evidence.
-The physical bridge backend is introduced behind the same application boundary.
+The physical bridge backend uses the same application boundary.
 """
 
 from __future__ import annotations

@@ -34,9 +34,9 @@ def validate_boostxl_direct_applied_config(config: AcquisitionConfigV2) -> None:
             raise ValueError(f"register 0x{address:02X} sets a reserved bit")
     if config.sample_count != 2048:
         raise ValueError("APPLIED config must capture exactly 2048 real samples")
-    # The four GUI presets are conveniences, not the device limit. M5 permits
-    # every integer divider in this range so the stored samples always remain
-    # real ADC points while requested rates are represented by actual ticks.
+    # Accept every integer sample interval from 120 to 960 SMCLK ticks.
+    # Requested rates are represented by actual timer intervals; waveform
+    # samples remain the original ADC values.
     if not 120 <= config.sample_interval_ticks <= 960:
         raise ValueError("sample_interval_ticks is outside the approved range")
 

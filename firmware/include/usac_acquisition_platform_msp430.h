@@ -1,5 +1,5 @@
-/* MSP430 acquisition adapter shared by the accepted fixed acquisition path and the V1
- * configurable path. It is linked only into images allowed to reach timers. */
+/* MSP430 adapter for ADC/DMA acquisition, finite Burst timing, and IO2
+ * loopback evaluation. These functions directly control hardware resources. */
 #ifndef USAC_ACQUISITION_PLATFORM_MSP430_H
 #define USAC_ACQUISITION_PLATFORM_MSP430_H
 
@@ -15,8 +15,11 @@ uint8_t usac_platform_run_io2_loopback(
     uint16_t burst_period_ticks,
     usac_loopback_report_t *report);
 
-/* Performs the fixed 200 kS/s acquisition. Callers must already have applied
- * and read back the authorized d10x4_v1 profile. */
+/* Runs the shared ADC/DMA capture engine. usac_platform_capture() prepares
+ * configurable timing, pretrigger, and Burst state before calling this.
+ * Outside an active configurable capture, only the 200 kS/s D10x4 baseline
+ * timing is accepted. Callers must already have applied and read back the
+ * configuration; this function does not apply a register profile. */
 uint8_t usac_platform_capture_once(
     void *context,
     uint16_t sample_interval_ticks,

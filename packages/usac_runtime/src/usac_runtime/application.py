@@ -1,4 +1,4 @@
-"""Shared M5 application service used by REST, CLI, and browser clients.
+"""Shared acquisition application service used by REST, CLI, and browser clients.
 
 Interface adapters call this object instead of reaching into the parameter
 schema, device simulator, serial transport, or executor independently. This
@@ -134,7 +134,7 @@ def _json_value(value: object) -> object:
 
 
 class AcquisitionApplication:
-    """Own the interface-neutral first-version acquisition use cases."""
+    """Own acquisition use cases independently of the calling interface."""
 
     def __init__(
         self,

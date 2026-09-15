@@ -1,6 +1,6 @@
-/* Defines the verified D10x4 firmware register profile and validates its immutable
- * address/mask/value relationships. It is a bring-up baseline, not a public
- * raw-register interface or the only future transducer configuration. */
+/* Defines the verified D10x4 baseline and validates TUSS4470 register profiles.
+ * Register addresses and masks are fixed; values and timing may vary within
+ * the supported hardware constraints. Application writes remain ordered. */
 #include "tuss4470_profile.h"
 
 static const uint8_t register_addresses[TUSS4470_PROFILE_REGISTER_COUNT] = {

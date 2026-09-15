@@ -124,6 +124,8 @@ def test_web_console_is_served_without_hardcoded_parameter_table() -> None:
     page = api.get("/")
     script = api.get("/assets/app.js")
     styles = api.get("/assets/styles.css")
+    # These retired pre-release asset URLs must stay absent; current clients
+    # use the unprefixed paths above. The old names are test inputs only.
     old_script = api.get("/assets/m5-app.js")
     old_styles = api.get("/assets/m5-styles.css")
 

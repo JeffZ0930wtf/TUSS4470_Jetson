@@ -60,7 +60,7 @@ class RuntimeConfigTests(unittest.TestCase):
             self.assertEqual(windows.serial.port, "COM19")
             self.assertEqual(linux.serial.port, "/dev/ttyACM3")
 
-    def test_storage_environment_overrides_resolve_from_working_directory(self) -> None:
+    def test_absolute_storage_environment_override_is_preserved(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             config_path = self.write_config(root)

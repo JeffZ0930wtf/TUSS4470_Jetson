@@ -1,6 +1,6 @@
-/* Contains the only first-party direct MSP430 register access used by firmware.
- * It establishes IO2 high before output direction, keeps acquisition timers
- * stopped, and maps the TUSS4470 mode-1 16-bit SPI transactions to USCI. */
+/* MSP430 reset-safe GPIO, TUSS4470 SPI, and stopped-timer configuration.
+ * IO2 is driven high before output direction is enabled. ADC/DMA capture and
+ * running Burst timers are owned by usac_acquisition_platform_msp430.c. */
 #include <msp430.h>
 
 #include "usac_firmware_core.h"
@@ -41,7 +41,7 @@ void usac_platform_spi_init(void)
     UCB0CTL1 = UCSWRST;
     P3SEL |= (BIT0 | BIT1 | BIT2);
     /* TUSS4470 SPI mode 1 maps to UCCKPH=0/UCCKPL=0 on MSP430 USCI.
-     * Use 1 MHz during hardware bring-up: 24 MHz SMCLK / 24.
+     * The production SPI clock is 1 MHz: 24 MHz SMCLK / 24.
      */
     UCB0CTL0 = UCMSB | UCMST | UCSYNC;
     UCB0CTL1 = UCSWRST | UCSSEL_2;
@@ -58,7 +58,7 @@ uint8_t usac_platform_stage_timing(
         return 0u;
     }
 
-    /* firmware only preloads divisors. Both timers remain stopped and IO2 stays GPIO-high. */
+    /* Stage divisors without starting either timer; IO2 stays GPIO-high. */
     P2OUT |= TUSS_IO2_BIT;
     P2SEL &= (uint8_t)~TUSS_IO2_BIT;
     P2DIR |= TUSS_IO2_BIT;

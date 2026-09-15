@@ -1,6 +1,6 @@
-/* Minimal side-effect gate used to prevent overlapping command encoding. firmware
- * never starts a transmitter; the type preserves the one-in-flight invariant
- * required by later protocol state without providing a Burst implementation. */
+/* Tracks ownership of the command-response buffer during USB transmission.
+ * Encoding must wait until completion or reset releases the buffer. This
+ * bookkeeping module does not control the ultrasonic transmitter. */
 #include "usac_tx_gate.h"
 
 void usac_tx_gate_reset(usac_tx_gate_t *gate)

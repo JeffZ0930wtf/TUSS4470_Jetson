@@ -1,4 +1,4 @@
-"""First-version loops, delay, sweep, and synchronization plan model.
+"""Finite loops, delay, sweep, and synchronization plan model.
 
 This module expands only finite plans. Infinite operation is deliberately left
 to the firmware-backed periodic lease path so a host failure cannot leave an
@@ -17,7 +17,7 @@ from .parameter_service import ConfigurationSnapshot, ParameterService
 
 
 class RunPlanError(ValueError):
-    """A plan cannot be executed within the first-version safety contract."""
+    """A plan exceeds the supported finite execution or hardware constraints."""
 
 
 @dataclass(frozen=True, slots=True)

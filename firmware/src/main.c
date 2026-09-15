@@ -1,6 +1,7 @@
-/* firmware hardware entry point. It owns reset-safe ordering, the TI USB CDC stack,
- * clock bring-up, bounded command processing, and TUSS4470 configuration.
- * This image deliberately contains no acquisition or Burst execution path. */
+/* Production firmware entry point. It owns reset-safe ordering, clocks,
+ * the TI USB CDC stack, command dispatch, and TUSS4470 configuration.
+ * Acquisition callbacks, periodic scheduling, and waveform transmission are
+ * enabled by the production build; hardware commands remain explicit. */
 #include <msp430.h>
 #include <stdint.h>
 
@@ -297,8 +298,8 @@ static uint8_t initialize_clocks(void)
         return 0u;
     }
 #else
-    /* firmware/acquisition keep their accepted REFO path. XT1 is intentionally unused, so
-     * the base image ignores only the corresponding unused-oscillator flag. */
+    /* Without configurable acquisition, ACLK uses REFO instead of XT1.
+     * Ignore only the fault flag for that unused oscillator. */
     if (usac_firmware_clock_faults_safe((uint8_t)UCSCTL7) == 0u) {
         return 0u;
     }
@@ -495,7 +496,7 @@ int main(void)
     USB_setup(FALSE, TRUE);
     /* TI USB_init() temporarily owns TA1 for XT2 frequency detection and
      * leaves it clocked from SMCLK. Reclaim TA1 only after USB_setup(), so
-     * parser timeouts and V1 leases advance from the intended 32.768 kHz
+     * parser timeouts and periodic leases advance from the intended 32.768 kHz
      * ACLK on a fresh boot as well as after a CDC reconnect. */
     initialize_frame_timeout_timer();
     usac_identity_usb_serial_descriptor(

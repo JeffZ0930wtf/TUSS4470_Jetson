@@ -210,7 +210,7 @@ def test_error_utf8_length_is_explicit_and_bounded() -> None:
     assert decode_error(encoded) == error
 
 
-def test_capabilities_round_trip_covers_first_version_m5_ranges() -> None:
+def test_capabilities_round_trip_preserves_supported_ranges() -> None:
     message = CapabilitiesResponse(
         capability_flags=0x1FF,
         mcu_max_command_payload=192,

@@ -1,7 +1,8 @@
-/* acquisition acceptance-only IO2 loopback implementation for MSP430F5529.
- * BOOSTXL pin40/P2.5/TA2.2 is wired through 2.2 kOhm to pin38/P1.5/TA0.4.
- * TUSS4470 is forced to Standby/VDRV Hi-Z before any IO2 edge, so these
- * eight timer periods test the digital timing path without a Burst. */
+/* MSP430F5529 acquisition hardware: ADC/DMA sampling, finite Burst outputs,
+ * synchronization/event capture, and a separate IO2 timing loopback check.
+ * Loopback alone requires BOOSTXL pin40/P2.5/TA2.2 wired through 2.2 kOhm
+ * to pin38/P1.5/TA0.4 and forces Standby/VDRV Hi-Z before its IO2 edges.
+ * That check emits no Burst; normal acquisition uses the applied profile. */
 #include <msp430.h>
 
 #include "tuss4470_configurator.h"

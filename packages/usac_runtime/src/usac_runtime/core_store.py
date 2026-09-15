@@ -161,12 +161,16 @@ class CaptureStore:
                 )
                 """
             )
-            self._migrate_m5(connection)
-            self._migrate_m6_save_policy(connection)
+            self._ensure_capture_metadata_schema(connection)
+            self._ensure_save_policy_schema(connection)
 
     @staticmethod
-    def _migrate_m5(connection: sqlite3.Connection) -> None:
-        """Add M5 metadata without replacing an existing M4 capture table."""
+    def _ensure_capture_metadata_schema(connection: sqlite3.Connection) -> None:
+        """Ensure metadata columns, the session index, and configuration contexts.
+
+        Missing columns are added in place so existing capture rows survive
+        when a database created with fewer metadata fields is reopened.
+        """
 
         columns = {row[1] for row in connection.execute("PRAGMA table_info(captures)")}
         additions = {
@@ -203,8 +207,8 @@ class CaptureStore:
         )
 
     @staticmethod
-    def _migrate_m6_save_policy(connection: sqlite3.Connection) -> None:
-        """Add bounded processing receipts and one rolling frame per session."""
+    def _ensure_save_policy_schema(connection: sqlite3.Connection) -> None:
+        """Ensure tables for save-policy decisions, rolling frames, and sessions."""
 
         connection.execute(
             """

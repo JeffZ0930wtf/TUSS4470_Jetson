@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SCHEMA_PATH = ROOT / "protocol/schema/usac-protocol-v1.json"
 
 
-def test_protocol_schema_defines_header_crc_and_first_m1_messages() -> None:
+def test_protocol_schema_defines_header_crc_and_supported_messages() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
     assert schema["byte_order"] == "little"
@@ -54,7 +54,7 @@ def test_protocol_schema_defines_header_crc_and_first_m1_messages() -> None:
     assert schema["capability_flags"]["EXTERNAL_SYNC_V1"] == 0x40
 
 
-def test_protocol_schema_expands_config_capture_fields_and_error_codes() -> None:
+def test_protocol_schema_defines_config_capture_fields_and_error_codes() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
     assert [field["name"] for field in schema["acquisition_config_v2"]["fields"]] == [

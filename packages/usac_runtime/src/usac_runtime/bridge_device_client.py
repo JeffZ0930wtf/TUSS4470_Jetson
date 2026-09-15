@@ -1,8 +1,8 @@
 """Core-side device adapter for the persistent bridge byte stream.
 
-M5 keeps policy, serialization, and SQLite ownership in core. This adapter
-sends ordinary USAC commands through the bridge, while accepting CAPTURE_DATA
-only inside a durable BRIDGE_CAPTURE_DELIVERY.
+Core owns acquisition policy, command serialization, and its SQLite archive.
+This adapter sends ordinary USAC commands through the bridge, while accepting
+CAPTURE_DATA only inside a durable BRIDGE_CAPTURE_DELIVERY.
 """
 
 from __future__ import annotations

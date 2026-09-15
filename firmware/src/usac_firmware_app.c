@@ -1,7 +1,8 @@
-/* Implements firmware request semantics above the bounded byte parser. It owns
- * HELLO/configuration state, duplicate SET_CONFIG responses, and safe session
- * shutdown. Later milestone handlers are compiled only into their dedicated
- * image so the accepted firmware/acquisition binaries retain their original command set. */
+/* Implements firmware request semantics above the bounded byte parser:
+ * HELLO/configuration state, duplicate SET_CONFIG responses, capture commands,
+ * and safe session shutdown. USAC_ENABLE_ACQUISITION adds configurable capture
+ * and periodic lease handlers in the production build; core simulator tests
+ * also exercise the base command path without that compile-time option. */
 #include "usac_firmware_app.h"
 
 #include "usac_identity.h"

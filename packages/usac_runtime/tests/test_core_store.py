@@ -228,7 +228,7 @@ def test_core_store_rejects_non_capture_inner_frame(tmp_path: Path) -> None:
     assert store.capture_count() == 0
 
 
-def test_m5_context_events_and_quality_are_committed_with_capture(tmp_path: Path) -> None:
+def test_context_events_and_quality_are_committed_with_capture(tmp_path: Path) -> None:
     path = tmp_path / "acquisition.sqlite3"
     store = CaptureStore(path)
     capture = decode_capture_data(decode_frame(_raw_capture()).payload)
@@ -261,7 +261,7 @@ def test_m5_context_events_and_quality_are_committed_with_capture(tmp_path: Path
     assert events[0].subsample_tick == capture.events[0].subsample_tick
 
 
-def test_existing_m4_database_is_migrated_without_losing_capture(tmp_path: Path) -> None:
+def test_capture_survives_database_reopen(tmp_path: Path) -> None:
     path = tmp_path / "acquisition.sqlite3"
     store = CaptureStore(path)
     result = store.commit_delivery(_delivery())

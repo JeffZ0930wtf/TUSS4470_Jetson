@@ -1,6 +1,7 @@
-# Structural acceptance gate for the production ADC/DMA path. It verifies the
-# one-buffer 2048-point layout and 64-sample hardware pretrigger counter; it
-# does not claim analog accuracy or execute a Burst.
+# Structural checks over ADC/DMA sources and the production ELF. They cover
+# the one-buffer 2048-point layout and retained pretrigger/transport patterns.
+# Source regexes include conditional branches; they do not establish complete
+# production-path coverage or analog accuracy, and never execute a Burst.
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
@@ -82,6 +83,8 @@ if ($allSource -match 'report->captured_samples\s*=\s*\(uint16_t\)\(USAC_CAPTURE
     throw 'completed capture still derives success count from reloaded DMA0SZ'
 }
 
+# This retired pre-release identifier is a negative regression check, not a
+# supported chunking API. Keep the literal to reject its reintroduction.
 if ($stream -match 'USAC_M3_CAPTURE_CHUNK_MAX' -or
     $stream -match 'usac_capture_stream_next') {
     throw 'CAPTURE_DATA frame source still exposes advancing 64-byte application chunks'

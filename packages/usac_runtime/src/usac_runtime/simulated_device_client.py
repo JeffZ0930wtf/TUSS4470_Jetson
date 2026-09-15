@@ -1,4 +1,4 @@
-"""In-process device client for M5 protocol and interface verification.
+"""In-process device client for protocol and application verification.
 
 This adapter exercises the real USAC payload codecs and the deterministic
 simulator without opening a serial port. It is a test/development backend, not
@@ -194,7 +194,7 @@ class SimulatedDeviceClient:
         return decode_status_response(response[0].payload)
 
     def capabilities(self) -> CapabilitiesResponse:
-        """Return the typed GET_CAPABILITIES response used by later interfaces."""
+        """Return the simulator's typed GET_CAPABILITIES response."""
 
         response = self._device.handle(
             Frame(MessageType.GET_CAPABILITIES, self._next_sequence(), b"")

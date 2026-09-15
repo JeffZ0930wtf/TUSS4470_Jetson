@@ -1,5 +1,5 @@
 /* Commit-after-completion state machine for a CAPTURE_DATA frame. Separating
- * this policy from TI CDC keeps BUSY/retry and future delivery semantics from
+ * this policy from TI CDC keeps BUSY handling and completion-driven progress from
  * leaking into the frame encoder or acquisition path. */
 #include "usac_capture_tx.h"
 
