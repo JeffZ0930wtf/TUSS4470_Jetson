@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from usac_runtime.core_store import CaptureRecord, CaptureStore
+from usac_runtime.group_export import write_group_export
 
 
 def _capture_id(value: str) -> bytes:
@@ -18,6 +19,14 @@ def _capture_id(value: str) -> bytes:
     if len(decoded) != 16:
         raise argparse.ArgumentTypeError("capture_id must encode exactly 16 bytes")
     return decoded
+
+
+def _group_id(value: str) -> str:
+    if len(value) != 32 or any(char not in "0123456789abcdef" for char in value):
+        raise argparse.ArgumentTypeError(
+            "group_id must be exactly 32 lowercase hexadecimal characters"
+        )
+    return value
 
 
 def _metadata(record: CaptureRecord) -> dict[str, object]:
@@ -47,11 +56,35 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--capture-id", type=_capture_id, required=True)
         if name == "download":
             command.add_argument("--output-dir", type=Path, required=True)
+    group = commands.add_parser("group")
+    group.add_argument("--sqlite", type=Path, required=True)
+    group.add_argument("--group-id", type=_group_id, required=True)
+    group.add_argument("--output", type=Path, required=True)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "group":
+        if not args.sqlite.is_file():
+            raise SystemExit(f"SQLite database does not exist: {args.sqlite}")
+        output = args.output.resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("w+b") as archive:
+            manifest = write_group_export(
+                CaptureStore(args.sqlite),
+                args.group_id,
+                archive,
+            )
+        print(
+            json.dumps(
+                {**manifest, "output": str(output)},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
     record = CaptureStore(args.sqlite).get_capture(args.capture_id)
     metadata = _metadata(record)
     if args.command == "show":

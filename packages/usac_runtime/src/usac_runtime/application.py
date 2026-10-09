@@ -14,7 +14,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 import struct
 import threading
 import time
-from typing import Callable, Protocol
+from typing import BinaryIO, Callable, Protocol
 import uuid
 
 from usac_protocol.bridge_messages import BridgeCaptureDelivery
@@ -27,6 +27,7 @@ from .device_executor import (
     ExecutedCapture,
     SingleDeviceExecutor,
 )
+from .group_export import write_group_export
 from .parameter_service import ConfigurationSnapshot, ParameterService, ValidationResult
 from .periodic_lease import PeriodicLeaseController, PeriodicSchedule
 from .run_plan import RunPlanV1, SweepPlan, compile_run_steps
@@ -66,6 +67,7 @@ class _PeriodicSession:
     session_id: bytes
     schedule: PeriodicSchedule
     save_policy: SavePolicy = SavePolicy.SAVE_ALL
+    group_id: str | None = None
     state: str = "RUNNING"
     capture_count: int = 0
     saved_count: int = 0
@@ -87,6 +89,7 @@ class _PeriodicSession:
 class _SweepSession:
     session_id: bytes
     plan: RunPlanV1
+    group_id: str | None = None
     state: str = "RUNNING"
     capture_count: int = 0
     saved_count: int = 0
@@ -371,25 +374,80 @@ class AcquisitionApplication:
             raise CaptureStorageUnavailable("capture storage is not configured")
         return self._store
 
+    def grouping_metadata(self, group_id: str | None) -> dict[str, object]:
+        return self._require_store().grouping_metadata(group_id)
+
+    def list_experiments(self) -> list[dict[str, object]]:
+        return self._require_store().list_experiments()
+
+    def create_experiment(self, *, name: str, notes: str = "") -> dict[str, object]:
+        return self._require_store().create_experiment(name=name, notes=notes)
+
+    def update_experiment(
+        self, experiment_id: str, changes: dict[str, object]
+    ) -> dict[str, object]:
+        return self._require_store().update_experiment(experiment_id, **changes)
+
+    def list_groups(self, experiment_id: str) -> list[dict[str, object]]:
+        return self._require_store().list_groups(experiment_id)
+
+    def create_group(
+        self,
+        experiment_id: str,
+        *,
+        name: str,
+        cell_id: str = "",
+        notes: str = "",
+    ) -> dict[str, object]:
+        return self._require_store().create_group(
+            experiment_id,
+            name=name,
+            cell_id=cell_id,
+            notes=notes,
+        )
+
+    def update_group(self, group_id: str, changes: dict[str, object]) -> dict[str, object]:
+        return self._require_store().update_group(group_id, **changes)
+
+    def assign_capture_group(
+        self, capture_ids: tuple[bytes, ...], group_id: str | None
+    ) -> int:
+        return self._require_store().assign_capture_group(capture_ids, group_id)
+
+    def write_group_export(self, group_id: str, output: BinaryIO) -> dict[str, object]:
+        return write_group_export(self._require_store(), group_id, output)
+
+    def _refresh_summary_grouping(
+        self, summary: dict[str, object]
+    ) -> dict[str, object]:
+        grouping = summary.get("grouping_metadata")
+        group_id = grouping.get("group_id") if isinstance(grouping, dict) else None
+        summary["grouping_metadata"] = self.grouping_metadata(group_id)
+        return summary
+
     def _register_delivery_policy(
         self,
         *,
         session_id: str,
         save_policy: SavePolicy,
+        group_id: str | None,
     ) -> tuple[bytes, bytes]:
         """Persist host-only replay context before any capture can be emitted."""
 
+        store = self._require_store()
+        normalized_group_id = store.grouping_metadata(group_id)["group_id"]
         self._require_device()
         session = self._executor.try_device_view(refresh=False).session
         device_id = session.device_id
         boot_id = session.boot_id
         if device_id is None or boot_id is None:
             raise DeviceUnavailable("device HELLO identity is unavailable")
-        self._require_store().register_delivery_policy(
+        store.register_delivery_policy(
             device_id=device_id,
             boot_id=boot_id,
             session_id=session_id,
             save_policy=save_policy,
+            group_id=normalized_group_id,
         )
         return device_id, boot_id
 
@@ -401,6 +459,7 @@ class AcquisitionApplication:
         snapshot: ConfigurationSnapshot | None = None,
         save_policy: SavePolicy = SavePolicy.SAVE_ALL,
         session_id: str | None = None,
+        group_id: str | None = None,
         on_resolved: Callable[[_PersistedCapture], None] | None = None,
     ) -> _PersistedCapture:
         store = self._require_store()
@@ -437,6 +496,7 @@ class AcquisitionApplication:
             delivery,
             save_policy=save_policy,
             session_id=session_id,
+            group_id=group_id,
         )
         if result.resolution is CaptureResolution.RAW_ARCHIVED:
             payload = self.capture(capture.capture_id.hex())
@@ -463,6 +523,7 @@ class AcquisitionApplication:
                 "readback_config": _json_value(snapshot.readback),
                 "actual_config": _json_value(snapshot.actual),
                 "run_plan": run_plan,
+                "grouping_metadata": self.grouping_metadata(group_id),
                 "adc_clipping": any(
                     sample in (0, (1 << capture.adc_bits) - 1)
                     for sample in capture.samples
@@ -497,10 +558,13 @@ class AcquisitionApplication:
         trigger_source: str,
         sync_timeout_ms: int,
         save_policy: SavePolicy = SavePolicy.SAVE_ALL,
+        group_id: str | None = None,
     ) -> dict[str, object]:
         """Capture once and report success only after the SQLite commit."""
 
         store = self._require_store()
+        grouping = store.grouping_metadata(group_id)
+        group_id = grouping["group_id"]
         self._require_device()
         self._require_idle()
         session_id = uuid.uuid4().hex
@@ -517,12 +581,14 @@ class AcquisitionApplication:
             "trigger_source": trigger_source,
             "sync_timeout_ms": sync_timeout_ms,
             "save_policy": save_policy.value,
+            "group_id": group_id,
             "sweep": None,
         }
         summary: dict[str, object] = {
             "session_id": session_id,
             "kind": "SINGLE",
             "state": "RUNNING",
+            "grouping_metadata": grouping,
             "save_policy": save_policy.value,
             "requested_count": 1,
             "acquired_count": 0,
@@ -538,6 +604,7 @@ class AcquisitionApplication:
         self._register_delivery_policy(
             session_id=session_id,
             save_policy=storage_policy,
+            group_id=group_id,
         )
         store.save_session_summary(summary)
 
@@ -546,6 +613,7 @@ class AcquisitionApplication:
             summary.update(
                 {
                     **persisted.payload,
+                    "grouping_metadata": self.grouping_metadata(group_id),
                     "acquired_count": 1,
                     "saved_count": int(
                         persisted.resolution is CaptureResolution.RAW_ARCHIVED
@@ -575,6 +643,7 @@ class AcquisitionApplication:
                     snapshot=executed.snapshot,
                     save_policy=storage_policy,
                     session_id=session_id,
+                    group_id=group_id,
                     on_resolved=record_resolved,
                 )
 
@@ -594,6 +663,7 @@ class AcquisitionApplication:
                     "finished_utc_ns": time.time_ns(),
                 }
             )
+            summary["grouping_metadata"] = self.grouping_metadata(group_id)
             store.finalize_session_summary(summary)
             raise
         finally:
@@ -624,12 +694,14 @@ class AcquisitionApplication:
         summary.update(
             {
                 **payload,
+                "grouping_metadata": self.grouping_metadata(group_id),
                 "state": "COMPLETED",
                 "terminal_reason": "COMPLETED",
                 "finished_utc_ns": time.time_ns(),
             }
         )
         final_summary = store.finalize_session_summary(summary)
+        payload["grouping_metadata"] = self.grouping_metadata(group_id)
         for key in (
             "acquired_count",
             "saved_count",
@@ -714,8 +786,7 @@ class AcquisitionApplication:
         )
         self._require_store().save_session_summary(payload)
 
-    @staticmethod
-    def _periodic_payload(session: _PeriodicSession) -> dict[str, object]:
+    def _periodic_payload(self, session: _PeriodicSession) -> dict[str, object]:
         recent = list(session.capture_ids)
         return {
             "session_id": session.session_id.hex(),
@@ -739,6 +810,7 @@ class AcquisitionApplication:
             "started_utc_ns": session.started_utc_ns,
             "finished_utc_ns": session.finished_utc_ns,
             "terminal_reason": session.terminal_reason,
+            "grouping_metadata": self.grouping_metadata(session.group_id),
         }
 
     def _clear_async_capture_handler(self, handler) -> None:
@@ -756,10 +828,10 @@ class AcquisitionApplication:
             "capture_count": session.schedule.capture_count,
             "lease_timeout_ms": session.schedule.lease_timeout_ms,
             "save_policy": session.save_policy.value,
+            "group_id": session.group_id,
         }
 
-    @staticmethod
-    def _sweep_payload(session: _SweepSession) -> dict[str, object]:
+    def _sweep_payload(self, session: _SweepSession) -> dict[str, object]:
         recent = list(session.capture_ids)
         return {
             "session_id": session.session_id.hex(),
@@ -780,6 +852,7 @@ class AcquisitionApplication:
             "started_utc_ns": session.started_utc_ns,
             "finished_utc_ns": session.finished_utc_ns,
             "terminal_reason": session.terminal_reason,
+            "grouping_metadata": self.grouping_metadata(session.group_id),
         }
 
     def start_periodic(
@@ -791,10 +864,13 @@ class AcquisitionApplication:
         capture_count: int,
         lease_timeout_ms: int,
         save_policy: SavePolicy = SavePolicy.SAVE_ALL,
+        group_id: str | None = None,
     ) -> dict[str, object]:
         """Start one firmware-leased schedule and a core-owned renewal worker."""
 
-        self._require_store()
+        store = self._require_store()
+        grouping = store.grouping_metadata(group_id)
+        group_id = grouping["group_id"]
         self._require_device()
         try:
             profile_sha256 = bytes.fromhex(expected_profile_sha256)
@@ -823,7 +899,12 @@ class AcquisitionApplication:
                 lease_timeout_ms=lease_timeout_ms,
             )
             schedule.validate()
-            session = _PeriodicSession(uuid.uuid4().bytes, schedule, save_policy)
+            session = _PeriodicSession(
+                uuid.uuid4().bytes,
+                schedule,
+                save_policy,
+                group_id=group_id,
+            )
             controller = PeriodicLeaseController(self._executor)
             snapshot = self._executor.snapshot()
 
@@ -842,6 +923,7 @@ class AcquisitionApplication:
                     snapshot=snapshot,
                     save_policy=session.save_policy,
                     session_id=session.session_id.hex(),
+                    group_id=session.group_id,
                     on_resolved=record_resolved,
                 )
                 return True
@@ -850,6 +932,7 @@ class AcquisitionApplication:
             policy_device_id, policy_boot_id = self._register_delivery_policy(
                 session_id=session.session_id.hex(),
                 save_policy=session.save_policy,
+                group_id=session.group_id,
             )
             install_handler = getattr(self._device, "set_async_capture_handler", None)
             try:
@@ -888,10 +971,13 @@ class AcquisitionApplication:
         trigger_source: str,
         sync_timeout_ms: int,
         save_policy: SavePolicy = SavePolicy.SAVE_ALL,
+        group_id: str | None = None,
     ) -> dict[str, object]:
         """Validate a finite sweep, then run it without interleaved commands."""
 
-        self._require_store()
+        store = self._require_store()
+        grouping = store.grouping_metadata(group_id)
+        group_id = grouping["group_id"]
         self._require_device()
         self._executor.require_applied_identity(
             expected_profile_sha256,
@@ -910,7 +996,7 @@ class AcquisitionApplication:
         # Compile once before returning 202 so invalid plans are synchronous
         # client errors and never create a background session.
         compile_run_steps(self._service, baseline, plan)
-        session = _SweepSession(uuid.uuid4().bytes, plan)
+        session = _SweepSession(uuid.uuid4().bytes, plan, group_id=group_id)
         with self._session_lock:
             if any(
                 item.state in {"RUNNING", "STOPPING"}
@@ -921,6 +1007,7 @@ class AcquisitionApplication:
             self._register_delivery_policy(
                 session_id=session.session_id.hex(),
                 save_policy=session.plan.save_policy,
+                group_id=session.group_id,
             )
             self._sessions[session.session_id] = session
             self._save_session(session)
@@ -941,6 +1028,7 @@ class AcquisitionApplication:
             run_plan["session_id"] = session.session_id.hex()
             run_plan["sweep_index"] = result.sweep_index
             run_plan["loop_index"] = result.loop_index
+            run_plan["group_id"] = session.group_id
             def record_resolved(stored: _PersistedCapture) -> None:
                 with session.control_lock:
                     self._record_capture(session, stored)
@@ -952,6 +1040,7 @@ class AcquisitionApplication:
                 snapshot=result.snapshot,
                 save_policy=session.plan.save_policy,
                 session_id=session.session_id.hex(),
+                group_id=session.group_id,
                 on_resolved=record_resolved,
             )
 
@@ -1006,7 +1095,7 @@ class AcquisitionApplication:
                     raise KeyError(f"unknown sweep {session_id}") from error
                 if persisted.get("kind") != "SWEEP":
                     raise KeyError(f"session {session_id} is not a sweep") from error
-                return persisted
+                return self._refresh_summary_grouping(persisted)
         if not isinstance(session, _SweepSession):
             raise KeyError(f"session {session_id} is not a sweep")
         with session.control_lock:
@@ -1173,7 +1262,8 @@ class AcquisitionApplication:
                 session = self._sessions[identifier]
             except KeyError as error:
                 try:
-                    return self._require_store().get_session_summary(session_id)
+                    summary = self._require_store().get_session_summary(session_id)
+                    return self._refresh_summary_grouping(summary)
                 except KeyError:
                     raise KeyError(f"unknown session {session_id}") from error
         with session.control_lock:
@@ -1194,12 +1284,16 @@ class AcquisitionApplication:
                 raise
             payload = dict(transient.payload)
             payload["storage"] = transient.storage
+            grouping = payload.get("grouping_metadata")
+            group_id = grouping.get("group_id") if isinstance(grouping, dict) else None
+            payload["grouping_metadata"] = self.grouping_metadata(group_id)
             return payload
         payload = self._capture_payload(
             record,
             events=store.get_capture_events(identifier),
         )
         payload["storage"] = "ARCHIVE"
+        payload["grouping_metadata"] = self.grouping_metadata(record.group_id)
         return payload
 
     def captures(
@@ -1208,6 +1302,9 @@ class AcquisitionApplication:
         limit: int,
         cursor: str | None,
         session_id: str | None = None,
+        experiment_id: str | None = None,
+        group_id: str | None = None,
+        ungrouped: bool = False,
     ) -> dict[str, object]:
         """Return a bounded, stable page without loading waveform BLOBs."""
 
@@ -1222,9 +1319,18 @@ class AcquisitionApplication:
             after_row_id=after_row_id,
             limit=limit,
             session_id=session_id,
+            experiment_id=experiment_id,
+            group_id=group_id,
+            ungrouped=ungrouped,
         )
+        payload_items = []
+        for item in items:
+            payload = _json_value(item)
+            assert isinstance(payload, dict)
+            payload["grouping_metadata"] = self.grouping_metadata(item.group_id)
+            payload_items.append(payload)
         return {
-            "items": [_json_value(item) for item in items],
+            "items": payload_items,
             "next_cursor": None if next_cursor is None else str(next_cursor),
         }
 

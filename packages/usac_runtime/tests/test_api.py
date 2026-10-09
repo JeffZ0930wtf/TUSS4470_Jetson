@@ -118,6 +118,301 @@ def test_storage_endpoint_does_not_require_a_connected_device(tmp_path: Path) ->
     assert response.json()["backend"] == "sqlite"
 
 
+def test_grouping_rest_contracts_work_without_a_connected_device(tmp_path: Path) -> None:
+    service = ParameterService.from_schema_file(SCHEMA_PATH, smclk_hz=24_000_000)
+    device = ReconnectableBridgeDeviceClient()
+    application = AcquisitionApplication(
+        service,
+        SingleDeviceExecutor(service, device),
+        device,
+        store=CaptureStore(tmp_path / "offline-grouping.sqlite3"),
+    )
+    api = TestClient(create_api(application))
+
+    experiment = api.post(
+        "/api/v1/experiments", json={"name": "  Tank A  ", "notes": "baseline"}
+    )
+
+    assert experiment.status_code == 201
+    assert experiment.json()["name"] == "Tank A"
+    experiment_id = experiment.json()["experiment_id"]
+    group = api.post(
+        f"/api/v1/experiments/{experiment_id}/groups",
+        json={"name": "  sweep 1 ", "cell_id": "cell-04", "notes": "initial"},
+    )
+    assert group.status_code == 201
+    group_id = group.json()["group_id"]
+    updated_experiment = api.patch(
+        f"/api/v1/experiments/{experiment_id}", json={"name": "Tank B"}
+    )
+    updated_group = api.patch(
+        f"/api/v1/groups/{group_id}", json={"notes": "reviewed"}
+    )
+
+    assert updated_experiment.status_code == 200
+    assert updated_experiment.json()["name"] == "Tank B"
+    assert updated_group.status_code == 200
+    assert updated_group.json()["notes"] == "reviewed"
+    assert (
+        api.get("/api/v1/experiments").json()["items"][0]["experiment_id"]
+        == experiment_id
+    )
+    assert (
+        api.get(f"/api/v1/experiments/{experiment_id}/groups").json()["items"][0][
+            "group_id"
+        ]
+        == group_id
+    )
+    assert api.get("/api/v1/device").json()["connected"] is False
+
+    assert api.patch(
+        f"/api/v1/experiments/{experiment_id}", json={"experiment_id": "bad"}
+    ).status_code == 422
+    assert api.post("/api/v1/experiments", json={"name": "x", "extra": True}).status_code == 422
+
+
+def test_grouping_requires_storage_and_rejects_bad_group_before_device_io(
+    tmp_path: Path,
+) -> None:
+    no_store = client().get("/api/v1/experiments")
+    assert no_store.status_code == 503
+
+    service = ParameterService.from_schema_file(SCHEMA_PATH, smclk_hz=24_000_000)
+    device = ReconnectableBridgeDeviceClient()
+    application = AcquisitionApplication(
+        service,
+        SingleDeviceExecutor(service, device),
+        device,
+        store=CaptureStore(tmp_path / "offline-invalid-group.sqlite3"),
+    )
+    api = TestClient(create_api(application))
+    body = {
+        "expected_profile_sha256": "0" * 64,
+        "expected_device_config_crc32": 0,
+        "trigger_source": "SOFTWARE",
+        "sync_timeout_ms": 0,
+        "group_id": "not-an-id",
+    }
+
+    assert api.post("/api/v1/captures", json=body).status_code == 422
+    body["group_id"] = "f" * 32
+    missing = api.post("/api/v1/captures", json=body)
+    assert missing.status_code == 404
+
+
+def test_capture_group_metadata_history_filters_and_atomic_assignment(
+    tmp_path: Path,
+) -> None:
+    api = client(tmp_path / "grouping-api.sqlite3")
+    experiment = api.post("/api/v1/experiments", json={"name": "tank"}).json()
+    experiment_id = experiment["experiment_id"]
+    group_a = api.post(
+        f"/api/v1/experiments/{experiment_id}/groups",
+        json={"name": "run A", "cell_id": "cell-A"},
+    ).json()
+    group_b = api.post(
+        f"/api/v1/experiments/{experiment_id}/groups",
+        json={"name": "run B", "cell_id": "cell-B"},
+    ).json()
+    applied = api.put(
+        "/api/v1/config", headers={"If-Match": ZERO_ETAG}, json={"changes": {}}
+    ).json()
+
+    def capture(group_id: str | None) -> dict[str, object]:
+        response = api.post(
+            "/api/v1/captures",
+            json={
+                "expected_profile_sha256": applied["actual"]["profile_sha256"],
+                "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+                "group_id": group_id,
+            },
+        )
+        assert response.status_code == 201
+        return response.json()
+
+    first = capture(group_a["group_id"])
+    second = capture(group_a["group_id"])
+    third = capture(group_b["group_id"])
+    fourth = capture(None)
+    assert first["grouping_metadata"] == {
+        "group_id": group_a["group_id"],
+        "experiment_id": experiment_id,
+        "group_name": "run A",
+        "experiment_name": "tank",
+        "cell_id": "cell-A",
+    }
+    first_detail = api.get(f"/api/v1/captures/{first['capture_id']}").json()
+    assert first_detail["grouping_metadata"] == first["grouping_metadata"]
+    assert fourth["grouping_metadata"] == {
+        "group_id": None,
+        "experiment_id": None,
+        "group_name": None,
+        "experiment_name": None,
+        "cell_id": None,
+    }
+
+    first_page = api.get(
+        f"/api/v1/captures?group_id={group_a['group_id']}&limit=1"
+    ).json()
+    second_page = api.get(
+        f"/api/v1/captures?group_id={group_a['group_id']}&limit=1"
+        f"&cursor={first_page['next_cursor']}"
+    ).json()
+    all_experiment = api.get(
+        f"/api/v1/captures?experiment_id={experiment_id}&limit=10"
+    ).json()["items"]
+    ungrouped = api.get("/api/v1/captures?ungrouped=true").json()["items"]
+    assert [item["capture_id"] for item in first_page["items"]] == [first["capture_id"]]
+    assert [item["capture_id"] for item in second_page["items"]] == [second["capture_id"]]
+    assert [item["capture_id"] for item in all_experiment] == [
+        first["capture_id"], second["capture_id"], third["capture_id"]
+    ]
+    assert all("grouping_metadata" in item for item in all_experiment + ungrouped)
+    assert [item["capture_id"] for item in ungrouped] == [fourth["capture_id"]]
+
+    failed_assignment = api.post(
+        "/api/v1/captures/group-assignment",
+        json={
+            "capture_ids": [first["capture_id"], "ab" * 16],
+            "group_id": group_b["group_id"],
+        },
+    )
+    assert failed_assignment.status_code == 404
+    first_after_rollback = api.get(f"/api/v1/captures/{first['capture_id']}").json()
+    assert first_after_rollback["grouping_metadata"]["group_id"] == group_a["group_id"]
+    assigned = api.post(
+        "/api/v1/captures/group-assignment",
+        json={
+            "capture_ids": [first["capture_id"], first["capture_id"]],
+            "group_id": group_b["group_id"],
+        },
+    )
+    assert assigned.status_code == 200
+    assert assigned.json() == {"assigned_count": 1}
+    first_after_assignment = api.get(f"/api/v1/captures/{first['capture_id']}").json()
+    assert first_after_assignment["grouping_metadata"]["group_id"] == group_b["group_id"]
+    filtered = api.get(
+        f"/api/v1/captures?session_id={fourth['session_id']}&ungrouped=true"
+    ).json()["items"]
+    assert filtered[0]["capture_id"] == fourth["capture_id"]
+
+
+def test_session_group_binding_survives_manual_capture_reassignment(
+    tmp_path: Path,
+) -> None:
+    api = client(tmp_path / "frozen-grouping.sqlite3")
+    experiment_id = api.post(
+        "/api/v1/experiments", json={"name": "freeze"}
+    ).json()["experiment_id"]
+    group_a = api.post(
+        f"/api/v1/experiments/{experiment_id}/groups", json={"name": "original"}
+    ).json()
+    group_b = api.post(
+        f"/api/v1/experiments/{experiment_id}/groups", json={"name": "later"}
+    ).json()
+    applied = api.put(
+        "/api/v1/config", headers={"If-Match": ZERO_ETAG}, json={"changes": {}}
+    ).json()
+    started = api.post(
+        "/api/v1/sweeps",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+            "field": "BURST_PULSE",
+            "values": [2],
+            "loops": 1,
+            "group_id": group_a["group_id"],
+        },
+    )
+
+    assert started.status_code == 202
+    sweep_id = started.json()["session_id"]
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        summary = api.get(f"/api/v1/sweeps/{sweep_id}").json()
+        if summary["state"] == "COMPLETED":
+            break
+        time.sleep(0.01)
+    assert summary["state"] == "COMPLETED"
+    capture_id = summary["last_capture_id"]
+    assignment = api.post(
+        "/api/v1/captures/group-assignment",
+        json={"capture_ids": [capture_id], "group_id": group_b["group_id"]},
+    )
+
+    assert assignment.status_code == 200
+    api.patch(
+        f"/api/v1/experiments/{experiment_id}", json={"name": "renamed freeze"}
+    )
+    api.patch(
+        f"/api/v1/groups/{group_a['group_id']}",
+        json={"name": "renamed original"},
+    )
+    summary = api.get(f"/api/v1/sweeps/{sweep_id}").json()
+    assert summary["grouping_metadata"]["group_id"] == group_a["group_id"]
+    assert summary["grouping_metadata"]["group_name"] == "renamed original"
+    assert summary["grouping_metadata"]["experiment_name"] == "renamed freeze"
+    detail = api.get(f"/api/v1/captures/{capture_id}").json()
+    assert detail["grouping_metadata"]["group_id"] == group_b["group_id"]
+
+
+def test_periodic_group_binding_is_unchanged_by_a_later_capture_request(
+    tmp_path: Path,
+) -> None:
+    api = client(tmp_path / "periodic-group-binding.sqlite3")
+    experiment_id = api.post(
+        "/api/v1/experiments", json={"name": "periodic"}
+    ).json()["experiment_id"]
+    group_a = api.post(
+        f"/api/v1/experiments/{experiment_id}/groups", json={"name": "first task"}
+    ).json()
+    group_b = api.post(
+        f"/api/v1/experiments/{experiment_id}/groups", json={"name": "later task"}
+    ).json()
+    applied = api.put(
+        "/api/v1/config", headers={"If-Match": ZERO_ETAG}, json={"changes": {}}
+    ).json()
+    started = api.post(
+        "/api/v1/periodic/start",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+            "period_us": 100_000,
+            "capture_count": 1,
+            "lease_timeout_ms": 1_000,
+            "group_id": group_a["group_id"],
+        },
+    )
+
+    assert started.status_code == 202
+    session_id = started.json()["session_id"]
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        summary = api.get(f"/api/v1/sessions/{session_id}").json()
+        if summary["state"] == "COMPLETED":
+            break
+        time.sleep(0.01)
+    assert summary["state"] == "COMPLETED"
+    assert summary["grouping_metadata"]["group_id"] == group_a["group_id"]
+    assert api.get(
+        f"/api/v1/captures/{summary['last_capture_id']}"
+    ).json()["grouping_metadata"]["group_id"] == group_a["group_id"]
+
+    later = api.post(
+        "/api/v1/captures",
+        json={
+            "expected_profile_sha256": applied["actual"]["profile_sha256"],
+            "expected_device_config_crc32": applied["actual"]["device_config_crc32"],
+            "group_id": group_b["group_id"],
+        },
+    )
+
+    assert later.status_code == 201
+    assert later.json()["grouping_metadata"]["group_id"] == group_b["group_id"]
+    final_summary = api.get(f"/api/v1/sessions/{session_id}").json()
+    assert final_summary["grouping_metadata"]["group_id"] == group_a["group_id"]
+
+
 def test_web_console_is_served_without_hardcoded_parameter_table() -> None:
     api = client()
 
@@ -458,6 +753,13 @@ def test_capture_storage_decision_is_accounted_before_bridge_confirmation(
 
 def test_single_capture_save_none_is_transient_and_not_in_history(tmp_path: Path) -> None:
     api = client(tmp_path / "captures.sqlite3")
+    experiment_id = api.post(
+        "/api/v1/experiments", json={"name": "transient experiment"}
+    ).json()["experiment_id"]
+    group_id = api.post(
+        f"/api/v1/experiments/{experiment_id}/groups",
+        json={"name": "transient group"},
+    ).json()["group_id"]
     applied = api.put(
         "/api/v1/config",
         headers={"If-Match": ZERO_ETAG},
@@ -472,6 +774,7 @@ def test_single_capture_save_none_is_transient_and_not_in_history(tmp_path: Path
             "trigger_source": "SOFTWARE",
             "sync_timeout_ms": 0,
             "save_policy": "SAVE_NONE",
+            "group_id": group_id,
         },
     )
 
@@ -482,7 +785,10 @@ def test_single_capture_save_none_is_transient_and_not_in_history(tmp_path: Path
     assert payload["acquired_count"] == 1
     assert payload["saved_count"] == 0
     assert payload["discarded_by_policy_count"] == 1
+    assert payload["grouping_metadata"]["group_id"] == group_id
     assert api.get("/api/v1/captures").json()["items"] == []
+    transient_detail = api.get(f"/api/v1/captures/{payload['capture_id']}").json()
+    assert transient_detail["grouping_metadata"]["group_id"] == group_id
     samples = api.get(f"/api/v1/captures/{payload['capture_id']}/samples")
     assert samples.status_code == 200
     assert samples.headers["x-usac-storage"] == "TRANSIENT"
@@ -685,6 +991,13 @@ def test_periodic_save_last_detail_changes_from_rolling_to_archive(
     tmp_path: Path,
 ) -> None:
     api = client(tmp_path / "captures.sqlite3")
+    experiment_id = api.post(
+        "/api/v1/experiments", json={"name": "rolling experiment"}
+    ).json()["experiment_id"]
+    group_id = api.post(
+        f"/api/v1/experiments/{experiment_id}/groups",
+        json={"name": "rolling group"},
+    ).json()["group_id"]
     applied = api.put(
         "/api/v1/config", headers={"If-Match": ZERO_ETAG}, json={"changes": {}}
     ).json()
@@ -699,6 +1012,7 @@ def test_periodic_save_last_detail_changes_from_rolling_to_archive(
             "capture_count": 0,
             "lease_timeout_ms": 3_000,
             "save_policy": "SAVE_LAST",
+            "group_id": group_id,
         },
     ).json()
 
@@ -715,6 +1029,7 @@ def test_periodic_save_last_detail_changes_from_rolling_to_archive(
     rolling = api.get(f"/api/v1/captures/{rolling_id}")
     assert rolling.status_code == 200
     assert rolling.json()["storage"] == "ROLLING_LATEST"
+    assert rolling.json()["grouping_metadata"]["group_id"] == group_id
 
     stopped = api.post(
         "/api/v1/periodic/stop",
@@ -737,6 +1052,7 @@ def test_periodic_save_last_detail_changes_from_rolling_to_archive(
     archived = api.get(f"/api/v1/captures/{rolling_id}")
     assert archived.status_code == 200
     assert archived.json()["storage"] == "ARCHIVE"
+    assert archived.json()["grouping_metadata"]["group_id"] == group_id
 
 
 def test_periodic_save_none_keeps_only_bounded_transient_latest(tmp_path: Path) -> None:
