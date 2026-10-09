@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -66,13 +67,25 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "group":
-        if not args.sqlite.is_file():
+        database = args.sqlite.resolve()
+        if not database.is_file():
             raise SystemExit(f"SQLite database does not exist: {args.sqlite}")
         output = args.output.resolve()
+        if output == database:
+            raise SystemExit("--output must not be the SQLite database")
+        try:
+            aliases_database = os.path.samefile(database, output)
+        except FileNotFoundError:
+            aliases_database = False
+        if aliases_database:
+            raise SystemExit("--output must not be the SQLite database")
+
+        store = CaptureStore(database)
+        store.get_group(args.group_id)
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open("w+b") as archive:
             manifest = write_group_export(
-                CaptureStore(args.sqlite),
+                store,
                 args.group_id,
                 archive,
             )
@@ -85,8 +98,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
 
-    record = CaptureStore(args.sqlite).get_capture(args.capture_id)
+    store = CaptureStore(args.sqlite)
+    record = store.get_capture(args.capture_id)
     metadata = _metadata(record)
+    metadata["grouping_metadata"] = store.grouping_metadata(record.group_id)
     if args.command == "show":
         print(json.dumps(metadata, indent=2))
         return 0
