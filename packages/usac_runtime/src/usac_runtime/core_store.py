@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, nullcontext
 from enum import Enum
 import hashlib
@@ -10,7 +10,9 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+import time
 from typing import Mapping
+import uuid
 
 from usac_protocol.bridge_messages import (
     BridgeCaptureDelivery,
@@ -86,6 +88,12 @@ class CaptureRecord:
     run_plan: dict[str, object]
     adc_clipping: bool
     interpolated: bool
+    group_id: str | None = None
+    experiment_id: str | None = None
+    group_name: str | None = None
+    experiment_name: str | None = None
+    cell_id: str | None = None
+    events: tuple["CaptureEventRecord", ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +121,11 @@ class CaptureSummary:
     pretrigger_count: int
     stored_utc_ns: int
     session_id: str | None
+    group_id: str | None = None
+    experiment_id: str | None = None
+    group_name: str | None = None
+    experiment_name: str | None = None
+    cell_id: str | None = None
 
 
 class CaptureStore:
@@ -163,6 +176,7 @@ class CaptureStore:
             )
             self._ensure_capture_metadata_schema(connection)
             self._ensure_save_policy_schema(connection)
+            self._ensure_grouping_schema(connection)
 
     @staticmethod
     def _ensure_capture_metadata_schema(connection: sqlite3.Connection) -> None:
@@ -290,6 +304,68 @@ class CaptureStore:
         )
 
     @staticmethod
+    def _ensure_grouping_schema(connection: sqlite3.Connection) -> None:
+        """Add host-side experiment/group metadata without rebuilding capture BLOBs.
+
+        Group bindings are nullable on every legacy data path. This migration is
+        deliberately additive so existing immutable frame and sample bytes stay
+        in their original rows.
+        """
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS experiments (
+                experiment_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                notes TEXT NOT NULL,
+                created_utc_ns INTEGER NOT NULL,
+                updated_utc_ns INTEGER NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS experiment_groups (
+                group_id TEXT PRIMARY KEY,
+                experiment_id TEXT NOT NULL
+                    REFERENCES experiments(experiment_id),
+                name TEXT NOT NULL,
+                cell_id TEXT NOT NULL,
+                notes TEXT NOT NULL,
+                created_utc_ns INTEGER NOT NULL,
+                updated_utc_ns INTEGER NOT NULL
+            )
+            """
+        )
+        for table in (
+            "captures",
+            "session_latest_captures",
+            "delivery_policy_contexts",
+        ):
+            columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+            if "group_id" not in columns:
+                connection.execute(
+                    f"ALTER TABLE {table} ADD COLUMN group_id TEXT "
+                    "REFERENCES experiment_groups(group_id)"
+                )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS captures_group_row "
+            "ON captures(group_id, row_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS experiment_groups_experiment "
+            "ON experiment_groups(experiment_id, group_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS session_latest_group "
+            "ON session_latest_captures(group_id, session_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS delivery_policy_group "
+            "ON delivery_policy_contexts(group_id, device_id, boot_id)"
+        )
+
+    @staticmethod
     def _canonical_json(value: Mapping[str, object]) -> str:
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
@@ -334,6 +410,302 @@ class CaptureStore:
                 (profile_sha256, device_config_crc32, request_id, *values),
             )
 
+    @staticmethod
+    def _validate_entity_id(value: str, field: str) -> str:
+        if (
+            not isinstance(value, str)
+            or len(value) != 32
+            or any(character not in "0123456789abcdef" for character in value)
+        ):
+            raise ValueError(f"{field} must be exactly 32 lowercase hexadecimal characters")
+        return value
+
+    @staticmethod
+    def _validate_entity_text(value: str, field: str, maximum: int) -> str:
+        if not isinstance(value, str) or len(value) > maximum:
+            raise ValueError(f"{field} must be text no longer than {maximum} characters")
+        return value
+
+    @classmethod
+    def _normalize_entity_name(cls, name: str) -> str:
+        if not isinstance(name, str):
+            raise ValueError("name must be text")
+        normalized = name.strip()
+        if not 1 <= len(normalized) <= 120:
+            raise ValueError("name must contain 1..120 characters after trimming")
+        return normalized
+
+    @staticmethod
+    def _experiment_object(row: sqlite3.Row | tuple[object, ...]) -> dict[str, object]:
+        return {
+            "experiment_id": str(row[0]),
+            "name": str(row[1]),
+            "notes": str(row[2]),
+            "created_utc_ns": int(row[3]),
+            "updated_utc_ns": int(row[4]),
+        }
+
+    @staticmethod
+    def _group_object(row: sqlite3.Row | tuple[object, ...]) -> dict[str, object]:
+        return {
+            "group_id": str(row[0]),
+            "experiment_id": str(row[1]),
+            "name": str(row[2]),
+            "cell_id": str(row[3]),
+            "notes": str(row[4]),
+            "created_utc_ns": int(row[5]),
+            "updated_utc_ns": int(row[6]),
+            "archived_count": int(row[7]),
+        }
+
+    @staticmethod
+    def _group_select_sql() -> str:
+        return """
+            SELECT group_row.group_id, group_row.experiment_id, group_row.name,
+                   group_row.cell_id, group_row.notes, group_row.created_utc_ns,
+                   group_row.updated_utc_ns,
+                   (SELECT COUNT(*) FROM captures
+                    WHERE captures.group_id=group_row.group_id)
+            FROM experiment_groups AS group_row
+        """
+
+    def create_experiment(self, *, name: str, notes: str = "") -> dict[str, object]:
+        normalized_name = self._normalize_entity_name(name)
+        normalized_notes = self._validate_entity_text(notes, "notes", 2000)
+        experiment_id = uuid.uuid4().hex
+        now = time.time_ns()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO experiments (
+                    experiment_id, name, notes, created_utc_ns, updated_utc_ns
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (experiment_id, normalized_name, normalized_notes, now, now),
+            )
+        return self.get_experiment(experiment_id)
+
+    def list_experiments(self) -> list[dict[str, object]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT experiment_id, name, notes, created_utc_ns, updated_utc_ns
+                FROM experiments ORDER BY created_utc_ns, experiment_id
+                """
+            ).fetchall()
+        return [self._experiment_object(row) for row in rows]
+
+    def get_experiment(self, experiment_id: str) -> dict[str, object]:
+        normalized_id = self._validate_entity_id(experiment_id, "experiment_id")
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT experiment_id, name, notes, created_utc_ns, updated_utc_ns
+                FROM experiments WHERE experiment_id=?
+                """,
+                (normalized_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(normalized_id)
+        return self._experiment_object(row)
+
+    def update_experiment(self, experiment_id: str, **changes: object) -> dict[str, object]:
+        normalized_id = self._validate_entity_id(experiment_id, "experiment_id")
+        unknown = set(changes) - {"name", "notes"}
+        if unknown:
+            raise ValueError(f"unsupported experiment fields: {', '.join(sorted(unknown))}")
+        values: dict[str, str] = {}
+        if "name" in changes:
+            values["name"] = self._normalize_entity_name(changes["name"])
+        if "notes" in changes:
+            values["notes"] = self._validate_entity_text(changes["notes"], "notes", 2000)
+        if values:
+            assignments = ", ".join(f"{field}=?" for field in values)
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    f"UPDATE experiments SET {assignments}, updated_utc_ns=? "
+                    "WHERE experiment_id=?",
+                    (*values.values(), time.time_ns(), normalized_id),
+                )
+            if cursor.rowcount == 0:
+                raise KeyError(normalized_id)
+        return self.get_experiment(normalized_id)
+
+    def create_group(
+        self,
+        experiment_id: str,
+        *,
+        name: str,
+        cell_id: str = "",
+        notes: str = "",
+    ) -> dict[str, object]:
+        normalized_experiment_id = self._validate_entity_id(experiment_id, "experiment_id")
+        normalized_name = self._normalize_entity_name(name)
+        normalized_cell_id = self._validate_entity_text(cell_id, "cell_id", 120)
+        normalized_notes = self._validate_entity_text(notes, "notes", 2000)
+        group_id = uuid.uuid4().hex
+        now = time.time_ns()
+        with self._connect() as connection:
+            if connection.execute(
+                "SELECT 1 FROM experiments WHERE experiment_id=?",
+                (normalized_experiment_id,),
+            ).fetchone() is None:
+                raise KeyError(normalized_experiment_id)
+            connection.execute(
+                """
+                INSERT INTO experiment_groups (
+                    group_id, experiment_id, name, cell_id, notes,
+                    created_utc_ns, updated_utc_ns
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    group_id,
+                    normalized_experiment_id,
+                    normalized_name,
+                    normalized_cell_id,
+                    normalized_notes,
+                    now,
+                    now,
+                ),
+            )
+        return self.get_group(group_id)
+
+    def list_groups(self, experiment_id: str) -> list[dict[str, object]]:
+        normalized_id = self._validate_entity_id(experiment_id, "experiment_id")
+        with self._connect() as connection:
+            if connection.execute(
+                "SELECT 1 FROM experiments WHERE experiment_id=?", (normalized_id,)
+            ).fetchone() is None:
+                raise KeyError(normalized_id)
+            rows = connection.execute(
+                self._group_select_sql()
+                + " WHERE group_row.experiment_id=? "
+                "ORDER BY group_row.created_utc_ns, group_row.group_id",
+                (normalized_id,),
+            ).fetchall()
+        return [self._group_object(row) for row in rows]
+
+    def get_group(self, group_id: str) -> dict[str, object]:
+        normalized_id = self._validate_entity_id(group_id, "group_id")
+        with self._connect() as connection:
+            row = connection.execute(
+                self._group_select_sql() + " WHERE group_row.group_id=?",
+                (normalized_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(normalized_id)
+        return self._group_object(row)
+
+    def update_group(self, group_id: str, **changes: object) -> dict[str, object]:
+        normalized_id = self._validate_entity_id(group_id, "group_id")
+        unknown = set(changes) - {"name", "cell_id", "notes"}
+        if unknown:
+            raise ValueError(f"unsupported group fields: {', '.join(sorted(unknown))}")
+        values: dict[str, str] = {}
+        if "name" in changes:
+            values["name"] = self._normalize_entity_name(changes["name"])
+        if "cell_id" in changes:
+            values["cell_id"] = self._validate_entity_text(changes["cell_id"], "cell_id", 120)
+        if "notes" in changes:
+            values["notes"] = self._validate_entity_text(changes["notes"], "notes", 2000)
+        if values:
+            assignments = ", ".join(f"{field}=?" for field in values)
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    f"UPDATE experiment_groups SET {assignments}, updated_utc_ns=? "
+                    "WHERE group_id=?",
+                    (*values.values(), time.time_ns(), normalized_id),
+                )
+            if cursor.rowcount == 0:
+                raise KeyError(normalized_id)
+        return self.get_group(normalized_id)
+
+    def grouping_metadata(self, group_id: str | None) -> dict[str, object]:
+        if group_id is None:
+            return {
+                "group_id": None,
+                "experiment_id": None,
+                "group_name": None,
+                "experiment_name": None,
+                "cell_id": None,
+            }
+        normalized_id = self._validate_entity_id(group_id, "group_id")
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT group_row.group_id, group_row.experiment_id, group_row.name,
+                       experiment.name, group_row.cell_id
+                FROM experiment_groups AS group_row
+                JOIN experiments AS experiment
+                  ON experiment.experiment_id=group_row.experiment_id
+                WHERE group_row.group_id=?
+                """,
+                (normalized_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(normalized_id)
+        return {
+            "group_id": str(row[0]),
+            "experiment_id": str(row[1]),
+            "group_name": str(row[2]),
+            "experiment_name": str(row[3]),
+            "cell_id": str(row[4]),
+        }
+
+    def _validate_group_target(
+        self, connection: sqlite3.Connection, group_id: str | None
+    ) -> str | None:
+        if group_id is None:
+            return None
+        normalized_id = self._validate_entity_id(group_id, "group_id")
+        if connection.execute(
+            "SELECT 1 FROM experiment_groups WHERE group_id=?", (normalized_id,)
+        ).fetchone() is None:
+            raise KeyError(normalized_id)
+        return normalized_id
+
+    def assign_capture_group(
+        self, capture_ids: Sequence[bytes], group_id: str | None
+    ) -> int:
+        distinct_ids: list[bytes] = []
+        seen: set[bytes] = set()
+        try:
+            supplied_ids = iter(capture_ids)
+        except TypeError as error:
+            raise ValueError("capture_ids must be a sequence of 1..500 capture IDs") from error
+        for capture_id in supplied_ids:
+            if not isinstance(capture_id, bytes) or len(capture_id) != 16:
+                raise ValueError("each capture ID must encode exactly 16 bytes")
+            if capture_id not in seen:
+                seen.add(capture_id)
+                distinct_ids.append(capture_id)
+                if len(distinct_ids) > 500:
+                    raise ValueError("capture_ids must contain at most 500 distinct IDs")
+        if not distinct_ids:
+            raise ValueError("capture_ids must contain at least one distinct ID")
+
+        with self._connect() as connection:
+            # Validate the full batch before the first update; BEGIN IMMEDIATE
+            # keeps another writer from changing membership midway through it.
+            connection.execute("BEGIN IMMEDIATE")
+            normalized_group_id = self._validate_group_target(connection, group_id)
+            for capture_id in distinct_ids:
+                matched = int(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM captures WHERE capture_id=?",
+                        (capture_id,),
+                    ).fetchone()[0]
+                )
+                if matched != 1:
+                    raise KeyError(
+                        f"capture_id {capture_id.hex()} was not found uniquely"
+                    )
+            connection.executemany(
+                "UPDATE captures SET group_id=? WHERE capture_id=?",
+                ((normalized_group_id, capture_id) for capture_id in distinct_ids),
+            )
+        return len(distinct_ids)
+
     def register_delivery_policy(
         self,
         *,
@@ -341,6 +713,7 @@ class CaptureStore:
         boot_id: bytes,
         session_id: str,
         save_policy: SavePolicy | str,
+        group_id: str | None = None,
     ) -> None:
         """Bind bridge replay for one device boot to its host-only save policy.
 
@@ -358,16 +731,18 @@ class CaptureStore:
         except ValueError as error:
             raise ValueError("save_policy is invalid") from error
         with self._connect() as connection:
+            normalized_group_id = self._validate_group_target(connection, group_id)
             connection.execute(
                 """
                 INSERT INTO delivery_policy_contexts (
-                    device_id, boot_id, session_id, save_policy
-                ) VALUES (?, ?, ?, ?)
+                    device_id, boot_id, session_id, save_policy, group_id
+                ) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(device_id, boot_id) DO UPDATE SET
                     session_id=excluded.session_id,
-                    save_policy=excluded.save_policy
+                    save_policy=excluded.save_policy,
+                    group_id=excluded.group_id
                 """,
-                (device_id, boot_id, normalized_session, policy.value),
+                (device_id, boot_id, normalized_session, policy.value, normalized_group_id),
             )
             # Only the latest boot contexts are useful for bounded bridge replay.
             connection.execute(
@@ -423,7 +798,7 @@ class CaptureStore:
             ).fetchone()
             context = connection.execute(
                 """
-                SELECT session_id, save_policy FROM delivery_policy_contexts
+                SELECT session_id, save_policy, group_id FROM delivery_policy_contexts
                 WHERE device_id=? AND boot_id=?
                 """,
                 (capture.device_id, capture.boot_id),
@@ -455,6 +830,7 @@ class CaptureStore:
                     capture=capture,
                     session_id=str(context[0]),
                     save_policy=policy,
+                    group_id=None if context[2] is None else str(context[2]),
                     summary=dict(json.loads(str(terminal[1]))),
                     _connection=connection,
                 )
@@ -462,6 +838,7 @@ class CaptureStore:
                 delivery,
                 save_policy=policy,
                 session_id=str(context[0]),
+                group_id=None if context[2] is None else str(context[2]),
                 _connection=connection,
             )
 
@@ -472,6 +849,7 @@ class CaptureStore:
         capture,
         session_id: str,
         save_policy: SavePolicy,
+        group_id: str | None,
         summary: Mapping[str, object],
         _connection: sqlite3.Connection | None = None,
     ) -> CoreCommitResult:
@@ -542,6 +920,7 @@ class CaptureStore:
                     capture,
                     inner_crc,
                     forced_session_id=session_id,
+                    group_id=group_id,
                 )
                 resolution = CaptureResolution.RAW_ARCHIVED
 
@@ -663,9 +1042,11 @@ class CaptureStore:
         inner_crc: int,
         *,
         forced_session_id: str = "",
+        group_id: str | None = None,
     ) -> bool:
         """Insert one immutable capture using the context bound to its request."""
 
+        normalized_group_id = self._validate_group_target(connection, group_id)
         configuration = self._configuration_json(capture)
         context = connection.execute(
             """
@@ -715,11 +1096,11 @@ class CaptureStore:
                 configuration_json, requested_config_json,
                 encoded_config_json, readback_config_json,
                 actual_config_json, run_plan_json, adc_clipping,
-                transport_crc32, stored_utc_ns, session_id
+                transport_crc32, stored_utc_ns, session_id, group_id
             ) VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             (
@@ -750,6 +1131,7 @@ class CaptureStore:
                 inner_crc,
                 delivery.stored_utc_ns,
                 session_id,
+                normalized_group_id,
             ),
         )
         capture_row_id = int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
@@ -797,6 +1179,7 @@ class CaptureStore:
         *,
         save_policy: SavePolicy | str = SavePolicy.SAVE_ALL,
         session_id: str | None = None,
+        group_id: str | None = None,
         _connection: sqlite3.Connection | None = None,
     ) -> CoreCommitResult:
         """Commit one terminal processing decision before acknowledging spool."""
@@ -832,6 +1215,7 @@ class CaptureStore:
         with connection_scope as connection:
             if _connection is None:
                 connection.execute("BEGIN IMMEDIATE")
+            normalized_group_id = self._validate_group_target(connection, group_id)
             existing = connection.execute(
                 """
                 SELECT inner_frame_crc32, inner_frame_sha256, resolution
@@ -855,6 +1239,7 @@ class CaptureStore:
                         capture,
                         inner_crc,
                         forced_session_id=normalized_session,
+                        group_id=normalized_group_id,
                     )
                     resolution = CaptureResolution.RAW_ARCHIVED
                 elif policy is SavePolicy.SAVE_LAST:
@@ -862,13 +1247,16 @@ class CaptureStore:
                         "SELECT inner_frame_blob FROM session_latest_captures WHERE session_id=?",
                         (normalized_session,),
                     ).fetchone()
+                    # Freeze this host-side selection next to the rolling frame.
+                    # The device/boot policy context can be replaced by a later task.
                     connection.execute(
                         """
                         INSERT INTO session_latest_captures (
                             session_id, connection_id, spool_record_id,
                             source_connection_id, source_first_stream_offset,
                             source_last_stream_offset, stored_utc_ns, inner_frame_blob
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            , group_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(session_id) DO UPDATE SET
                             connection_id=excluded.connection_id,
                             spool_record_id=excluded.spool_record_id,
@@ -876,7 +1264,8 @@ class CaptureStore:
                             source_first_stream_offset=excluded.source_first_stream_offset,
                             source_last_stream_offset=excluded.source_last_stream_offset,
                             stored_utc_ns=excluded.stored_utc_ns,
-                            inner_frame_blob=excluded.inner_frame_blob
+                            inner_frame_blob=excluded.inner_frame_blob,
+                            group_id=excluded.group_id
                         """,
                         (
                             normalized_session,
@@ -887,6 +1276,7 @@ class CaptureStore:
                             delivery.source_last_stream_offset,
                             delivery.stored_utc_ns,
                             delivery.inner_frame,
+                            normalized_group_id,
                         ),
                     )
                     inserted = True
@@ -1000,13 +1390,15 @@ class CaptureStore:
                 """
                 SELECT connection_id, spool_record_id, source_connection_id,
                        source_first_stream_offset, source_last_stream_offset,
-                       stored_utc_ns, inner_frame_blob
+                       stored_utc_ns, inner_frame_blob, group_id
                 FROM session_latest_captures WHERE session_id=?
                 """,
                 (normalized_session,),
             ).fetchone()
         if row is None:
             return None
+        # The rolling row owns its original group binding; policy context is
+        # keyed by device and boot and may already describe a later task.
         delivery = BridgeCaptureDelivery(
             connection_id=int(row[0]),
             spool_record_id=int(row[1]),
@@ -1026,6 +1418,7 @@ class CaptureStore:
             capture,
             inner_crc,
             forced_session_id=normalized_session,
+            group_id=None if row[7] is None else str(row[7]),
         )
         connection.execute(
                 """
@@ -1216,6 +1609,9 @@ class CaptureStore:
         after_row_id: int = 0,
         limit: int = 50,
         session_id: str | None = None,
+        experiment_id: str | None = None,
+        group_id: str | None = None,
+        ungrouped: bool = False,
     ) -> tuple[tuple[CaptureSummary, ...], int | None]:
         """Read one stable page of metadata without waveform or frame BLOBs."""
 
@@ -1232,33 +1628,69 @@ class CaptureStore:
             if len(session_bytes) != 16:
                 raise ValueError("session_id must encode exactly 16 bytes")
             normalized_session_id = session_bytes.hex()
+
+        if ungrouped and (experiment_id is not None or group_id is not None):
+            raise ValueError("ungrouped cannot be combined with experiment_id or group_id")
+        normalized_experiment_id = (
+            None
+            if experiment_id is None
+            else self._validate_entity_id(experiment_id, "experiment_id")
+        )
+        normalized_group_id = (
+            None if group_id is None else self._validate_entity_id(group_id, "group_id")
+        )
+        filters = ["capture.row_id > ?"]
+        parameters: list[object] = [after_row_id]
+        if normalized_session_id is not None:
+            filters.append("capture.session_id = ?")
+            parameters.append(normalized_session_id)
         with self._connect() as connection:
-            if normalized_session_id is None:
-                rows = connection.execute(
-                    """
-                    SELECT row_id, capture_id, device_id, boot_id, capture_sequence,
-                           sample_interval_ticks, sample_count, pretrigger_count,
-                           stored_utc_ns, session_id
-                    FROM captures
-                    WHERE row_id > ?
-                    ORDER BY row_id
-                    LIMIT ?
-                    """,
-                    (after_row_id, limit + 1),
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    """
-                    SELECT row_id, capture_id, device_id, boot_id, capture_sequence,
-                           sample_interval_ticks, sample_count, pretrigger_count,
-                           stored_utc_ns, session_id
-                    FROM captures
-                    WHERE row_id > ? AND session_id = ?
-                    ORDER BY row_id
-                    LIMIT ?
-                    """,
-                    (after_row_id, normalized_session_id, limit + 1),
-                ).fetchall()
+            if normalized_experiment_id is not None:
+                if connection.execute(
+                    "SELECT 1 FROM experiments WHERE experiment_id=?",
+                    (normalized_experiment_id,),
+                ).fetchone() is None:
+                    raise KeyError(normalized_experiment_id)
+                filters.append("group_row.experiment_id = ?")
+                parameters.append(normalized_experiment_id)
+            if normalized_group_id is not None:
+                owner = connection.execute(
+                    "SELECT experiment_id FROM experiment_groups WHERE group_id=?",
+                    (normalized_group_id,),
+                ).fetchone()
+                if owner is None:
+                    raise KeyError(normalized_group_id)
+                if (
+                    normalized_experiment_id is not None
+                    and str(owner[0]) != normalized_experiment_id
+                ):
+                    raise ValueError("group_id does not belong to experiment_id")
+                filters.append("capture.group_id = ?")
+                parameters.append(normalized_group_id)
+            if ungrouped:
+                filters.append("capture.group_id IS NULL")
+            parameters.append(limit + 1)
+            where = " AND ".join(filters)
+            rows = connection.execute(
+                f"""
+                SELECT capture.row_id, capture.capture_id, capture.device_id,
+                       capture.boot_id, capture.capture_sequence,
+                       capture.sample_interval_ticks, capture.sample_count,
+                       capture.pretrigger_count, capture.stored_utc_ns,
+                       capture.session_id, capture.group_id,
+                       group_row.experiment_id, group_row.name,
+                       experiment.name, group_row.cell_id
+                FROM captures AS capture
+                LEFT JOIN experiment_groups AS group_row
+                  ON group_row.group_id=capture.group_id
+                LEFT JOIN experiments AS experiment
+                  ON experiment.experiment_id=group_row.experiment_id
+                WHERE {where}
+                ORDER BY capture.row_id
+                LIMIT ?
+                """,
+                parameters,
+            ).fetchall()
         has_more = len(rows) > limit
         page = rows[:limit]
         items = tuple(
@@ -1273,31 +1705,60 @@ class CaptureStore:
                 pretrigger_count=int(row[7]),
                 stored_utc_ns=int(row[8]),
                 session_id=str(row[9]) or None,
+                group_id=None if row[10] is None else str(row[10]),
+                experiment_id=None if row[11] is None else str(row[11]),
+                group_name=None if row[12] is None else str(row[12]),
+                experiment_name=None if row[13] is None else str(row[13]),
+                cell_id=None if row[14] is None else str(row[14]),
             )
             for row in page
         )
         next_cursor = int(page[-1][0]) if has_more else None
         return items, next_cursor
 
-    def get_capture(self, capture_id: bytes) -> CaptureRecord:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT capture_id, device_id, boot_id, request_id, profile_sha256,
-                       device_config_crc32, capture_sequence,
-                       sample_interval_ticks, burst_period_ticks, sample_count,
-                       pretrigger_count, quality_flags, tuss_dev_stat,
-                       inner_frame_crc32, wire_frame_blob, sample_blob,
-                       requested_config_json, encoded_config_json,
-                       readback_config_json, actual_config_json, run_plan_json,
-                       adc_clipping
-                FROM captures WHERE capture_id=?
-                """,
-                (capture_id,),
-            ).fetchall()
-        if len(rows) != 1:
-            raise KeyError(f"capture_id {capture_id.hex()} was not found uniquely")
-        row = rows[0]
+    @staticmethod
+    def _capture_record_select_sql() -> str:
+        return """
+            SELECT capture.capture_id, capture.device_id, capture.boot_id,
+                   capture.request_id, capture.profile_sha256,
+                   capture.device_config_crc32, capture.capture_sequence,
+                   capture.sample_interval_ticks, capture.burst_period_ticks,
+                   capture.sample_count, capture.pretrigger_count,
+                   capture.quality_flags, capture.tuss_dev_stat,
+                   capture.inner_frame_crc32, capture.wire_frame_blob,
+                   capture.sample_blob, capture.requested_config_json,
+                   capture.encoded_config_json, capture.readback_config_json,
+                   capture.actual_config_json, capture.run_plan_json,
+                   capture.adc_clipping, capture.row_id, capture.group_id,
+                   group_row.experiment_id, group_row.name, experiment.name,
+                   group_row.cell_id
+            FROM captures AS capture
+            LEFT JOIN experiment_groups AS group_row
+              ON group_row.group_id=capture.group_id
+            LEFT JOIN experiments AS experiment
+              ON experiment.experiment_id=group_row.experiment_id
+        """
+
+    @staticmethod
+    def _capture_events_for_row(
+        connection: sqlite3.Connection, row_id: int
+    ) -> tuple[CaptureEventRecord, ...]:
+        rows = connection.execute(
+            """
+            SELECT ordinal, channel, edge, capture_method, level_after,
+                   sample_index, subsample_tick, uncertainty_ticks,
+                   frame_offset_ticks
+            FROM capture_events WHERE capture_row_id=? ORDER BY ordinal
+            """,
+            (row_id,),
+        ).fetchall()
+        return tuple(CaptureEventRecord(*map(int, event_row)) for event_row in rows)
+
+    @staticmethod
+    def _capture_record_from_row(
+        row: sqlite3.Row | tuple[object, ...],
+        events: tuple[CaptureEventRecord, ...],
+    ) -> CaptureRecord:
         wire_frame = bytes(row[14])
         capture = decode_capture_data(decode_frame(wire_frame).payload)
         return CaptureRecord(
@@ -1337,7 +1798,73 @@ class CaptureStore:
             run_plan=json.loads(row[20]),
             adc_clipping=bool(row[21]),
             interpolated=False,
+            group_id=None if row[23] is None else str(row[23]),
+            experiment_id=None if row[24] is None else str(row[24]),
+            group_name=None if row[25] is None else str(row[25]),
+            experiment_name=None if row[26] is None else str(row[26]),
+            cell_id=None if row[27] is None else str(row[27]),
+            events=events,
         )
+
+    def get_capture(self, capture_id: bytes) -> CaptureRecord:
+        with self._connect() as connection:
+            rows = connection.execute(
+                self._capture_record_select_sql() + " WHERE capture.capture_id=?",
+                (capture_id,),
+            ).fetchall()
+            if len(rows) != 1:
+                raise KeyError(f"capture_id {capture_id.hex()} was not found uniquely")
+            row = rows[0]
+            events = self._capture_events_for_row(connection, int(row[22]))
+        return self._capture_record_from_row(row, events)
+
+    @contextmanager
+    def group_export_snapshot(
+        self, group_id: str
+    ) -> Iterator[
+        tuple[dict[str, object], dict[str, object], Iterator[CaptureRecord]]
+    ]:
+        """Yield one consistent group export view with one waveform row at a time.
+
+        Event rows are attached to each CaptureRecord in its ``events`` field.
+        The returned iterator must be consumed while this context is open; its
+        explicit read transaction pins group metadata and membership to one WAL
+        snapshot while the cursor fetches each capture BLOB separately.
+        """
+
+        normalized_id = self._validate_entity_id(group_id, "group_id")
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            group_row = connection.execute(
+                self._group_select_sql() + " WHERE group_row.group_id=?",
+                (normalized_id,),
+            ).fetchone()
+            if group_row is None:
+                raise KeyError(normalized_id)
+            experiment_row = connection.execute(
+                """
+                SELECT experiment_id, name, notes, created_utc_ns, updated_utc_ns
+                FROM experiments WHERE experiment_id=?
+                """,
+                (str(group_row[1]),),
+            ).fetchone()
+            assert experiment_row is not None
+            capture_cursor = connection.execute(
+                self._capture_record_select_sql()
+                + " WHERE capture.group_id=? ORDER BY capture.row_id",
+                (normalized_id,),
+            )
+
+            def records() -> Iterator[CaptureRecord]:
+                for row in capture_cursor:
+                    events = self._capture_events_for_row(connection, int(row[22]))
+                    yield self._capture_record_from_row(row, events)
+
+            yield (
+                self._group_object(group_row),
+                self._experiment_object(experiment_row),
+                records(),
+            )
 
     def get_capture_events(self, capture_id: bytes) -> tuple[CaptureEventRecord, ...]:
         with self._connect() as connection:
