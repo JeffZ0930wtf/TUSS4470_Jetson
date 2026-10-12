@@ -56,8 +56,374 @@ const state = {
   waveforms: new Map(), waveformLoads: new Map(), selectedCaptureIds: new Set(),
   primaryCaptureId: null, windowStart: 0, windowCount: 2048, displayMode: "raw",
   followLatest: true, latestCaptureId: null, viewRevision: 0,
+  experiments: [], captureGroups: [], groupsByExperiment: new Map(),
+  captureExperimentId: null, captureGroupId: null, captureGroupRevision: 0,
+  captureGroupStatusKey: null,
+  historyFilterType: "all", historyFilterValue: "", historyRevision: 0,
+  batchSelectedCaptureIds: new Set(), experimentEditingId: null, groupEditingId: null,
+  batchAssignmentTarget: "", groupEditTarget: "",
 };
 const $ = (selector) => document.querySelector(selector);
+
+Object.assign(I18N.zh, {
+  "group.selectExperiment": "选择实验",
+  "group.captureGroup": "采集分组",
+  "group.ungrouped": "未分组",
+  "group.loading": "正在加载实验组…",
+  "group.loadFailed": "实验组加载失败，请重新选择实验。",
+  "group.empty": "此实验暂无实验组",
+  "group.nextBinding": "下一次采集：{target}", "group.activeBinding": "当前任务分组：{target}", "group.activeNone": "当前没有运行任务",
+  "group.cell": "样品位 {cell}", "group.exportDisabled": "选择实验组后下载 ZIP", "group.export": "下载 {name} · {count} 条记录 ZIP",
+  "group.manage": "管理实验与分组", "group.experiment": "实验", "group.experimentName": "实验名称", "group.experimentNotes": "实验备注",
+  "group.newExperiment": "新建实验", "group.editExperiment": "编辑所选实验", "group.saveExperiment": "保存实验",
+  "group.groupName": "分组名称", "group.cellId": "样品位 ID（可选）", "group.groupNotes": "分组备注",
+  "group.newGroup": "新建分组", "group.editGroup": "编辑所选分组", "group.saveGroup": "保存分组",
+  "group.chooseExperiment": "请先选择实验", "group.chooseGroup": "选择分组进行编辑", "group.saved": "分组信息已保存",
+  "group.experimentSaved": "实验信息已保存", "group.invalidName": "名称必填且不得超过 120 个字符。",
+  "group.invalidCell": "样品位 ID 不得超过 120 个字符。", "group.invalidNotes": "备注不得超过 2000 个字符。",
+  "history.filter.all": "全部记录", "history.filter.ungrouped": "仅未分组", "history.filter.experiment": "按实验筛选",
+  "history.filter.group": "按分组筛选", "history.filter.mode": "筛选方式", "history.filter.target": "筛选目标", "history.grouping": "{experiment} · {group}",
+  "history.selectBatch": "归组", "batch.count": "已选 {count} 条（当前页可选）", "batch.target": "归入目标组",
+  "batch.apply": "归组所选记录", "batch.chooseTarget": "先选择目标组或未分组", "batch.limit": "一次最多归组 500 条记录",
+  "batch.assigned": "已归组 {count} 条记录",
+});
+Object.assign(I18N.en, {
+  "group.selectExperiment": "Select an experiment",
+  "group.captureGroup": "Capture group",
+  "group.ungrouped": "Ungrouped",
+  "group.loading": "Loading groups…",
+  "group.loadFailed": "Groups could not be loaded. Select the experiment again.",
+  "group.empty": "This experiment has no groups",
+  "group.nextBinding": "Next task: {target}", "group.activeBinding": "Active task group: {target}", "group.activeNone": "No task is running",
+  "group.cell": "Cell {cell}", "group.exportDisabled": "Select a group to download its ZIP", "group.export": "Download {name} · {count} captures ZIP",
+  "group.manage": "Manage experiments and groups", "group.experiment": "Experiment", "group.experimentName": "Experiment name", "group.experimentNotes": "Experiment notes",
+  "group.newExperiment": "New experiment", "group.editExperiment": "Edit selected experiment", "group.saveExperiment": "Save experiment",
+  "group.groupName": "Group name", "group.cellId": "Cell ID (optional)", "group.groupNotes": "Group notes",
+  "group.newGroup": "New group", "group.editGroup": "Edit selected group", "group.saveGroup": "Save group",
+  "group.chooseExperiment": "Choose an experiment first", "group.chooseGroup": "Choose a group to edit", "group.saved": "Group saved",
+  "group.experimentSaved": "Experiment saved", "group.invalidName": "A name is required and must be at most 120 characters.",
+  "group.invalidCell": "Cell ID must be at most 120 characters.", "group.invalidNotes": "Notes must be at most 2000 characters.",
+  "history.filter.all": "All captures", "history.filter.ungrouped": "Ungrouped only", "history.filter.experiment": "Filter by experiment",
+  "history.filter.group": "Filter by group", "history.filter.target": "Filter target", "history.grouping": "{experiment} · {group}",
+  "history.filter.mode": "Filter by",
+  "history.selectBatch": "Assign", "batch.count": "{count} selected (visible records)", "batch.target": "Assign to group",
+  "batch.apply": "Assign selected captures", "batch.chooseTarget": "Choose a group or Ungrouped first", "batch.limit": "Assign at most 500 captures at a time",
+  "batch.assigned": "Assigned {count} captures",
+});
+
+function appendOption(select, value, label) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  select.append(option);
+}
+
+function setCaptureGroupStatus(key) {
+  state.captureGroupStatusKey = key;
+  const status = $("#group-load-status");
+  if (status) status.textContent = key ? t(key) : "";
+}
+
+function renderCaptureGrouping() {
+  const experimentSelect = $("#capture-experiment");
+  if (!experimentSelect) return;
+  experimentSelect.replaceChildren();
+  appendOption(experimentSelect, "", t("group.selectExperiment"));
+  state.experiments.forEach((experiment) => {
+    appendOption(experimentSelect, experiment.experiment_id, experiment.name);
+  });
+  experimentSelect.value = state.captureExperimentId || "";
+
+  const groupSelect = $("#capture-group");
+  if (!groupSelect) return;
+  groupSelect.replaceChildren();
+  appendOption(groupSelect, "", t("group.ungrouped"));
+  state.captureGroups.forEach((group) => {
+    appendOption(groupSelect, group.group_id, group.name);
+  });
+  groupSelect.value = state.captureGroupId || "";
+  groupSelect.disabled = !state.captureExperimentId;
+  const status = $("#group-load-status");
+  if (status) status.textContent = state.captureExperimentId && state.captureGroupStatusKey ? t(state.captureGroupStatusKey) : "";
+  renderCaptureBinding();
+  renderGroupExport();
+  renderGroupEditorTargets();
+}
+
+async function loadExperiments() {
+  const { payload } = await fetchJson("/api/v1/experiments");
+  state.experiments = payload.items;
+  await Promise.all(state.experiments.map(async (experiment) => {
+    try {
+      const result = await fetchJson(`/api/v1/experiments/${experiment.experiment_id}/groups`);
+      state.groupsByExperiment.set(experiment.experiment_id, result.payload.items);
+    } catch (_error) { /* A failed catalog request does not invalidate capture controls. */ }
+  }));
+  renderGroupingControls();
+  return state.experiments;
+}
+
+function allCachedGroups() {
+  return Array.from(state.groupsByExperiment.values()).flat();
+}
+
+function renderHistoryFilterOptions() {
+  const type = $("#history-filter-type");
+  const value = $("#history-filter-value");
+  if (!type || !value) return;
+  type.value = state.historyFilterType;
+  value.replaceChildren();
+  const experimentFilter = state.historyFilterType === "experiment";
+  const groupFilter = state.historyFilterType === "group";
+  if (experimentFilter) {
+    state.experiments.forEach((experiment) => appendOption(value, experiment.experiment_id, experiment.name));
+  } else if (groupFilter) {
+    allCachedGroups().forEach((group) => {
+      const experiment = state.experiments.find((item) => item.experiment_id === group.experiment_id);
+      appendOption(value, group.group_id, [experiment?.name, group.name].filter(Boolean).join(" · "));
+    });
+  }
+  value.value = state.historyFilterValue || "";
+  value.hidden = !experimentFilter && !groupFilter;
+}
+
+function renderBatchAssignmentTargets() {
+  const target = $("#batch-assignment-target");
+  if (!target) return;
+  const selected = target.value || state.batchAssignmentTarget;
+  target.replaceChildren();
+  appendOption(target, "", t("batch.chooseTarget"));
+  appendOption(target, "__ungrouped__", t("group.ungrouped"));
+  allCachedGroups().forEach((group) => {
+    const experiment = state.experiments.find((item) => item.experiment_id === group.experiment_id);
+    const suffix = group.archived_count == null ? "" : ` (${group.archived_count})`;
+    appendOption(target, group.group_id, `${experiment?.name ? `${experiment.name} · ` : ""}${group.name}${suffix}`);
+  });
+  target.value = selected;
+  state.batchAssignmentTarget = target.value;
+  renderBatchSelectionControls();
+}
+
+function renderGroupEditorTargets() {
+  const target = $("#group-edit-target");
+  if (!target) return;
+  const selected = state.groupEditTarget || target.value;
+  target.replaceChildren();
+  appendOption(target, "", t("group.chooseGroup"));
+  state.captureGroups.forEach((group) => appendOption(target, group.group_id, group.name));
+  target.value = selected;
+  state.groupEditTarget = target.value;
+}
+
+function renderGroupingControls() {
+  renderCaptureGrouping();
+  renderHistoryFilterOptions();
+  renderBatchAssignmentTargets();
+  renderGroupEditorTargets();
+}
+
+function prepareNewExperiment() {
+  state.experimentEditingId = null;
+  $("#experiment-name").value = "";
+  $("#experiment-notes").value = "";
+  $("#experiment-save").textContent = t("group.saveExperiment");
+}
+
+function prepareExperimentEdit() {
+  const experiment = state.experiments.find((item) => item.experiment_id === state.captureExperimentId);
+  if (!experiment) {
+    toast(t("group.chooseExperiment"));
+    return;
+  }
+  state.experimentEditingId = experiment.experiment_id;
+  $("#experiment-name").value = experiment.name ?? "";
+  $("#experiment-notes").value = experiment.notes ?? "";
+  $("#experiment-save").textContent = t("group.saveExperiment");
+}
+
+function prepareNewGroup() {
+  if (!state.captureExperimentId) {
+    toast(t("group.chooseExperiment"));
+    return;
+  }
+  state.groupEditingId = null;
+  $("#group-name").value = "";
+  $("#group-cell-id").value = "";
+  $("#group-notes").value = "";
+  $("#group-save").textContent = t("group.saveGroup");
+}
+
+function prepareGroupEdit() {
+  const group = currentGroup($("#group-edit-target").value || state.groupEditTarget);
+  if (!group) {
+    toast(t("group.chooseGroup"));
+    return;
+  }
+  state.groupEditTarget = group.group_id;
+  state.groupEditingId = group.group_id;
+  $("#group-name").value = group.name ?? "";
+  $("#group-cell-id").value = group.cell_id ?? "";
+  $("#group-notes").value = group.notes ?? "";
+  $("#group-save").textContent = t("group.saveGroup");
+}
+
+function validatedText(value, maxLength, errorKey, required = false) {
+  const normalized = value.trim();
+  if ((required && !normalized) || normalized.length > maxLength) throw new Error(t(errorKey));
+  return normalized;
+}
+
+async function saveExperiment() {
+  const name = validatedText($("#experiment-name").value, 120, "group.invalidName", true);
+  const notes = validatedText($("#experiment-notes").value, 2000, "group.invalidNotes");
+  const editingId = state.experimentEditingId;
+  const path = editingId ? `/api/v1/experiments/${encodeURIComponent(editingId)}` : "/api/v1/experiments";
+  const method = editingId ? "PATCH" : "POST";
+  const { payload } = await fetchJson(path, { method, body: JSON.stringify({ name, notes }) });
+  if (editingId) {
+    state.experiments = state.experiments.map((item) => item.experiment_id === editingId ? payload : item);
+  } else {
+    state.experiments = state.experiments.filter((item) => item.experiment_id !== payload.experiment_id).concat(payload);
+    state.groupsByExperiment.set(payload.experiment_id, []);
+    state.captureExperimentId = payload.experiment_id;
+    state.captureGroupId = null;
+    state.captureGroups = [];
+  }
+  state.experimentEditingId = null;
+  renderGroupingControls();
+  if (!editingId) await selectCaptureExperiment(payload.experiment_id);
+  $("#experiment-save").textContent = t("group.saveExperiment");
+  toast(t("group.experimentSaved"));
+  return payload;
+}
+
+async function saveGroup() {
+  if (!state.captureExperimentId) throw new Error(t("group.chooseExperiment"));
+  const name = validatedText($("#group-name").value, 120, "group.invalidName", true);
+  const cell_id = validatedText($("#group-cell-id").value, 120, "group.invalidCell");
+  const notes = validatedText($("#group-notes").value, 2000, "group.invalidNotes");
+  const editingId = state.groupEditingId;
+  const path = editingId
+    ? `/api/v1/groups/${encodeURIComponent(editingId)}`
+    : `/api/v1/experiments/${encodeURIComponent(state.captureExperimentId)}/groups`;
+  const method = editingId ? "PATCH" : "POST";
+  const { payload } = await fetchJson(path, { method, body: JSON.stringify({ name, cell_id, notes }) });
+  state.captureGroups = state.captureGroups.filter((item) => item.group_id !== payload.group_id).concat(payload);
+  state.groupsByExperiment.set(state.captureExperimentId, state.captureGroups);
+  state.captureGroupId = payload.group_id;
+  state.groupEditTarget = payload.group_id;
+  state.groupEditingId = null;
+  renderGroupingControls();
+  renderCaptureBinding();
+  renderGroupExport();
+  $("#group-save").textContent = t("group.saveGroup");
+  toast(t("group.saved"));
+  return payload;
+}
+
+async function loadCaptureGroups(experimentId = state.captureExperimentId, revision) {
+  if (!experimentId) return [];
+  const ownedRevision = revision ?? ++state.captureGroupRevision;
+  const ownsRequest = () => state.captureExperimentId === experimentId
+    && state.captureGroupRevision === ownedRevision;
+  if (ownsRequest()) setCaptureGroupStatus("group.loading");
+  try {
+    const { payload } = await fetchJson(`/api/v1/experiments/${experimentId}/groups`);
+    if (!ownsRequest()) return [];
+    state.captureGroups = payload.items;
+    state.groupsByExperiment.set(experimentId, payload.items);
+    setCaptureGroupStatus(payload.items.length ? null : "group.empty");
+    renderGroupingControls();
+    return payload.items;
+  } catch (error) {
+    if (ownsRequest()) setCaptureGroupStatus("group.loadFailed");
+    return [];
+  }
+}
+
+function selectCaptureExperiment(experimentId) {
+  state.captureExperimentId = experimentId || null;
+  state.captureGroupId = null;
+  state.captureGroups = [];
+  state.groupEditTarget = "";
+  state.groupEditingId = null;
+  state.captureGroupStatusKey = null;
+  const revision = ++state.captureGroupRevision;
+  renderGroupingControls();
+  return state.captureExperimentId
+    ? loadCaptureGroups(state.captureExperimentId, revision)
+    : Promise.resolve([]);
+}
+
+// Snapshot only the selected group at task start; later selector changes affect the next task.
+function captureGroupingSnapshot() {
+  const group = state.captureGroups.find((item) => item.group_id === state.captureGroupId);
+  if (!group) return { group_id: null, experiment_id: null, group_name: null, experiment_name: null, cell_id: null };
+  const experiment = state.experiments.find((item) => item.experiment_id === group.experiment_id);
+  return {
+    group_id: group.group_id,
+    experiment_id: group.experiment_id,
+    group_name: group.name,
+    experiment_name: experiment?.name ?? null,
+    cell_id: group.cell_id ?? null,
+  };
+}
+
+function groupingTargetLabel(metadata) {
+  if (!metadata?.group_id) return t("group.ungrouped");
+  return [metadata.experiment_name, metadata.group_name, metadata.cell_id ? t("group.cell", { cell: metadata.cell_id }) : null]
+    .filter(Boolean).join(" · ") || metadata.group_id;
+}
+
+function renderCaptureBinding() {
+  const next = $("#capture-binding-next");
+  if (next) next.textContent = t("group.nextBinding", { target: groupingTargetLabel(captureGroupingSnapshot()) });
+  const active = $("#capture-binding-active");
+  if (active) {
+    active.textContent = state.active?.grouping_metadata
+      ? t("group.activeBinding", { target: groupingTargetLabel(state.active.grouping_metadata) })
+      : t("group.activeNone");
+  }
+}
+
+function currentGroup(groupId = state.captureGroupId) {
+  return state.captureGroups.find((item) => item.group_id === groupId)
+    ?? Array.from(state.groupsByExperiment.values()).flat().find((item) => item.group_id === groupId)
+    ?? null;
+}
+
+function renderGroupExport() {
+  const link = $("#group-export"); const label = $("#group-export-label");
+  if (!link || !label) return;
+  const group = currentGroup();
+  if (!state.captureGroupId || !group) {
+    link.href = "#"; link.setAttribute("aria-disabled", "true"); link.setAttribute("tabindex", "-1");
+    label.textContent = t("group.exportDisabled");
+    return;
+  }
+  link.href = `/api/v1/groups/${encodeURIComponent(group.group_id)}/export.zip`;
+  link.setAttribute("aria-disabled", "false"); link.setAttribute("tabindex", "0");
+  label.textContent = t("group.export", { name: group.name, count: group.archived_count ?? 0 });
+}
+
+// Refresh counts after archival or reassignment; a null experiment needs no request.
+async function refreshGroupCatalog(experimentId) {
+  if (!experimentId) return [];
+  const revision = state.captureGroupRevision;
+  try {
+    const { payload } = await fetchJson(`/api/v1/experiments/${experimentId}/groups`);
+    state.groupsByExperiment.set(experimentId, payload.items);
+    if (state.captureExperimentId === experimentId && state.captureGroupRevision === revision) {
+      state.captureGroups = payload.items;
+      renderGroupingControls();
+    }
+    renderHistoryFilterOptions();
+    renderBatchAssignmentTargets();
+    return payload.items;
+  } catch (_error) {
+    return [];
+  }
+}
 
 // A view revision plus per-load token prevents a late Promise from an old
 // selection from overwriting or releasing state owned by the current view.
@@ -454,6 +820,7 @@ function setLanguage(language) {
   state.language = language === "en" ? "en" : "zh";
   localStorage.setItem("usac-language", state.language);
   applyStaticTranslations(); updateMode();
+  renderGroupingControls(); renderCaptureBinding(); renderGroupExport();
   if (state.schema && state.config) renderParameters();
   if (state.devicePayload) updateDevice(state.devicePayload);
   renderCounters(state.counterPayload); renderHistory();
@@ -652,16 +1019,82 @@ function updateMode() {
   $("#capture-start").textContent = t({ SINGLE: "capture.start.single", PERIODIC: "capture.start.periodic", SWEEP: "capture.start.sweep" }[mode]);
 }
 
+function historyGroupingText(item) {
+  const metadata = item.grouping_metadata || {};
+  if (!metadata.group_id) return t("group.ungrouped");
+  return [
+    metadata.experiment_name || metadata.experiment_id,
+    metadata.group_name || metadata.group_id,
+    metadata.cell_id ? t("group.cell", { cell: metadata.cell_id }) : null,
+  ].filter(Boolean).join(" · ");
+}
+
+function renderBatchSelectionControls() {
+  const countNode = $("#batch-selection-count");
+  if (countNode) countNode.textContent = t("batch.count", { count: state.batchSelectedCaptureIds.size });
+  const apply = $("#batch-assignment-apply");
+  if (apply) {
+    const target = $("#batch-assignment-target")?.value || "";
+    apply.disabled = state.batchSelectedCaptureIds.size < 1 || state.batchSelectedCaptureIds.size > 500 || !target;
+  }
+}
+
+function toggleBatchCapture(captureId, selected) {
+  const ids = state.batchSelectedCaptureIds;
+  if (selected && !ids.has(captureId) && ids.size >= 500) {
+    toast(t("batch.limit"));
+    return false;
+  }
+  if (selected) ids.add(captureId);
+  else ids.delete(captureId);
+  renderBatchSelectionControls();
+  renderHistory();
+  return true;
+}
+
+// Keep batch selection independent from waveform overlays and retain it on API errors.
+async function assignSelectedCaptures() {
+  const captureIds = Array.from(state.batchSelectedCaptureIds);
+  if (captureIds.length < 1 || captureIds.length > 500) throw new Error(t("batch.limit"));
+  const target = $("#batch-assignment-target").value || state.batchAssignmentTarget;
+  if (!target) throw new Error(t("batch.chooseTarget"));
+  const groupId = target === "__ungrouped__" ? null : target;
+  const currentExperimentId = currentGroup()?.experiment_id ?? null;
+  const targetExperimentId = groupId ? currentGroup(groupId)?.experiment_id ?? null : null;
+  const refreshIds = [...new Set([currentExperimentId, targetExperimentId].filter(Boolean))];
+  const { payload } = await fetchJson("/api/v1/captures/group-assignment", {
+    method: "POST",
+    body: JSON.stringify({ capture_ids: captureIds, group_id: groupId }),
+  });
+  state.batchSelectedCaptureIds.clear();
+  renderBatchSelectionControls();
+  toast(t("batch.assigned", { count: payload.assigned_count }));
+  await loadHistory(true);
+  await Promise.all(refreshIds.map((experimentId) => refreshGroupCatalog(experimentId)));
+  return payload;
+}
+
 function renderHistory() {
   const root = $("#capture-history"); root.replaceChildren();
-  if (!state.historyItems.length) { root.textContent = t("history.empty"); return; }
+  if (!state.historyItems.length) {
+    root.textContent = t("history.empty");
+    renderBatchSelectionControls();
+    return;
+  }
   state.historyItems.forEach((item) => {
     const row = document.createElement("div"); row.className = "history-row";
     const meta = document.createElement("div"); meta.className = "history-meta";
     const name = document.createElement("strong"); name.textContent = item.capture_id.slice(0, 8);
     const detail = document.createElement("small"); detail.textContent = t("history.detail", { sequence: item.capture_sequence, count: item.sample_count });
-    meta.append(name, detail);
+    const grouping = document.createElement("small"); grouping.textContent = historyGroupingText(item);
+    meta.append(name, detail, grouping);
     const actions = document.createElement("div"); actions.className = "history-actions";
+    const batchLabel = document.createElement("label"); batchLabel.className = "history-select batch-select";
+    const batchSelect = document.createElement("input"); batchSelect.type = "checkbox";
+    batchSelect.checked = state.batchSelectedCaptureIds.has(item.capture_id);
+    batchSelect.disabled = !batchSelect.checked && state.batchSelectedCaptureIds.size >= 500;
+    batchSelect.addEventListener("change", () => toggleBatchCapture(item.capture_id, batchSelect.checked));
+    const batchText = document.createElement("span"); batchText.textContent = t("history.selectBatch"); batchLabel.append(batchSelect, batchText);
     const selectLabel = document.createElement("label"); selectLabel.className = "history-select";
     const select = document.createElement("input"); select.type = "checkbox"; select.checked = state.selectedCaptureIds.has(item.capture_id);
     select.disabled = !select.checked && state.selectedCaptureIds.size >= MAX_WAVEFORM_IDS;
@@ -670,17 +1103,52 @@ function renderHistory() {
     const view = document.createElement("button"); view.className = "quiet"; view.textContent = t("history.view");
     view.addEventListener("click", () => viewHistoricalCapture(item).catch((error) => toast(error.message)));
     const download = document.createElement("a"); download.textContent = t("history.download"); download.href = `/api/v1/captures/${item.capture_id}/samples`; download.download = `${item.capture_id}.u16le`;
-    actions.append(selectLabel, view, download); row.append(meta, actions); root.append(row);
+    actions.append(batchLabel, selectLabel, view, download); row.append(meta, actions); root.append(row);
   });
+  renderBatchSelectionControls();
+}
+
+function addHistoryFilter(parameters) {
+  if (state.historyFilterType === "ungrouped") parameters.set("ungrouped", "true");
+  else if (state.historyFilterType === "experiment" && state.historyFilterValue) parameters.set("experiment_id", state.historyFilterValue);
+  else if (state.historyFilterType === "group" && state.historyFilterValue) parameters.set("group_id", state.historyFilterValue);
+}
+
+async function setHistoryFilter(type, value = "") {
+  state.historyFilterType = ["all", "ungrouped", "experiment", "group"].includes(type) ? type : "all";
+  state.historyFilterValue = value;
+  state.historyRevision += 1;
+  state.historyCursor = null;
+  state.historyItems = [];
+  state.batchSelectedCaptureIds.clear();
+  $("#history-more").hidden = true;
+  renderHistoryFilterOptions();
+  renderHistory();
+  if (["experiment", "group"].includes(state.historyFilterType) && !state.historyFilterValue) return false;
+  return loadHistory(true);
 }
 
 async function loadHistory(reset = true) {
+  if (reset) {
+    state.historyRevision += 1;
+    state.historyCursor = null;
+  }
+  const revision = state.historyRevision;
   const parameters = new URLSearchParams({ limit: "20" });
   if (!reset && state.historyCursor) parameters.set("cursor", state.historyCursor);
+  addHistoryFilter(parameters);
   const query = parameters.toString();
-  const { payload } = await fetchJson(`/api/v1/captures?${query}`);
-  state.historyItems = reset ? payload.items : state.historyItems.concat(payload.items); state.historyCursor = payload.next_cursor;
-  renderHistory(); $("#history-more").hidden = !state.historyCursor;
+  try {
+    const { payload } = await fetchJson(`/api/v1/captures?${query}`);
+    if (revision !== state.historyRevision) return false;
+    state.historyItems = reset ? payload.items : state.historyItems.concat(payload.items);
+    state.historyCursor = payload.next_cursor;
+    renderHistory(); $("#history-more").hidden = !state.historyCursor;
+    return true;
+  } catch (error) {
+    if (revision !== state.historyRevision) return false;
+    throw error;
+  }
 }
 
 function scheduleSessionPoll(sessionId) {
@@ -696,10 +1164,12 @@ async function pollSession() {
     renderCounters(payload); setCaptureStatus("capture.status.progress", { stateKey: SESSION_STATE_LABELS[payload.state] || payload.state, count: payload.acquired_count });
     if (["COMPLETED", "STOPPED", "FAILED", "INTERRUPTED"].includes(payload.state)) {
       state.active = null;
+      renderCaptureBinding();
       setHardwareActions();
       await refreshLatestWaveform(payload);
       if (active.save_policy === "SAVE_LAST" && payload.last_capture_id) await refreshCaptureStorage(payload.last_capture_id);
       await loadHistory(true).catch((error) => toast(error.message));
+      await refreshGroupCatalog(active.grouping_metadata?.experiment_id);
       return;
     }
     await refreshLatestWaveform(payload);
@@ -713,19 +1183,24 @@ async function pollSession() {
 async function startCapture() {
   if (state.active) return;
   const mode = $("#capture-mode").value;
-  const common = { ...identity(), ...savePolicy() };
+  // Freeze group_id and its display snapshot before the first await.
+  const grouping = captureGroupingSnapshot();
+  const common = { ...identity(), ...savePolicy(), group_id: grouping.group_id };
   if (mode === "SINGLE") {
-    state.active = { mode: "SINGLE" }; setCaptureStatus("capture.status.singleRunning"); setHardwareActions();
+    state.active = { mode: "SINGLE", group_id: grouping.group_id, grouping_metadata: grouping };
+    renderCaptureBinding(); setCaptureStatus("capture.status.singleRunning"); setHardwareActions();
     let payload;
     try {
       ({ payload } = await fetchJson("/api/v1/captures", { method: "POST", body: JSON.stringify({ ...common, ...triggerOptions() }) }));
       renderCounters(payload);
     } finally {
       state.active = null;
+      renderCaptureBinding();
       setHardwareActions();
     }
     await refreshLatestWaveform({ last_capture_id: payload.capture_id });
     await loadHistory(true).catch((error) => toast(error.message));
+    await refreshGroupCatalog(grouping.experiment_id);
     stage("captured"); setCaptureStatus("capture.status.singleComplete"); toast(t("capture.status.singleComplete")); return;
   }
   let endpoint; let body;
@@ -739,20 +1214,23 @@ async function startCapture() {
     endpoint = "/api/v1/sweeps";
     body = { ...common, ...triggerOptions(), field: $("#sweep-field").value, values, loops: Number($("#sweep-loops").value), start_delay_ms: Number($("#sweep-start-delay").value), loop_delay_ms: Number($("#sweep-delay").value) };
   }
-  const pending = { mode, pending: true };
+  const pending = { mode, pending: true, save_policy: common.save_policy, group_id: grouping.group_id, grouping_metadata: grouping };
   state.active = pending;
+  renderCaptureBinding();
   setCaptureStatus(mode === "PERIODIC" ? "capture.status.periodicRunning" : "capture.status.sweepRunning");
   setHardwareActions();
   try {
-    state.active = { mode, save_policy: common.save_policy, ...(await fetchJson(endpoint, { method: "POST", body: JSON.stringify(body) })).payload };
+    const result = (await fetchJson(endpoint, { method: "POST", body: JSON.stringify(body) })).payload;
+    state.active = { ...result, mode, save_policy: common.save_policy, group_id: grouping.group_id, grouping_metadata: grouping };
   } catch (error) {
     // Clear only the provisional owner created by this request. A future
     // session state must not be erased by a late rejection.
     if (state.active === pending) state.active = null;
+    renderCaptureBinding();
     setHardwareActions();
     throw error;
   }
-  renderCounters(state.active); setCaptureStatus(mode === "PERIODIC" ? "capture.status.periodicRunning" : "capture.status.sweepRunning"); setHardwareActions(); pollSession();
+  renderCounters(state.active); renderCaptureBinding(); setCaptureStatus(mode === "PERIODIC" ? "capture.status.periodicRunning" : "capture.status.sweepRunning"); setHardwareActions(); pollSession();
 }
 
 async function stopCapture() {
@@ -773,6 +1251,30 @@ function bindActions() {
   $("#language-toggle").addEventListener("click", () => setLanguage(state.language === "zh" ? "en" : "zh"));
   $("#capture-start").addEventListener("click", guarded(startCapture)); $("#capture-stop").addEventListener("click", guarded(stopCapture));
   $("#history-refresh").addEventListener("click", guarded(() => loadHistory(true))); $("#history-more").addEventListener("click", guarded(() => loadHistory(false)));
+  $("#capture-experiment").addEventListener("change", guarded(() => selectCaptureExperiment($("#capture-experiment").value)));
+  $("#capture-group").addEventListener("change", () => {
+    state.captureGroupId = $("#capture-group").value || null;
+    renderCaptureBinding(); renderGroupExport();
+  });
+  $("#history-filter-type").addEventListener("change", guarded(async () => {
+    state.historyFilterType = $("#history-filter-type").value;
+    state.historyFilterValue = "";
+    renderHistoryFilterOptions();
+    await setHistoryFilter(state.historyFilterType, "");
+  }));
+  $("#history-filter-value").addEventListener("change", guarded(() => setHistoryFilter(state.historyFilterType, $("#history-filter-value").value)));
+  $("#batch-assignment-target").addEventListener("change", () => {
+    state.batchAssignmentTarget = $("#batch-assignment-target").value;
+    renderBatchSelectionControls();
+  });
+  $("#batch-assignment-apply").addEventListener("click", guarded(assignSelectedCaptures));
+  $("#experiment-new").addEventListener("click", prepareNewExperiment);
+  $("#experiment-edit").addEventListener("click", prepareExperimentEdit);
+  $("#experiment-save").addEventListener("click", guarded(saveExperiment));
+  $("#group-new").addEventListener("click", prepareNewGroup);
+  $("#group-edit").addEventListener("click", prepareGroupEdit);
+  $("#group-save").addEventListener("click", guarded(saveGroup));
+  $("#group-edit-target").addEventListener("change", () => { state.groupEditTarget = $("#group-edit-target").value; });
   $("#waveform-apply-window").addEventListener("click", guarded(async () => applyWaveformWindow()));
   $("#waveform-previous").addEventListener("click", () => moveWaveformWindow(-1)); $("#waveform-next").addEventListener("click", () => moveWaveformWindow(1));
   $("#waveform-show-all").addEventListener("click", showAllWaveform); $("#waveform-clear-overlays").addEventListener("click", clearWaveformOverlays);
@@ -786,7 +1288,7 @@ function bindActions() {
 async function init() {
   applyStaticTranslations(); bindActions(); updateMode(); setCaptureStatus("capture.status.idle"); resizeWaveformCanvas();
   const schema = await fetchJson("/api/v1/config/schema"); state.schema = schema.payload;
-  await Promise.all([loadConfig(), loadHistory(true), loadStorage(), refreshDevice()]);
+  await Promise.all([loadConfig(), loadHistory(true), loadStorage(), refreshDevice(), loadExperiments()]);
 }
 
 init().catch((error) => toast(error.message));

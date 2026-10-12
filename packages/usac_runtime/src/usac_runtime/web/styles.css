@@ -74,6 +74,20 @@ label input, label select { display: block; margin-top: .3rem; color: var(--ink)
 .history-meta strong, .history-meta small { display: block; }
 .history-meta strong { color: var(--ink); font: 650 .78rem "Cascadia Mono", monospace; }
 .history-actions { display: flex; align-items: center; gap: .55rem; }
+.grouping-tools { margin-top: .9rem; border-top: 1px solid var(--line); padding-top: .75rem; }
+.grouping-tools h3 { margin: 0; font-size: .9rem; }
+.group-export { color: var(--signal-blue); font-size: .76rem; font-weight: 650; text-align: right; }
+.group-export[aria-disabled="true"] { color: var(--muted); pointer-events: none; text-decoration: none; }
+.group-bindings { display: flex; flex-wrap: wrap; gap: .35rem 1rem; margin-top: .45rem; color: var(--muted); font: .7rem "Cascadia Mono", monospace; }
+.group-editor { margin-top: .7rem; border-top: 1px solid #dde4e1; padding-top: .65rem; }
+.group-editor-actions { margin-top: .65rem; }
+.group-notes-field { grid-column: 1 / -1; }
+.history-grouping-tools { margin-bottom: .55rem; }
+.batch-toolbar { display: grid; grid-template-columns: minmax(12rem, 1fr) auto auto; align-items: end; gap: .6rem; margin-top: .6rem; }
+.batch-toolbar > span { padding-bottom: .65rem; color: var(--muted); font: .7rem "Cascadia Mono", monospace; }
+.history-row { align-items: flex-start; flex-wrap: wrap; }
+.history-meta { min-width: 0; flex: 1 1 12rem; overflow-wrap: anywhere; }
+.history-actions { justify-content: flex-end; flex-wrap: wrap; }
 .history-select { display: inline-flex; align-items: center; gap: .3rem; color: var(--ink); white-space: nowrap; }
 .history-select input { margin: 0; }
 .history-actions button { min-height: 2rem; padding: .3rem .55rem; }
@@ -106,5 +120,5 @@ canvas { width: 100%; height: clamp(18rem, 42vw, 31rem); display: block; backgro
 .hint { font-size: .75rem; }
 .toast { position: fixed; right: 1.2rem; bottom: 1.2rem; max-width: min(28rem, calc(100vw - 2.4rem)); background: var(--ink); color: white; padding: .8rem 1rem; box-shadow: var(--shadow); z-index: 10; }
 @media (max-width: 1050px) { .waveform-toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)); } .waveform-actions { grid-column: 1 / -1; justify-content: flex-start; } }
-@media (max-width: 760px) { .instrument-head, .section-head { align-items: stretch; flex-direction: column; } .header-tools { align-items: stretch; flex-direction: column; } .language-toggle { align-self: flex-end; } .device-badge { min-width: 0; } .parameter-groups, .records-grid, .form-grid.two, .waveform-toolbar { grid-template-columns: 1fr; } .waveform-actions { grid-column: auto; } .counter-strip { grid-template-columns: repeat(2, 1fr); } .signal-strip { gap: .35rem; font-size: .6rem; } .field-row { grid-template-columns: 1fr; gap: .35rem; } .waveform-state { text-align: left; } .waveform-footer { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 760px) { .instrument-head, .section-head { align-items: stretch; flex-direction: column; } .header-tools { align-items: stretch; flex-direction: column; } .language-toggle { align-self: flex-end; } .device-badge { min-width: 0; } .parameter-groups, .records-grid, .form-grid.two, .waveform-toolbar, .batch-toolbar { grid-template-columns: 1fr; } .group-notes-field { grid-column: auto; } .batch-toolbar > span { padding: 0; } .history-actions { justify-content: flex-start; } .waveform-actions { grid-column: auto; } .counter-strip { grid-template-columns: repeat(2, 1fr); } .signal-strip { gap: .35rem; font-size: .6rem; } .field-row { grid-template-columns: 1fr; gap: .35rem; } .waveform-state { text-align: left; } .waveform-footer { align-items: flex-start; flex-direction: column; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
