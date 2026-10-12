@@ -58,6 +58,8 @@ const state = {
   followLatest: true, latestCaptureId: null, viewRevision: 0,
   experiments: [], captureGroups: [], groupsByExperiment: new Map(),
   captureExperimentId: null, captureGroupId: null, captureGroupRevision: 0,
+  // Save responses own this user context; captureGroupRevision remains reserved for group-list reads.
+  groupSaveContextRevision: 0,
   captureGroupStatusKey: null,
   historyFilterType: "all", historyFilterValue: "", historyRevision: 0,
   batchSelectedCaptureIds: new Set(), experimentEditingId: null, groupEditingId: null,
@@ -246,6 +248,7 @@ function prepareNewGroup() {
     toast(t("group.chooseExperiment"));
     return;
   }
+  state.groupSaveContextRevision += 1;
   state.groupEditingId = null;
   $("#group-name").value = "";
   $("#group-cell-id").value = "";
@@ -259,6 +262,7 @@ function prepareGroupEdit() {
     toast(t("group.chooseGroup"));
     return;
   }
+  state.groupSaveContextRevision += 1;
   state.groupEditTarget = group.group_id;
   state.groupEditingId = group.group_id;
   $("#group-name").value = group.name ?? "";
@@ -301,12 +305,14 @@ async function saveGroup() {
   if (!state.captureExperimentId) throw new Error(t("group.chooseExperiment"));
   const experimentId = state.captureExperimentId;
   const selectionRevision = state.captureGroupRevision;
+  const saveContextRevision = state.groupSaveContextRevision;
   const name = validatedText($("#group-name").value, 120, "group.invalidName", true);
   const cell_id = validatedText($("#group-cell-id").value, 120, "group.invalidCell");
   const notes = validatedText($("#group-notes").value, 2000, "group.invalidNotes");
   const editingId = state.groupEditingId;
   const ownsSelection = () => state.captureExperimentId === experimentId
-    && state.captureGroupRevision === selectionRevision;
+    && state.captureGroupRevision === selectionRevision
+    && state.groupSaveContextRevision === saveContextRevision;
   const path = editingId
     ? `/api/v1/groups/${encodeURIComponent(editingId)}`
     : `/api/v1/experiments/${encodeURIComponent(experimentId)}/groups`;
@@ -361,6 +367,7 @@ async function loadCaptureGroups(experimentId = state.captureExperimentId, revis
 }
 
 function selectCaptureExperiment(experimentId) {
+  state.groupSaveContextRevision += 1;
   state.captureExperimentId = experimentId || null;
   state.captureGroupId = null;
   state.captureGroups = [];
@@ -1282,6 +1289,7 @@ function bindActions() {
   $("#history-refresh").addEventListener("click", guarded(() => loadHistory(true))); $("#history-more").addEventListener("click", guarded(() => loadHistory(false)));
   $("#capture-experiment").addEventListener("change", guarded(() => selectCaptureExperiment($("#capture-experiment").value)));
   $("#capture-group").addEventListener("change", () => {
+    state.groupSaveContextRevision += 1;
     state.captureGroupId = $("#capture-group").value || null;
     renderCaptureBinding(); renderGroupExport();
   });
@@ -1303,7 +1311,10 @@ function bindActions() {
   $("#group-new").addEventListener("click", prepareNewGroup);
   $("#group-edit").addEventListener("click", prepareGroupEdit);
   $("#group-save").addEventListener("click", guarded(saveGroup));
-  $("#group-edit-target").addEventListener("change", () => { state.groupEditTarget = $("#group-edit-target").value; });
+  $("#group-edit-target").addEventListener("change", () => {
+    state.groupSaveContextRevision += 1;
+    state.groupEditTarget = $("#group-edit-target").value;
+  });
   $("#waveform-apply-window").addEventListener("click", guarded(async () => applyWaveformWindow()));
   $("#waveform-previous").addEventListener("click", () => moveWaveformWindow(-1)); $("#waveform-next").addEventListener("click", () => moveWaveformWindow(1));
   $("#waveform-show-all").addEventListener("click", showAllWaveform); $("#waveform-clear-overlays").addEventListener("click", clearWaveformOverlays);
