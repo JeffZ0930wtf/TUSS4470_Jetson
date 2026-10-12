@@ -73,14 +73,14 @@ Object.assign(I18N.zh, {
   "group.loadFailed": "实验组加载失败，请重新选择实验。",
   "group.empty": "此实验暂无实验组",
   "group.nextBinding": "下一次采集：{target}", "group.activeBinding": "当前任务分组：{target}", "group.activeNone": "当前没有运行任务",
-  "group.cell": "样品位 {cell}", "group.exportDisabled": "选择实验组后下载 ZIP", "group.export": "下载 {name} · {count} 条记录 ZIP",
+  "group.cell": "电芯编号 {cell}", "group.exportDisabled": "选择实验组后下载 ZIP", "group.export": "下载 {name} · {count} 条记录 ZIP",
   "group.manage": "管理实验与分组", "group.experiment": "实验", "group.experimentName": "实验名称", "group.experimentNotes": "实验备注",
   "group.newExperiment": "新建实验", "group.editExperiment": "编辑所选实验", "group.saveExperiment": "保存实验",
-  "group.groupName": "分组名称", "group.cellId": "样品位 ID（可选）", "group.groupNotes": "分组备注",
+  "group.groupName": "分组名称", "group.cellId": "电芯编号（可选）", "group.groupNotes": "分组备注",
   "group.newGroup": "新建分组", "group.editGroup": "编辑所选分组", "group.saveGroup": "保存分组",
   "group.chooseExperiment": "请先选择实验", "group.chooseGroup": "选择分组进行编辑", "group.saved": "分组信息已保存",
   "group.experimentSaved": "实验信息已保存", "group.invalidName": "名称必填且不得超过 120 个字符。",
-  "group.invalidCell": "样品位 ID 不得超过 120 个字符。", "group.invalidNotes": "备注不得超过 2000 个字符。",
+  "group.invalidCell": "电芯编号不得超过 120 个字符。", "group.invalidNotes": "备注不得超过 2000 个字符。",
   "history.filter.all": "全部记录", "history.filter.ungrouped": "仅未分组", "history.filter.experiment": "按实验筛选",
   "history.filter.group": "按分组筛选", "history.filter.mode": "筛选方式", "history.filter.target": "筛选目标", "history.grouping": "{experiment} · {group}",
   "history.selectBatch": "归组", "batch.count": "已选 {count} 条（当前页可选）", "batch.target": "归入目标组",
@@ -95,7 +95,7 @@ Object.assign(I18N.en, {
   "group.loadFailed": "Groups could not be loaded. Select the experiment again.",
   "group.empty": "This experiment has no groups",
   "group.nextBinding": "Next task: {target}", "group.activeBinding": "Active task group: {target}", "group.activeNone": "No task is running",
-  "group.cell": "Cell {cell}", "group.exportDisabled": "Select a group to download its ZIP", "group.export": "Download {name} · {count} captures ZIP",
+  "group.cell": "Cell ID {cell}", "group.exportDisabled": "Select a group to download its ZIP", "group.export": "Download {name} · {count} captures ZIP",
   "group.manage": "Manage experiments and groups", "group.experiment": "Experiment", "group.experimentName": "Experiment name", "group.experimentNotes": "Experiment notes",
   "group.newExperiment": "New experiment", "group.editExperiment": "Edit selected experiment", "group.saveExperiment": "Save experiment",
   "group.groupName": "Group name", "group.cellId": "Cell ID (optional)", "group.groupNotes": "Group notes",
@@ -299,17 +299,36 @@ async function saveExperiment() {
 
 async function saveGroup() {
   if (!state.captureExperimentId) throw new Error(t("group.chooseExperiment"));
+  const experimentId = state.captureExperimentId;
+  const selectionRevision = state.captureGroupRevision;
   const name = validatedText($("#group-name").value, 120, "group.invalidName", true);
   const cell_id = validatedText($("#group-cell-id").value, 120, "group.invalidCell");
   const notes = validatedText($("#group-notes").value, 2000, "group.invalidNotes");
   const editingId = state.groupEditingId;
+  const ownsSelection = () => state.captureExperimentId === experimentId
+    && state.captureGroupRevision === selectionRevision;
   const path = editingId
     ? `/api/v1/groups/${encodeURIComponent(editingId)}`
-    : `/api/v1/experiments/${encodeURIComponent(state.captureExperimentId)}/groups`;
+    : `/api/v1/experiments/${encodeURIComponent(experimentId)}/groups`;
   const method = editingId ? "PATCH" : "POST";
-  const { payload } = await fetchJson(path, { method, body: JSON.stringify({ name, cell_id, notes }) });
-  state.captureGroups = state.captureGroups.filter((item) => item.group_id !== payload.group_id).concat(payload);
-  state.groupsByExperiment.set(state.captureExperimentId, state.captureGroups);
+  let payload;
+  try {
+    ({ payload } = await fetchJson(path, { method, body: JSON.stringify({ name, cell_id, notes }) }));
+  } catch (error) {
+    if (ownsSelection()) throw error;
+    return null;
+  }
+  // Cache by the request's experiment; only the still-current selection may change capture/editor state.
+  const cachedGroups = state.groupsByExperiment.get(experimentId)
+    ?? (ownsSelection() ? state.captureGroups : []);
+  const updatedGroups = cachedGroups.filter((item) => item.group_id !== payload.group_id).concat(payload);
+  state.groupsByExperiment.set(experimentId, updatedGroups);
+  if (!ownsSelection()) {
+    renderHistoryFilterOptions();
+    renderBatchAssignmentTargets();
+    return payload;
+  }
+  state.captureGroups = updatedGroups;
   state.captureGroupId = payload.group_id;
   state.groupEditTarget = payload.group_id;
   state.groupEditingId = null;
@@ -1129,6 +1148,16 @@ async function setHistoryFilter(type, value = "") {
 }
 
 async function loadHistory(reset = true) {
+  // Never let refresh or terminal-poll paths turn an incomplete target filter into an all-records request.
+  if (["experiment", "group"].includes(state.historyFilterType) && !state.historyFilterValue) {
+    state.historyRevision += 1;
+    state.historyCursor = null;
+    state.historyItems = [];
+    state.batchSelectedCaptureIds.clear();
+    $("#history-more").hidden = true;
+    renderHistory();
+    return false;
+  }
   if (reset) {
     state.historyRevision += 1;
     state.historyCursor = null;
