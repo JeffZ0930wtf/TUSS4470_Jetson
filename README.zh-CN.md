@@ -18,6 +18,10 @@ V1.0.1 增加了 Windows 远程拉起 Jetson 和 Jetson 本机一键启动入口
 原始包络样本及完整采集元数据。峰值、TOF、能量等特征计算以及 SOC/SOH
 预测属于未来 BMS 集成层，不属于本模块 V1 的职责。
 
+本分支增加**实验数据分组（尚未发布）**。正式 V1.0.1 标签、固件和线协议
+保持不变；先进行 Windows 页面验收，再决定正式数据库升级及 Jetson 部署。
+主机侧契约见[实验分组设计](docs/superpowers/specs/2026-10-09-experiment-data-grouping-design.md)。
+
 ## 建议的交接阅读顺序
 
 1. 阅读本文档，理解模块边界、组成、运行和数据位置。
@@ -72,6 +76,8 @@ V1.0.1 增加了 Windows 远程拉起 Jetson 和 Jetson 本机一键启动入口
 | 参数校验与应用 | [`parameter_service.py`](packages/usac_runtime/src/usac_runtime/parameter_service.py) |
 | 周期采集、Sweep 与租约 | [`run_plan.py`](packages/usac_runtime/src/usac_runtime/run_plan.py)、[`periodic_lease.py`](packages/usac_runtime/src/usac_runtime/periodic_lease.py) |
 | Core SQLite 持久化 | [`core_store.py`](packages/usac_runtime/src/usac_runtime/core_store.py) |
+| 实验/组元数据、历史筛选和批量归组 | [`core_store.py`](packages/usac_runtime/src/usac_runtime/core_store.py)、[`application.py`](packages/usac_runtime/src/usac_runtime/application.py)、[`api.py`](packages/usac_runtime/src/usac_runtime/api.py) |
+| 网页与离线工具共用的整组 ZIP 导出 | [`group_export.py`](packages/usac_runtime/src/usac_runtime/group_export.py)、[`export_cli.py`](packages/usac_runtime/src/usac_runtime/export_cli.py) |
 | Bridge 入口与设备会话 | [`bridge_cli.py`](packages/usac_runtime/src/usac_runtime/bridge_cli.py)、[`bridge_device_client.py`](packages/usac_runtime/src/usac_runtime/bridge_device_client.py) |
 | Bridge 转发、重连和 pending spool | [`bridge_session.py`](packages/usac_runtime/src/usac_runtime/bridge_session.py)、[`reconnect.py`](packages/usac_runtime/src/usac_runtime/reconnect.py)、[`spool.py`](packages/usac_runtime/src/usac_runtime/spool.py) |
 | REST CLI 与 SQLite 离线导出 | [`client_cli.py`](packages/usac_runtime/src/usac_runtime/client_cli.py)、[`export_cli.py`](packages/usac_runtime/src/usac_runtime/export_cli.py) |
@@ -169,6 +175,29 @@ Jetson 通过稳定的 `/dev/serial/by-id/...` 身份选择 LaunchPad，不应�
   后，画布会以最新帧重新建立显示集合。
 - 画布中可见的波形可能仍是临时帧或滚动最新帧；“可见”不等于已经作为
   归档记录持久保存到 SQLite。
+
+## 实验数据分组（尚未发布）
+
+1. 创建实验，再创建该实验内的组；填写名称、可选电芯编号和备注。ID 固定，
+   名称可以修改，也允许重名。
+2. 在采集区选择“下一任务”的组。单次、周期及扫描任务都在开始时冻结归属；
+   运行期间切组只影响下一任务。只选择实验、不选择组时，记录仍属**未分组**。
+3. 历史区独立筛选全部、未分组、实验或组。使用独立的“批量归组”复选框，
+   可将最多 500 条归档记录分配给目标组或还原为未分组；它不控制波形叠加。
+4. 在采集区下载所选组的 ZIP，或者离线执行：
+
+   ```sh
+   usac-export group --sqlite /path/acquisition.sqlite3 --group-id GROUP_ID --output /path/group.zip
+   ```
+
+ZIP 包含 `manifest.json`，以及每条归档记录的完整 `.usac`、`.u16le` 和元数据
+`.json`。分组只增加 SQLite 元数据，不复制波形；改名或归组不会改变样本字节
+及采集配置。不保存的临时帧、只存最后一次任务尚未结束的滚动帧不在整组导出内。
+跨组波形仍可按原有采样相容性及 20 个 ID 上限叠加。
+
+正式升级前，应停止 Core 和 Bridge，再一起备份持久化数据目录。新 Core
+打开 SQLite 时添加可空分组列及元数据表；旧记录显示为未分组，原始 BLOB 保留。
+本分支的离线验证不迁移现有正式数据库。本次不提供删除实验/组或跨实验移动组。
 
 ## 数据位置和离线导出
 

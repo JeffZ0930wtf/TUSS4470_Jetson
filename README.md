@@ -21,6 +21,12 @@ outputs exact raw envelope samples plus capture metadata. It does not extract
 features or predict battery SOC/SOH; those responsibilities belong to the
 future BMS integration layer.
 
+This branch adds **experiment data grouping (not yet released)**. The published
+V1.0.1 tag, firmware, and wire protocol remain unchanged; Windows acceptance
+precedes any production database upgrade or Jetson deployment. See the
+[grouping design](docs/superpowers/specs/2026-10-09-experiment-data-grouping-design.md)
+for the host-only contract.
+
 ## V1 components
 
 - MSP430 firmware: reset-safe TUSS4470 configuration, finite Burst control,
@@ -50,6 +56,8 @@ evidence and design history, not the entry point for current development.
 | Parameter validation and application | [`parameter_service.py`](packages/usac_runtime/src/usac_runtime/parameter_service.py) |
 | Periodic and sweep run plans | [`run_plan.py`](packages/usac_runtime/src/usac_runtime/run_plan.py), [`periodic_lease.py`](packages/usac_runtime/src/usac_runtime/periodic_lease.py) |
 | Core SQLite persistence | [`core_store.py`](packages/usac_runtime/src/usac_runtime/core_store.py) |
+| Experiment/group metadata, history filters, and bulk assignment | [`core_store.py`](packages/usac_runtime/src/usac_runtime/core_store.py), [`application.py`](packages/usac_runtime/src/usac_runtime/application.py), [`api.py`](packages/usac_runtime/src/usac_runtime/api.py) |
+| Shared group ZIP export | [`group_export.py`](packages/usac_runtime/src/usac_runtime/group_export.py), [`export_cli.py`](packages/usac_runtime/src/usac_runtime/export_cli.py) |
 | Bridge process and device session | [`bridge_cli.py`](packages/usac_runtime/src/usac_runtime/bridge_cli.py), [`bridge_device_client.py`](packages/usac_runtime/src/usac_runtime/bridge_device_client.py) |
 | Bridge forwarding, reconnect, and pending spool | [`bridge_session.py`](packages/usac_runtime/src/usac_runtime/bridge_session.py), [`reconnect.py`](packages/usac_runtime/src/usac_runtime/reconnect.py), [`spool.py`](packages/usac_runtime/src/usac_runtime/spool.py) |
 | REST CLI and offline SQLite export | [`client_cli.py`](packages/usac_runtime/src/usac_runtime/client_cli.py), [`export_cli.py`](packages/usac_runtime/src/usac_runtime/export_cli.py) |
@@ -154,6 +162,37 @@ launcher configuration, and manual Compose commands.
   around the newest frame.
 - A frame visible in the canvas may be transient or rolling-latest data; being
   visible does not by itself mean that the frame has been archived in SQLite.
+
+## Experiment data grouping (unreleased)
+
+1. Create an experiment, then create its groups with a name, optional cell ID,
+   and notes. IDs are stable; names can be changed and need not be unique.
+2. Select the next task's group in the acquisition panel. A single capture,
+   periodic task, or sweep freezes this selection at start. Changing it during
+   a run affects only the next task. Selecting an experiment alone does not
+   assign a capture: no group selected means **Ungrouped**.
+3. Filter saved history independently by all records, ungrouped, experiment,
+   or group. The separate batch checkboxes assign up to 500 archived records
+   to a target group or back to Ungrouped. They do not select waveform overlays.
+4. Download a group's ZIP from the acquisition panel, or export offline:
+
+   ```sh
+   usac-export group --sqlite /path/acquisition.sqlite3 --group-id GROUP_ID --output /path/group.zip
+   ```
+
+The ZIP contains `manifest.json` and each archived capture's complete `.usac`,
+`.u16le`, and metadata `.json`. Grouping is SQLite metadata, not copied waveform
+files; renaming or assigning groups never changes sample bytes or acquisition
+configuration. SAVE_NONE data and SAVE_LAST's unfinished rolling record are
+not included. Waveforms from different groups may still be overlaid under the
+existing sample-compatibility and 20-ID rules.
+
+Before a production upgrade, stop Core and Bridge and back up their persistent
+data directories together. The new Core adds nullable group columns and metadata
+tables on opening SQLite; old captures appear as Ungrouped, with BLOBs preserved.
+No migration of the existing production database is part of this branch's
+offline validation. Group deletion and moving groups between experiments are
+out of scope.
 
 ## Data and offline export
 

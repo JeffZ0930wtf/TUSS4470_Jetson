@@ -1,6 +1,6 @@
 # USAC protocol and parameter contract
 
-Status: implemented and frozen for V1
+Status: V1 wire contract frozen; host-only grouping increment unreleased
 Wire protocol version: 1
 Parameter schema: `tuss4470-parameters-v1`
 
@@ -11,6 +11,9 @@ shared by the MSP430 firmware, host libraries, simulator, Bridge, and Core. It
 solves byte-level interoperability and configuration-traceability problems for
 the acquisition module. The machine-readable schemas and fixed vectors are
 authoritative when prose and encoded bytes must be compared.
+
+The final section describes additive host REST/SQLite grouping metadata. It does
+not add an MCU message, change a configuration hash, or alter wire version 1.
 
 ## Scope
 
@@ -119,3 +122,40 @@ Repeating the identical type, sequence, and payload returns the cached response
 byte-for-byte and does not create a second simulated capture. The simulator is
 a protocol test double only; its waveform has no physical or electrochemical
 meaning.
+
+## Host REST experiment metadata (unreleased)
+
+The `/api/v1` routes below operate on the existing Core SQLite database without
+requiring a connected device. Acquisition starts still require the existing
+device/configuration gates. The full rules are in the
+[grouping design](superpowers/specs/2026-10-09-experiment-data-grouping-design.md).
+
+| Method and path (under `/api/v1`) | Contract |
+|---|---|
+| `GET/POST /experiments` | List or create experiments; create accepts `name`, `notes` |
+| `PATCH /experiments/{id}` | Edit experiment name/notes |
+| `GET/POST /experiments/{id}/groups` | List or create groups; create accepts `name`, `cell_id`, `notes` |
+| `PATCH /groups/{id}` | Edit group name/cell ID/notes; no parent change |
+| `GET /captures` | Existing ascending cursor pagination, plus optional `experiment_id`, `group_id`, or exclusive `ungrouped=true` |
+| `POST /captures/group-assignment` | `{capture_ids, group_id}`; 1–500 distinct archived IDs, nullable group, atomic, returns `{assigned_count}` |
+| `GET /groups/{id}/export.zip` | Single SQLite snapshot of archived members, streamed through a temporary ZIP |
+
+Generated experiment/group IDs are lowercase UUID4 hex (32 characters). Names
+are trimmed, required, and at most 120 characters; optional `cell_id` is at most
+120 characters and notes at most 2000. Duplicate names are allowed. No entity
+delete or group move is supported. Missing IDs return 404, invalid requests 422,
+and unavailable storage 503.
+
+`POST /captures`, `POST /periodic/start`, and `POST /sweeps` accept optional
+nullable `group_id`, frozen at task start. Omission preserves legacy Ungrouped
+behavior. History, frame details, and session responses include the same nested
+`grouping_metadata` with `group_id`, `experiment_id`, `group_name`,
+`experiment_name`, and `cell_id`; all five are null for ungrouped data. Names
+resolve from current metadata. Frame assignment may later be edited, but session
+summaries retain their original task binding; replay must not undo manual edits.
+
+Group ZIPs contain `manifest.json` plus `.usac`, `.u16le`, and `.json` per
+archived capture. The binary bytes are identical to stored frames/samples;
+JSON includes configuration, events, and current grouping metadata. Transient
+and unfinished rolling frames are excluded. The existing offline `show` and
+`download` commands also include `grouping_metadata` in their metadata output.

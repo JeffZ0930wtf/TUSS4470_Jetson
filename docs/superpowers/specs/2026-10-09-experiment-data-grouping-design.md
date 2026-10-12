@@ -27,7 +27,7 @@
 
 ## 3. 主机接口
 
-所有接口位于 `/api/v1`，不要求连接设备。返回元数据为 JSON，时间为 UTC 纳秒；可空值用 JSON `null`。
+所有接口位于 `/api/v1`；本节元数据、历史和导出接口不要求连接设备，采集开始仍遵守既有设备/配置门禁。返回元数据为 JSON，时间为 UTC 纳秒；可空值用 JSON `null`。
 
 | 方法与路径 | 契约 |
 | --- | --- |
@@ -37,12 +37,12 @@
 | GET /experiments/{experiment_id}/groups | `{items:[组...]}`，组可带已归档记录数 |
 | POST /experiments/{experiment_id}/groups | `{name,cell_id:"",notes:""}`，返回组 |
 | PATCH /groups/{group_id} | 可更新 name/cell_id/notes，不改变从属实验 |
-| POST /captures/group-assignment | `{capture_ids:[32位hex...],group_id:ID或null}`，返回更新数量；仅已归档记录 |
+| POST /captures/group-assignment | `{capture_ids:[32位hex...],group_id:ID或null}`，返回 `{assigned_count:匹配的不同帧数}`；仅已归档记录 |
 | GET /groups/{group_id}/export.zip | 导出该组当前已归档记录 |
 
-批量补归组限 1–500 个不同帧 ID；重复 ID 去重。任何帧或目标组不存在则整体失败，不部分成功。`null` 将记录移回未分组。不存在资源返回 404，非法字段/长度/相互冲突筛选返回 422；存储未配置沿用现有不可用响应。
+批量补归组限 1–500 个不同帧 ID；重复 ID 去重，重复提交同一归属返回相同匹配数。任何帧或目标组不存在则整体失败，不部分成功。`null` 将记录移回未分组。不存在资源返回 404，非法字段/长度/相互冲突筛选返回 422；存储未配置沿用现有不可用响应。新的严格小写 ID 规则仅用于实验/组，既有 capture/session ID 的输入规则保持兼容。
 
-三类开始请求增加 `group_id: string | null = null`。采集结果、会话结果、历史摘要、帧详情和导出 JSON 均提供归属（`group_id`；由组解析 `experiment_id` 以及当前显示名），包括临时和滚动帧。重命名按当前元数据展示，不改变 ID。历史 GET `/captures` 保持现有 `limit/cursor/session_id`，增加 `experiment_id/group_id/ungrouped`：组和实验同时指定须属于同一实验；`ungrouped=true` 不可同时指定实验/组。游标仍按 row_id 倒序，同一次翻页沿用筛选条件。
+三类开始请求增加 `group_id: string | null = null`。采集结果、会话结果、历史摘要、帧详情和导出 JSON 均提供 `grouping_metadata` 对象，含 `group_id/experiment_id/group_name/experiment_name/cell_id` 五字段，包括临时和滚动帧；未分组时五字段均为 `null`。重命名按当前元数据展示，不改变 ID。历史 GET `/captures` 保持现有 `limit/cursor/session_id`，增加 `experiment_id/group_id/ungrouped`：组和实验同时指定须属于同一实验；`ungrouped=true` 不可同时指定实验/组。游标沿用现有 row_id 升序，同一次翻页沿用筛选条件。
 
 ## 4. 整组导出
 
@@ -50,7 +50,7 @@ Web 下载 ZIP，离线命令增加 `usac-export group --sqlite ... --group-id .
 
 ZIP 包含 `manifest.json`（导出时实验/组元数据、帧 ID 与总数）及每帧 `<capture_id>.usac/.u16le/.json`。文件名只使用系统 ID，不使用用户名称拼路径。帧详情 JSON 保留现有元数据并包含配置、run_plan、事件和分组信息。原始两种二进制文件与数据库 BLOB 逐字节相同。
 
-导出仅包含 ARCHIVE，不包含 SAVE_NONE 临时帧或尚未最终归档的 SAVE_LAST rolling 帧。空组可导出仅有 manifest 的 ZIP。导出读取同一个数据库快照，逐帧写 ZIP，避免将全组波形保存在内存；Web 使用临时文件流式响应并在结束后关闭，不添加第三方依赖。
+导出仅包含 ARCHIVE，不包含 SAVE_NONE 临时帧或尚未最终归档的 SAVE_LAST rolling 帧。空组可导出仅有 manifest 的 ZIP。导出读取同一个数据库快照，逐帧写 ZIP，避免将全组波形保存在内存；Web 使用临时文件流式响应，在成功、异常和客户端中断后关闭并删除临时文件，不添加第三方依赖。
 
 ## 5. Web 行为
 
