@@ -4,18 +4,18 @@
 
 ## 文档说明
 
-本文档是 TUSS4470 独立超声采集子模块 V1.1.0 的中文操作与开发入口，
-用于帮助实验人员、上位机开发人员和固件开发人员快速判断系统边界、
-启动方式、数据位置，以及每项功能对应的维护代码。协议细节、平台部署、
+本文档是 TUSS4470 独立超声采集子模块的中文操作与开发入口，涵盖 V1.1.1 主机 Web
+缓存一致性修复，帮助实验人员、上位机开发人员和固件开发人员快速判断
+系统边界、启动方式、数据位置，以及每项功能对应的维护代码。协议细节、平台部署、
 发布证据和历史开发记录由文末链接的正式文档分别维护。
 
-V1.0.1 增加了 Windows 远程拉起 Jetson 和 Jetson 本机一键启动入口。V1.1.0
-增加主机端实验分组；不可变源码标签 `v1.1.0` 指向
-`7db75e05875848fd02d188ba5196c2c1e06b5f5b`。当前 Compose 和启动脚本默认使用
-镜像名 `tuss4470-acquisition-core:1.1.0`；带此标签的 Jetson ARM64 镜像基于同一
-源码修订构建。Jetson
-已通过一次分组 Pulse=1 单帧采集验证；范围和限制见
-[V1.1.0 发布说明](docs/release/v1.1.0-release-notes.md)，此前启动器发布说明见
+V1.0.1 增加了 Windows 远程拉起 Jetson 和 Jetson 本机一键启动入口；V1.1.0
+增加主机端实验分组。V1.1.1 修复浏览器静态资源混版：JavaScript/CSS URL 使用
+内容哈希，HTML 与静态资源响应要求缓存重新验证。仓库 Compose/启动默认镜像名为
+`tuss4470-acquisition-core:1.1.1`；启动脚本使用 `--no-build`，要求目标镜像已预先存在。
+V1.1.0 源码标签和此前已验收的 Jetson ARM64 镜像保持不变。当前发布与部署状态详见
+[V1.1.1 发布说明](docs/release/v1.1.1-release-notes.md)、
+记录单帧实测边界的[历史 V1.1.0 发布说明](docs/release/v1.1.0-release-notes.md)，此前启动器说明见
 [V1.0.1 发布说明](docs/release/v1.0.1-release-notes.md)。
 
 本模块负责配置 TUSS4470、安全执行有界超声采集，并输出未经插值或改写的
@@ -29,7 +29,8 @@ V1.1.0 增加**实验数据分组**。固件、线协议和原始采集样本保
 ## 建议的交接阅读顺序
 
 1. 阅读本文档，理解模块边界、组成、运行和数据位置。
-2. 阅读 [V1.1.0 发布说明](docs/release/v1.1.0-release-notes.md)、
+2. 阅读 [V1.1.1 发布说明](docs/release/v1.1.1-release-notes.md)、
+   [V1.1.0 历史发布说明](docs/release/v1.1.0-release-notes.md)、
    [V1.0.1 发布说明](docs/release/v1.0.1-release-notes.md)和
    [V1 已知限制](docs/release/v1.0.0-known-limitations.md)，确认当前版本可以
    声明和不能声明的能力。
@@ -39,7 +40,7 @@ V1.1.0 增加**实验数据分组**。固件、线协议和原始采集样本保
 5. 先使用模拟器熟悉配置、采集、历史和导出，再接入真实硬件。
 
 `docs/archive/pre-v1/` 保存 M1-M6 的设计历史、故障调查和验收证据，主要用于
-追溯原因，不是理解当前 V1.1.0 发布版本的首要入口。
+追溯原因，不是理解当前 V1.1.1 操作和修复状态的首要入口。
 
 ## 系统组成
 
@@ -237,6 +238,7 @@ Jetson 部署在完成整目录备份后执行了可加 SQLite 迁移；7 条既
 - [协议与参数契约](docs/protocol.md)
 - [Windows 部署](docs/deployment/windows.md)
 - [Jetson 部署](docs/deployment/jetson.md)
+- [V1.1.1 发布说明](docs/release/v1.1.1-release-notes.md)
 - [V1.1.0 发布说明](docs/release/v1.1.0-release-notes.md)
 - [V1.0.1 发布说明](docs/release/v1.0.1-release-notes.md)
 - [V1 运行基线验收](docs/release/v1.0.0-acceptance.md)

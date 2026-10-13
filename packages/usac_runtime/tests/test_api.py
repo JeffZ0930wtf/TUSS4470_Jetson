@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from pathlib import Path
+import re
+import shutil
 import sqlite3
 import time
 
@@ -11,6 +14,7 @@ import pytest
 
 from usac_protocol.simulator import SimulatedDevice
 from usac_runtime.application import AcquisitionApplication
+import usac_runtime.api as api_module
 from usac_runtime.bridge_device_client import ReconnectableBridgeDeviceClient
 from usac_runtime.core_store import CaptureStore, SavePolicy
 from usac_runtime.device_executor import SingleDeviceExecutor
@@ -46,6 +50,71 @@ def client(
         create_api(application),
         raise_server_exceptions=raise_server_exceptions,
     )
+
+
+def _copy_web_assets(destination: Path) -> None:
+    destination.mkdir()
+    for name in ("index.html", "app.js", "styles.css"):
+        shutil.copyfile(api_module._WEB_ROOT / name, destination / name)
+
+
+def _asset_url(page: str, *, filename: str, attribute: str) -> tuple[str, str]:
+    match = re.search(
+        rf'\b{attribute}="(?P<url>/assets/{re.escape(filename)}\?v=(?P<digest>[0-9a-f]{{64}}))"',
+        page,
+    )
+    assert match is not None, f"HTML must include a SHA-256 versioned {filename} URL"
+    return match.group("url"), match.group("digest")
+
+
+def test_web_assets_use_content_hash_urls_and_disable_http_caching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    web_root = tmp_path / "web"
+    _copy_web_assets(web_root)
+    monkeypatch.setattr(api_module, "_WEB_ROOT", web_root)
+    api = client()
+
+    page = api.get("/")
+    script_url, script_digest = _asset_url(
+        page.text, filename="app.js", attribute="src"
+    )
+    styles_url, styles_digest = _asset_url(
+        page.text, filename="styles.css", attribute="href"
+    )
+    script = api.get(script_url)
+    styles = api.get(styles_url)
+
+    assert page.status_code == script.status_code == styles.status_code == 200
+    assert hashlib.sha256(script.content).hexdigest() == script_digest
+    assert hashlib.sha256(styles.content).hexdigest() == styles_digest
+    assert page.headers["cache-control"] == "no-cache"
+    assert script.headers["cache-control"] == "no-cache"
+    assert styles.headers["cache-control"] == "no-cache"
+
+
+def test_new_api_instance_versions_changed_assets_without_package_version_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    web_root = tmp_path / "web"
+    _copy_web_assets(web_root)
+    monkeypatch.setattr(api_module, "_WEB_ROOT", web_root)
+
+    first_api = client()
+    first_page = first_api.get("/")
+    first_script_url, _ = _asset_url(
+        first_page.text, filename="app.js", attribute="src"
+    )
+    (web_root / "app.js").write_bytes(
+        (web_root / "app.js").read_bytes() + b"\n// fixture-only asset change\n"
+    )
+    second_api = client()
+    second_page = second_api.get("/")
+    second_script_url, _ = _asset_url(
+        second_page.text, filename="app.js", attribute="src"
+    )
+
+    assert first_script_url != second_script_url
 
 
 def test_schema_device_and_draft_config_share_one_application_state() -> None:

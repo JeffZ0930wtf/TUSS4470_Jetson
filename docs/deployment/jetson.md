@@ -2,27 +2,35 @@
 
 ## 文档说明
 
-本文档说明 V1 超声采集子模块在 Jetson 宿主机和容器内的设备、网络与持久目录边界，解决“哪些配置属于宿主机、哪些路径属于容器”的问题。它适用于 V1 的部署、启动、停止和真实设备运行；协议与安全边界分别以 `docs/protocol.md` 和 V1 已知限制为准。
+本文档说明 V1 超声采集子模块在 Jetson 宿主机和容器内的设备、网络与持久目录边界，解决“哪些配置属于宿主机、哪些路径属于容器”的问题，并记录当前 V1.1.1 主机 UI 缓存修复状态及 V1.1.0 历史实机验证。它适用于 V1 的部署、启动、停止和真实设备运行；协议与安全边界分别以 `docs/protocol.md` 和 V1 已知限制为准。完整真实证据不放入 Git。
 
-## 文档说明
+## V1.1.1 主机 UI 缓存修复状态
 
-本文说明 Jetson 上 Core/Bridge 的容器边界、持久目录、设备选择和一键启动流程；本次 V1.1.0 镜像身份及有限实机验证摘要也列于下方。完整真实证据不放入 Git。
+V1.1.1 仅修复浏览器静态资源混版：API 进程启动时固定 HTML、JavaScript 与
+CSS 内容快照，HTML 用 JavaScript/CSS 的完整 SHA-256 生成资源 URL，并对三类
+响应设置 `Cache-Control: no-cache`。需要更新资产时须重启 API 进程。该修复不改
+实验分组、固件或协议，也没有新增 Jetson 实机采集。
 
-## V1.1.0 源码、镜像与实机验证
+仓库 Compose/启动器的默认镜像名为 `tuss4470-acquisition-core:1.1.1`，但本次
+准备尚未构建或部署该镜像；启动使用 `up -d --no-build`，因此只有镜像预先存在
+时才可按此默认启动。更改默认值不会自动替换现有容器。详见
+[V1.1.1 准备说明](../release/v1.1.1-release-notes.md)。
+
+## V1.1.0 源码、镜像与实机验证（历史）
 
 不可变源码标签 `v1.1.0` 指向 `7db75e05875848fd02d188ba5196c2c1e06b5f5b`。
 Jetson ARM64 镜像 `tuss4470-acquisition-core:1.1.0`（镜像 ID
 `sha256:c4eef7032a72d5e359b77bea2afc9507166b4e853506957beab7e350a269abf3`）
-由该源码修订构建；Core 与 Bridge 当前都使用此镜像。Compose 与启动器的
-默认值已更新为 1.1.0。该维护改动只调整默认选择和文档/断言，不改变标签或
-已验收镜像，也不需要重新构建镜像。
+由该源码修订构建；该单帧验收期间 Core 与 Bridge 均使用此镜像（不代表本次准备
+阶段的当前容器状态）。当时的 Compose/启动器默认值为 1.1.0；后续 V1.1.1 准备仅更新了默认镜像名，
+没有改写该标签或已验收镜像，也没有在本次准备中重新构建或部署。
 
 2026-10-13 在备份 Core 和 Bridge 持久目录后完成数据库升级及一次经授权的
 Pulse=1 单次采集。新增记录绑定实验组；既有 7 条归档记录及原始帧字节保持
 不变，库存为 8 条（1 条分组、7 条未分组）；新增帧的筛选和 ZIP 导出核验通过，
 Bridge pending=0，最终设备状态为 `NORMAL / IDLE`。该实机证据仅覆盖单帧采集、
 分组、筛选和 ZIP；不覆盖周期/扫描矩阵、人工浏览器验收、时序校准或长期可靠性。
-完整摘要见 [V1.1.0 发布说明](../release/v1.1.0-release-notes.md)，机器原件位于
+完整摘要见[历史 V1.1.0 发布说明](../release/v1.1.0-release-notes.md)，机器原件位于
 `D:/Desktop/TUSS4470_data/release/v1.1.0/jetson-20261013/`。
 
 ## 宿主机与容器边界
@@ -73,10 +81,10 @@ docker compose -f deploy/compose.jetson.yaml up -d --force-recreate bridge
 
 ## Jetson 本机一键启动
 
-启动脚本默认使用已经构建并验证的
-`tuss4470-acquisition-core:1.1.0` 镜像。启动脚本执行 `up -d --no-build`，
-不会自动构建；镜像须已存在于 Jetson。保留的 `1.0.1` 镜像可作为受控回退
-选项，回退前应保护新产生的数据并按备份记录恢复匹配版本。
+启动脚本当前默认选择 `tuss4470-acquisition-core:1.1.1`。本次准备尚未构建或
+部署 V1.1.1 镜像；启动脚本执行 `up -d --no-build`，不会自动构建，镜像须已
+存在于 Jetson。更改默认值不会替换当前运行容器；此前已验收的 V1.1.0 镜像身份
+与证据见上方历史记录。回退前应保护新产生的数据并按备份记录恢复匹配版本。
 
 在仓库根目录执行：
 
@@ -99,7 +107,7 @@ docker compose -f deploy/compose.jetson.yaml up -d --force-recreate bridge
 需要手动启动时仍可执行：
 
 ```sh
-export USAC_CORE_IMAGE=tuss4470-acquisition-core:1.1.0
+export USAC_CORE_IMAGE=tuss4470-acquisition-core:1.1.1
 export USAC_SERIAL_DEVICE=/dev/serial/by-id/usb-Texas_Instruments_MSP430-USB_Example_<本板32位小写十六进制序列号>-if00
 docker compose -f deploy/compose.jetson.yaml up -d --no-build
 ```

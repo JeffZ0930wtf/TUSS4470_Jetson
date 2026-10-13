@@ -4,20 +4,23 @@
 
 ## Document overview
 
-This README is the operator and developer entry point for V1.1.0 of the
-standalone ultrasonic acquisition submodule. It explains what the module does,
-how to build and run it on Windows or Jetson, where data is stored, and which
-safety limits remain. Protocol details, platform procedures, release evidence,
-and historical development records live in the linked documents.
+This README is the operator and developer entry point for the standalone
+ultrasonic acquisition submodule, including its V1.1.1 host-UI cache-consistency
+fix. It explains what the module does, how to build and run it on Windows or
+Jetson, where data is stored, and which safety limits remain. Protocol details,
+platform procedures, release evidence, and historical development records live
+in the linked documents.
 
 V1.0.1 added one-shot Jetson startup from Windows or the Jetson desktop. V1.1.0
-adds host-side experiment grouping; its immutable source tag is `v1.1.0` at
-revision `7db75e05875848fd02d188ba5196c2c1e06b5f5b`. Current Compose and
-startup defaults use the image name `tuss4470-acquisition-core:1.1.0`; the
-Jetson ARM64 image with this tag was built from that same revision. A single
-grouped Pulse=1 capture was
-validated on Jetson; see the [V1.1.0 release notes](docs/release/v1.1.0-release-notes.md)
-for the bounded evidence and limitations, and the
+introduced host-side experiment grouping. V1.1.1 fixes mixed-generation browser
+assets by binding JavaScript/CSS URLs to content hashes and requiring
+revalidation for HTML and static asset responses. Repository Compose/startup
+defaults name `tuss4470-acquisition-core:1.1.1`; startup uses `--no-build` and
+requires the selected image to be present first. The V1.1.0 source tag and
+previously validated Jetson ARM64 image remain unchanged. See the
+[V1.1.1 release notes](docs/release/v1.1.1-release-notes.md),
+the historical [V1.1.0 release notes](docs/release/v1.1.0-release-notes.md)
+for bounded single-capture evidence, and the
 [V1.0.1 release notes](docs/release/v1.0.1-release-notes.md) for the earlier
 launcher release.
 
@@ -233,6 +236,7 @@ SQLite data without requiring Core.
 - [Windows deployment](docs/deployment/windows.md)
 - [Jetson deployment](docs/deployment/jetson.md)
 - [V1.1.0 release notes](docs/release/v1.1.0-release-notes.md)
+- [V1.1.1 release notes](docs/release/v1.1.1-release-notes.md)
 - [V1.0.1 release notes](docs/release/v1.0.1-release-notes.md)
 - [V1 runtime baseline acceptance](docs/release/v1.0.0-acceptance.md)
 - [V1 known limitations](docs/release/v1.0.0-known-limitations.md)

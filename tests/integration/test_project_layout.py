@@ -110,7 +110,7 @@ class ProjectLayoutTests(unittest.TestCase):
             },
         )
 
-    def test_active_environment_has_v1_1_distribution_and_commands(self) -> None:
+    def test_active_environment_has_v1_1_1_distribution_and_commands(self) -> None:
         """Catch a stale editable install before operator commands are used."""
 
         distribution = importlib_metadata.distribution("tuss4470-acquisition")
@@ -120,7 +120,7 @@ class ProjectLayoutTests(unittest.TestCase):
             if entry_point.group == "console_scripts"
         }
 
-        self.assertEqual(distribution.version, "1.1.0")
+        self.assertEqual(distribution.version, "1.1.1")
         self.assertEqual(
             installed_commands,
             {
@@ -131,7 +131,7 @@ class ProjectLayoutTests(unittest.TestCase):
             },
         )
 
-    def test_release_metadata_is_v1_1_0(self) -> None:
+    def test_release_metadata_is_v1_1_1(self) -> None:
         metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
         local_package = next(
@@ -140,8 +140,8 @@ class ProjectLayoutTests(unittest.TestCase):
             if package["name"] == "tuss4470-acquisition"
         )
 
-        self.assertEqual(metadata["project"]["version"], "1.1.0")
-        self.assertEqual(local_package["version"], "1.1.0")
+        self.assertEqual(metadata["project"]["version"], "1.1.1")
+        self.assertEqual(local_package["version"], "1.1.1")
         self.assertEqual(local_package["source"], {"editable": "."})
         self.assertEqual(
             metadata["project"]["description"],
@@ -188,6 +188,7 @@ class ProjectLayoutTests(unittest.TestCase):
             "docs/release/v1.0.0-acceptance.md",
             "docs/release/v1.0.0-known-limitations.md",
             "docs/release/v1.1.0-release-notes.md",
+            "docs/release/v1.1.1-release-notes.md",
             "docs/archive/pre-v1/README.md",
         ]
 
@@ -340,10 +341,10 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn("linux/amd64", jetson_test)
         self.assertIn("candidate_sha", jetson_test)
         self.assertIn("candidate12", jetson_test)
-        self.assertIn("1.1.0-rc-${candidate12}-arm64", jetson_test)
-        self.assertIn("1.1.0-rc-${candidate12}-amd64.tar", jetson_test)
-        self.assertEqual(jetson_test.count("--build-arg VERSION=1.1.0"), 2)
-        self.assertIn("ARG VERSION=1.1.0", dockerfile)
+        self.assertIn("1.1.1-rc-${candidate12}-arm64", jetson_test)
+        self.assertIn("1.1.1-rc-${candidate12}-amd64.tar", jetson_test)
+        self.assertEqual(jetson_test.count("--build-arg VERSION=1.1.1"), 2)
+        self.assertIn("ARG VERSION=1.1.1", dockerfile)
         self.assertNotIn("make -C firmware", jetson_test)
         arm64_run = "docker run --rm --platform linux/arm64 --entrypoint python"
         amd64_export = "docker buildx build --platform linux/amd64"
@@ -415,7 +416,7 @@ class ProjectLayoutTests(unittest.TestCase):
         compose = (ROOT / "deploy/compose.yaml").read_text(encoding="utf-8")
         dockerfile = (ROOT / "deploy/Dockerfile.core").read_text(encoding="utf-8")
 
-        self.assertIn("${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.1.0}", compose)
+        self.assertIn("${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.1.1}", compose)
         self.assertIn("127.0.0.1:8765:8765", compose)
         self.assertIn("127.0.0.1:8000:8000", compose)
         self.assertIn("USAC_CORE_DATA_DIR", compose)
@@ -444,7 +445,7 @@ class ProjectLayoutTests(unittest.TestCase):
         self.assertIn("/dev/tuss4470", compose)
         self.assertIn("--core-host\n      - core", compose)
         self.assertIn("--core-port\n      - \"8765\"", compose)
-        self.assertIn("${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.1.0}", compose)
+        self.assertIn("${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.1.1}", compose)
         self.assertIn('entrypoint: ["python", "-m", "usac_runtime.bridge_cli"]', compose)
         self.assertNotIn("      - serve\n", compose)
         self.assertIn("--backend\n      - bridge", compose)

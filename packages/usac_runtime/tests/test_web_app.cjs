@@ -13,9 +13,26 @@ const source = fs.readFileSync(sourcePath, "utf8")
 const htmlPath = path.join(__dirname, "..", "src", "usac_runtime", "web", "index.html");
 const html = fs.readFileSync(htmlPath, "utf8");
 
+function staticAttributeNodes(attribute, datasetKey) {
+  const tagPattern = /<[a-z][^>]*>/gi;
+  const attributePattern = new RegExp(`\\s${attribute}\\s*=\\s*(["'])(.*?)\\1`, "i");
+  return [...html.matchAll(tagPattern)].flatMap(([tag]) => {
+    const match = tag.match(attributePattern);
+    if (!match) return [];
+    return [{
+      dataset: { [datasetKey]: match[2] },
+      textContent: "",
+      attributes: {},
+      setAttribute(name, value) { this.attributes[name] = value; },
+    }];
+  });
+}
+
 function makeHarness() {
   const nodes = new Map();
   const counters = Array.from({ length: 4 }, () => ({ textContent: "" }));
+  const staticTextNodes = staticAttributeNodes("data-i18n", "i18n");
+  const staticAriaNodes = staticAttributeNodes("data-i18n-aria-label", "i18nAriaLabel");
   const requests = [];
   const timers = [];
   const responses = [];
@@ -59,7 +76,12 @@ function makeHarness() {
   const sandbox = {
     console,
     document: {
-      documentElement: {}, querySelector: node, querySelectorAll: () => [],
+      documentElement: {}, querySelector: node,
+      querySelectorAll(selector) {
+        if (selector === "[data-i18n]") return staticTextNodes;
+        if (selector === "[data-i18n-aria-label]") return staticAriaNodes;
+        return [];
+      },
       createElement: (tagName) => ({
         tagName, className: "", textContent: "", checked: false, disabled: false,
         dataset: {}, listeners: {}, children: [], style: {},
@@ -89,7 +111,7 @@ function makeHarness() {
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
   return {
-    node, requests, responses, timers, canvasOps,
+    node, requests, responses, timers, canvasOps, staticTextNodes, staticAriaNodes,
     run: (code) => vm.runInContext(code, sandbox),
   };
 }
@@ -894,6 +916,36 @@ async function main() {
   const enKeys = JSON.parse(language.run(`JSON.stringify(Object.keys(I18N.en).filter((key) => ${prefixExpression}).sort())`));
   assert.ok(zhKeys.length > 0, "grouping controls have translated labels and status messages");
   assert.deepEqual(zhKeys, enKeys, "all added Chinese keys have English counterparts");
+  const staticKeys = [
+    ...language.staticTextNodes.map((node) => node.dataset.i18n),
+    ...language.staticAriaNodes.map((node) => node.dataset.i18nAriaLabel),
+  ];
+  const unresolvedStaticKeys = JSON.parse(language.run(`JSON.stringify(${JSON.stringify(staticKeys)}.filter((key) => {
+    const zh = I18N.zh[key]; const en = I18N.en[key];
+    return typeof zh !== "string" || !zh.trim() || zh === key || typeof en !== "string" || !en.trim() || en === key;
+  }))`));
+  assert.deepEqual(unresolvedStaticKeys, [], "every static HTML text and ARIA key has real Chinese and English translations");
+  const staticTextFor = (key) => language.staticTextNodes.find((node) => node.dataset.i18n === key);
+  const staticAriaFor = (key) => language.staticAriaNodes.find((node) => node.dataset.i18nAriaLabel === key);
+  language.run("setLanguage('zh')");
+  for (const node of language.staticTextNodes) {
+    assert.equal(node.textContent, language.run(`I18N.zh[${JSON.stringify(node.dataset.i18n)}]`));
+  }
+  for (const node of language.staticAriaNodes) {
+    assert.equal(node.attributes["aria-label"], language.run(`I18N.zh[${JSON.stringify(node.dataset.i18nAriaLabel)}]`));
+  }
+  assert.equal(staticTextFor("group.manage").textContent, "管理实验与分组");
+  assert.equal(staticTextFor("history.filter.mode").textContent, "筛选方式");
+  language.run("setLanguage('en')");
+  for (const node of language.staticTextNodes) {
+    assert.equal(node.textContent, language.run(`I18N.en[${JSON.stringify(node.dataset.i18n)}]`));
+  }
+  for (const node of language.staticAriaNodes) {
+    assert.equal(node.attributes["aria-label"], language.run(`I18N.en[${JSON.stringify(node.dataset.i18nAriaLabel)}]`));
+  }
+  assert.equal(staticTextFor("group.manage").textContent, "Manage experiments and groups");
+  assert.equal(staticTextFor("history.filter.mode").textContent, "Filter by");
+  assert.equal(staticAriaFor("language.aria").attributes["aria-label"], "Switch to Chinese");
   language.run(`
     state.captureExperimentId = "exp-a"; state.captureGroupId = "group-a";
     state.historyFilterType = "group"; state.historyFilterValue = "group-a";

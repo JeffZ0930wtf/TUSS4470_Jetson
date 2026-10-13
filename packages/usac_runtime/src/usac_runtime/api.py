@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 import tempfile
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
 from .application import (
@@ -147,18 +148,44 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
     """Create an API whose handlers contain no duplicated device semantics."""
 
     api = FastAPI(title="TUSS4470 Ultrasonic Acquisition", version="1")
+    web_root = _WEB_ROOT
+    # Keep each hash URL bound to the bytes this process serves so new HTML
+    # cannot mix with stale JS; production asset updates require API restart.
+    page = (web_root / "index.html").read_text(encoding="utf-8")
+    script = (web_root / "app.js").read_bytes()
+    styles = (web_root / "styles.css").read_bytes()
+    script_hash = hashlib.sha256(script).hexdigest()
+    styles_hash = hashlib.sha256(styles).hexdigest()
+    page = page.replace(
+        'src="/assets/app.js"', f'src="/assets/app.js?v={script_hash}"'
+    ).replace(
+        'href="/assets/styles.css"', f'href="/assets/styles.css?v={styles_hash}"'
+    )
+    no_cache_headers = {"Cache-Control": "no-cache"}
 
     @api.get("/", include_in_schema=False)
-    def web_console() -> FileResponse:
-        return FileResponse(_WEB_ROOT / "index.html", media_type="text/html")
+    def web_console() -> Response:
+        return Response(
+            content=page,
+            media_type="text/html",
+            headers=no_cache_headers,
+        )
 
     @api.get("/assets/app.js", include_in_schema=False)
-    def web_script() -> FileResponse:
-        return FileResponse(_WEB_ROOT / "app.js", media_type="text/javascript")
+    def web_script() -> Response:
+        return Response(
+            content=script,
+            media_type="text/javascript",
+            headers=no_cache_headers,
+        )
 
     @api.get("/assets/styles.css", include_in_schema=False)
-    def web_styles() -> FileResponse:
-        return FileResponse(_WEB_ROOT / "styles.css", media_type="text/css")
+    def web_styles() -> Response:
+        return Response(
+            content=styles,
+            media_type="text/css",
+            headers=no_cache_headers,
+        )
 
     @api.get("/api/v1/health")
     def health() -> dict[str, str]:
