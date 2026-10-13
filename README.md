@@ -4,26 +4,29 @@
 
 ## Document overview
 
-This README is the operator and developer entry point for V1.0.1 of the
-standalone ultrasonic acquisition submodule. It explains what the module
+This README is the operator and developer entry point for the V1.1.0 source
+candidate of the standalone ultrasonic acquisition submodule. It explains what the module
 does, how to build and run it on Windows or Jetson, where data is stored, and
 which safety limits remain. Protocol details, platform procedures, release
 evidence, and historical development records live in the linked documents.
 
-V1.0.1 adds one-shot Jetson startup from Windows or the Jetson desktop. It
-uses `tuss4470-acquisition-core:1.0.1`, built from the released V1.0.1 source;
-the acquisition runtime and firmware are unchanged. See the
-[V1.0.1 release notes](docs/release/v1.0.1-release-notes.md) for verification
-scope and the distinction between this source release and the runtime image.
+V1.0.1 added one-shot Jetson startup from Windows or the Jetson desktop. The
+current Compose and startup defaults still use
+`tuss4470-acquisition-core:1.0.1`; this source update does not build or switch
+the runtime image. See the [V1.1.0 release notes](docs/release/v1.1.0-release-notes.md)
+for the source change, verification scope, and image boundary, and the
+[V1.0.1 release notes](docs/release/v1.0.1-release-notes.md) for the earlier
+launcher release.
 
 The module configures TUSS4470, controls bounded ultrasonic acquisition, and
 outputs exact raw envelope samples plus capture metadata. It does not extract
 features or predict battery SOC/SOH; those responsibilities belong to the
 future BMS integration layer.
 
-This branch adds **experiment data grouping (not yet released)**. The published
-V1.0.1 tag, firmware, and wire protocol remain unchanged; Windows acceptance
-precedes any production database upgrade or Jetson deployment. See the
+This V1.1.0 source candidate adds **experiment data grouping**. Firmware,
+wire protocol, and raw capture bytes remain unchanged. The runtime image still
+defaults to 1.0.1, so this source change is not a Jetson deployment or a
+production database upgrade. See the
 [grouping design](docs/superpowers/specs/2026-10-09-experiment-data-grouping-design.md)
 for the host-only contract.
 
@@ -163,7 +166,7 @@ launcher configuration, and manual Compose commands.
 - A frame visible in the canvas may be transient or rolling-latest data; being
   visible does not by itself mean that the frame has been archived in SQLite.
 
-## Experiment data grouping (unreleased)
+## Experiment data grouping (V1.1.0 source)
 
 1. Create an experiment, then create its groups with a name, optional cell ID,
    and notes. IDs are stable; names can be changed and need not be unique.
@@ -226,6 +229,7 @@ SQLite data without requiring Core.
 - [Wire protocol](docs/protocol.md)
 - [Windows deployment](docs/deployment/windows.md)
 - [Jetson deployment](docs/deployment/jetson.md)
+- [V1.1.0 release notes](docs/release/v1.1.0-release-notes.md)
 - [V1.0.1 release notes](docs/release/v1.0.1-release-notes.md)
 - [V1 runtime baseline acceptance](docs/release/v1.0.0-acceptance.md)
 - [V1 known limitations](docs/release/v1.0.0-known-limitations.md)

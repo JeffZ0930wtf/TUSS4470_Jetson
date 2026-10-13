@@ -82,3 +82,13 @@
 - 补修期间一次 API 测试首测无新输出约 60 s 后已中止，结果不确定；随后上述聚合门禁包含同一 API 套件并全部通过，不再把中止尝试当作阻塞项。隔离预览健康检查及最新版浏览器刷新遭遇自动审批超时，动作未获执行；未反复重试或绕过检查。最新版页面复测仍待用户手动刷新验收，之前的基本页面检查仅适用于 `5ee6a7b`。
 - 用户接受当前候选并授权推送 GitHub；本轮提交执行记录、推送 `codex/experiment-data-grouping` 功能分支。该授权不等同于正式发布或 Jetson 验收通过，不补写未执行的页面测试。
 - **交付边界：暂不合并 main、升级正式库、切换 Jetson 镜像或创建发布标签。** 保留功能分支和工作树，正式 V1.0.1 不变；新增向后兼容功能的后续版本建议为 V1.1.0，尚未修改包版本。
+
+## 2026-10-13 V1.1.0 发布授权与收尾
+
+- 用户随后明确授权合并并推送 V1.1.0，以及通过 SSH 同步 Jetson 仓库源码和该仓库 `.venv`。这项新授权推进了 2026-10-12 当时的“不合并、不建标签”交付边界；上面的历史决定保留其原有时间语境，不代表当前禁止发布。
+- 本次版本收尾将源码包、锁文件中的本地项目元数据和未来 Linux 镜像构建身份设为 `1.1.0`，并补充双语 README、Jetson 状态说明与发布说明。Compose 和启动器默认仍为已验证的 `1.0.1`；没有构建、切换或声称部署 1.1.0 镜像。
+- 协调者负责合并、标签、网络推送与 SSH 同步。本记录不替代对 main/tag 远端 SHA、Jetson 源码 SHA、虚拟环境版本或运行镜像状态的实际核验；应由协调者在执行后补记证据。
+- RED 证据：在版本元数据和发布文档尚未修改时，运行 4 个针对已安装版本、pyproject/锁文件版本、Linux 构建身份和发布说明文件存在性的布局断言，结果为 `4 failed`、退出码 1；失败原因分别是仍为 1.0.1、构建身份仍为 1.0.1、新发布说明尚不存在，符合预期。
+- 离线同步：`.tools/uv/uv.exe sync --frozen --extra dev --offline` 退出码 0；只重建本地 `tuss4470-acquisition` editable package，从 1.0.1 更新至 1.1.0，未改第三方锁定依赖。
+- GREEN 证据：协调者在主机权限与正确 Git Bash PATH（优先 `C:/Program Files/Git/bin`，工作树 `.venv` 激活）下运行 `python -m pytest tests/integration/test_project_layout.py tests/integration/test_service_launchers.py -q --basetemp firmware/build/pytest-v110-root`，29 项通过，耗时 2.67 s，退出码 0；`bash -n scripts/test-all.sh` 退出码 0，`git diff --check` 退出码 0。本工作树新增/修改的 5 份 Markdown 文件本地链接检查通过。
+- 受限沙箱内的早期尝试曾因 TEMP/AppData 权限和 WindowsApps Bash 路径返回非零（23/6、25/4、26/3）；失败栈明确指向临时目录或 Bash 无法映射工作树路径。它们不作为产品回归；随后使用正确主机 PATH 的同一套测试完整通过。
