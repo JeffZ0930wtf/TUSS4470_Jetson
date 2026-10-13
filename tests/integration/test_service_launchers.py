@@ -152,7 +152,7 @@ class ServiceLauncherTests(unittest.TestCase):
             commands = command_log.read_text(encoding="utf-8").splitlines()
             starts = [line for line in commands if " up -d --no-build" in line]
             self.assertEqual(len(starts), 1)
-            self.assertIn("image=tuss4470-acquisition-core:1.0.1", starts[0])
+            self.assertIn("image=tuss4470-acquisition-core:1.1.0", starts[0])
             self.assertIn("http://127.0.0.1:8000/", result.stdout)
             self.assertIn("device ready", result.stdout.lower())
 

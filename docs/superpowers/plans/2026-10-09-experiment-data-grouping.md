@@ -100,3 +100,10 @@
 - Jetson 正式仓库通过 SSH 快进至同一验收候选，工作区干净，仓库 `.venv` 离线冻结更新为 1.1.0；四个公开命令正常。Python 3.12.3 下 257 项测试通过（28.18 s）、2 项 Windows 专属测试跳过，Node v18.19.1 下 Web 回归通过。测试只使用隔离数据，不访问正式数据库、串口或硬件。
 - 现有运行容器仍使用 `tuss4470-acquisition-core:1.0.1`，未重建、重启或切换；没有 Apply、真实采集、Burst 或刷写。源码同步不等同于 1.1.0 镜像部署，后续镜像和生产库迁移仍需单独安排。
 - 本轮仅文档收尾后建立 annotated `v1.1.0` 源码标签并同步最终记录；非文档输入须与上述验收候选逐项一致。最终 main/tag/Jetson SHA 和审查证据保存在仓库外 `D:/Desktop/TUSS4470_data/release/v1.1.0/`，不为补写执行记录重复硬件或容器验收。
+
+## 2026-10-13 Jetson V1.1.0 单帧验收与默认维护
+
+- 用户明确授权在 Jetson 上执行一次真实采集。不可变 `v1.1.0` 源码标签/镜像构建修订为 `7db75e05875848fd02d188ba5196c2c1e06b5f5b`；ARM64 镜像 `tuss4470-acquisition-core:1.1.0` 的 ID 为 `sha256:c4eef7032a72d5e359b77bea2afc9507166b4e853506957beab7e350a269abf3`，Core 与 Bridge 均使用该镜像。
+- 完成持久目录备份后执行一次 `Pulse=1`、`SAVE_ALL` 实机采集并绑定验证组。新增会话 `COMPLETED`，库存从 7 条增至 8 条（1 条分组、7 条未分组）；原 7 条帧/样本逐字节保持不变。新帧下载样本与 SQLite BLOB 一致，组筛选和 ZIP 成员核验通过，SQLite integrity check 为 `ok`，Bridge pending=0，最终设备 `NORMAL / IDLE`。
+- 此次实机证据仅覆盖单帧、分组保存、筛选和 ZIP 导出，不覆盖周期/扫描实机矩阵、人工浏览器验收、时序校准或长期可靠性；`TIMING_UNCALIBRATED` 保持不变。机器证据位于 `D:/Desktop/TUSS4470_data/release/v1.1.0/jetson-20261013/`，仓库内摘要见 `docs/release/v1.1.0-release-notes.md`。
+- 本后续维护将 Compose 与 Jetson 启动器的默认镜像改为已验收的 `1.1.0`，并同步当前操作说明和断言；不移动/重写 `v1.1.0` 源码标签、不修改包/固件/协议版本、不重建或重启已验收镜像，不改变 M0–M6 历史结论或 M7 范围。

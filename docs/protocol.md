@@ -1,6 +1,6 @@
 # USAC protocol and parameter contract
 
-Status: V1 wire contract frozen; host-only grouping increment unreleased
+Status: V1 wire contract frozen; host-only grouping released in V1.1.0
 Wire protocol version: 1
 Parameter schema: `tuss4470-parameters-v1`
 
@@ -123,7 +123,7 @@ byte-for-byte and does not create a second simulated capture. The simulator is
 a protocol test double only; its waveform has no physical or electrochemical
 meaning.
 
-## Host REST experiment metadata (unreleased)
+## Host REST experiment metadata (V1.1.0)
 
 The `/api/v1` routes below operate on the existing Core SQLite database without
 requiring a connected device. Acquisition starts still require the existing

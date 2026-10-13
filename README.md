@@ -4,17 +4,20 @@
 
 ## Document overview
 
-This README is the operator and developer entry point for the V1.1.0 source
-candidate of the standalone ultrasonic acquisition submodule. It explains what the module
-does, how to build and run it on Windows or Jetson, where data is stored, and
-which safety limits remain. Protocol details, platform procedures, release
-evidence, and historical development records live in the linked documents.
+This README is the operator and developer entry point for V1.1.0 of the
+standalone ultrasonic acquisition submodule. It explains what the module does,
+how to build and run it on Windows or Jetson, where data is stored, and which
+safety limits remain. Protocol details, platform procedures, release evidence,
+and historical development records live in the linked documents.
 
-V1.0.1 added one-shot Jetson startup from Windows or the Jetson desktop. The
-current Compose and startup defaults still use
-`tuss4470-acquisition-core:1.0.1`; this source update does not build or switch
-the runtime image. See the [V1.1.0 release notes](docs/release/v1.1.0-release-notes.md)
-for the source change, verification scope, and image boundary, and the
+V1.0.1 added one-shot Jetson startup from Windows or the Jetson desktop. V1.1.0
+adds host-side experiment grouping; its immutable source tag is `v1.1.0` at
+revision `7db75e05875848fd02d188ba5196c2c1e06b5f5b`. Current Compose and
+startup defaults use the image name `tuss4470-acquisition-core:1.1.0`; the
+Jetson ARM64 image with this tag was built from that same revision. A single
+grouped Pulse=1 capture was
+validated on Jetson; see the [V1.1.0 release notes](docs/release/v1.1.0-release-notes.md)
+for the bounded evidence and limitations, and the
 [V1.0.1 release notes](docs/release/v1.0.1-release-notes.md) for the earlier
 launcher release.
 
@@ -23,10 +26,9 @@ outputs exact raw envelope samples plus capture metadata. It does not extract
 features or predict battery SOC/SOH; those responsibilities belong to the
 future BMS integration layer.
 
-This V1.1.0 source candidate adds **experiment data grouping**. Firmware,
-wire protocol, and raw capture bytes remain unchanged. The runtime image still
-defaults to 1.0.1, so this source change is not a Jetson deployment or a
-production database upgrade. See the
+V1.1.0 adds **experiment data grouping**. Firmware, wire protocol, and raw
+capture bytes remain unchanged. The one-frame Jetson verification does not
+claim periodic/sweep hardware coverage or calibrated timing. See the
 [grouping design](docs/superpowers/specs/2026-10-09-experiment-data-grouping-design.md)
 for the host-only contract.
 
@@ -166,7 +168,7 @@ launcher configuration, and manual Compose commands.
 - A frame visible in the canvas may be transient or rolling-latest data; being
   visible does not by itself mean that the frame has been archived in SQLite.
 
-## Experiment data grouping (V1.1.0 source)
+## Experiment data grouping (V1.1.0)
 
 1. Create an experiment, then create its groups with a name, optional cell ID,
    and notes. IDs are stable; names can be changed and need not be unique.
@@ -191,11 +193,12 @@ not included. Waveforms from different groups may still be overlaid under the
 existing sample-compatibility and 20-ID rules.
 
 Before a production upgrade, stop Core and Bridge and back up their persistent
-data directories together. The new Core adds nullable group columns and metadata
-tables on opening SQLite; old captures appear as Ungrouped, with BLOBs preserved.
-No migration of the existing production database is part of this branch's
-offline validation. Group deletion and moving groups between experiments are
-out of scope.
+data directories together. The 2026-10-13 Jetson deployment exercised the
+additive SQLite migration after a full backup: the seven pre-existing captures
+remained byte-identical, and one new grouped capture was saved and exported.
+This bounded check is not a general restore or endurance guarantee; see the
+[V1.1.0 release notes](docs/release/v1.1.0-release-notes.md). Group deletion
+and moving groups between experiments remain out of scope.
 
 ## Data and offline export
 

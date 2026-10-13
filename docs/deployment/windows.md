@@ -28,6 +28,11 @@
 
 脚本使用现有 SSH 密钥登录 Jetson，调用 Jetson 上的 `scripts/start-jetson.sh`，然后复用或建立 `127.0.0.1:18080` 到 Jetson `127.0.0.1:8000` 的隧道并打开 Windows 默认浏览器。它不在 Windows 启动 Core 或 Bridge，也不应用配置、采集或产生 Burst。
 
+Jetson 侧启动器当前默认选择 `tuss4470-acquisition-core:1.1.0`。该镜像已从
+正式 V1.1.0 源码修订构建并完成有限的单帧实机验证；启动仍要求 Jetson 上
+已有该镜像，启动脚本不会自动构建。验证边界见
+[V1.1.0 发布说明](../release/v1.1.0-release-notes.md)。
+
 当前实验室默认值为 Jetson `172.20.149.177`、用户 `yizhouzhao`、远端仓库 `/home/yizhouzhao/workspace/TUSS4470_software`。可用参数 `-JetsonHost`、`-JetsonUser`、`-IdentityFile`、`-RemoteRepository` 和 `-LocalPort` 覆盖；密码不会写入脚本或仓库。新隧道 PID 默认记录在 `D:/Desktop/TUSS4470_data/runtime/jetson-ssh-tunnel.pid`。
 
 重复执行时，Jetson Compose 保持幂等；如果本地端口已经返回本项目健康响应，Windows 脚本复用现有隧道。脚本完成后不承担监控任务。
