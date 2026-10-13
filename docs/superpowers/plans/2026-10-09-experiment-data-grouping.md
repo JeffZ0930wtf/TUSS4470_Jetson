@@ -92,3 +92,11 @@
 - 离线同步：`.tools/uv/uv.exe sync --frozen --extra dev --offline` 退出码 0；只重建本地 `tuss4470-acquisition` editable package，从 1.0.1 更新至 1.1.0，未改第三方锁定依赖。
 - GREEN 证据：协调者在主机权限与正确 Git Bash PATH（优先 `C:/Program Files/Git/bin`，工作树 `.venv` 激活）下运行 `python -m pytest tests/integration/test_project_layout.py tests/integration/test_service_launchers.py -q --basetemp firmware/build/pytest-v110-root`，29 项通过，耗时 2.67 s，退出码 0；`bash -n scripts/test-all.sh` 退出码 0，`git diff --check` 退出码 0。本工作树新增/修改的 5 份 Markdown 文件本地链接检查通过。
 - 受限沙箱内的早期尝试曾因 TEMP/AppData 权限和 WindowsApps Bash 路径返回非零（23/6、25/4、26/3）；失败栈明确指向临时目录或 Bash 无法映射工作树路径。它们不作为产品回归；随后使用正确主机 PATH 的同一套测试完整通过。
+
+### 本轮执行结果
+
+- 版本收尾提交 `7d10b377b20fd8abf47db7b552c21fb9e5224aaa` 经 Astra 定向复核通过，已快进合入 `main` 并正常推送 GitHub；远端 SHA 已实际核对，无强推或旧标签改写。
+- Windows 正式 `.venv` 冻结离线更新为 1.1.0，四个公开命令的 `--help` 全部正常。合并后完整门禁退出码 0：259 项 Python 测试通过（17.67 s），Node、生产固件编译、MCU 模拟器、官方 USB 构建和全部保留检查通过；固件内存占用仍为 `26886/98/6118`。
+- Jetson 正式仓库通过 SSH 快进至同一验收候选，工作区干净，仓库 `.venv` 离线冻结更新为 1.1.0；四个公开命令正常。Python 3.12.3 下 257 项测试通过（28.18 s）、2 项 Windows 专属测试跳过，Node v18.19.1 下 Web 回归通过。测试只使用隔离数据，不访问正式数据库、串口或硬件。
+- 现有运行容器仍使用 `tuss4470-acquisition-core:1.0.1`，未重建、重启或切换；没有 Apply、真实采集、Burst 或刷写。源码同步不等同于 1.1.0 镜像部署，后续镜像和生产库迁移仍需单独安排。
+- 本轮仅文档收尾后建立 annotated `v1.1.0` 源码标签并同步最终记录；非文档输入须与上述验收候选逐项一致。最终 main/tag/Jetson SHA 和审查证据保存在仓库外 `D:/Desktop/TUSS4470_data/release/v1.1.0/`，不为补写执行记录重复硬件或容器验收。
