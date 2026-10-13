@@ -6,24 +6,26 @@
 
 ## V1.1.1 主机 UI 缓存修复状态
 
-V1.1.1 仅修复浏览器静态资源混版：API 进程启动时固定 HTML、JavaScript 与
+V1.1.1 修复浏览器静态资源混版：API 进程启动时固定 HTML、JavaScript 与
 CSS 内容快照，HTML 用 JavaScript/CSS 的完整 SHA-256 生成资源 URL，并对三类
 响应设置 `Cache-Control: no-cache`。需要更新资产时须重启 API 进程。该修复不改
-实验分组、固件或协议，也没有新增 Jetson 实机采集。
+实验分组、固件或协议；本次部署未执行采集、配置 Apply 或固件刷写。
 
-仓库 Compose/启动器的默认镜像名为 `tuss4470-acquisition-core:1.1.1`，但本次
-准备尚未构建或部署该镜像；启动使用 `up -d --no-build`，因此只有镜像预先存在
-时才可按此默认启动。更改默认值不会自动替换现有容器。详见
-[V1.1.1 准备说明](../release/v1.1.1-release-notes.md)。
+Jetson ARM64 已部署并验证镜像 `tuss4470-acquisition-core:1.1.1`，镜像 ID 为
+`sha256:acbc213fd0ae3ded2e15196995567e544f576d99efc3516d1a80fd804b2d1a7d`，
+OCI revision 为候选源码 `7ab2b19c460b8f6f11ab504cf0ee7fd56d222ad5`。Core 与
+Bridge 当前均运行该镜像。备份持久目录前曾停止服务，随后重新创建并启动；启动器使用
+`up -d --no-build`，再次启动时要求 Jetson 上已有该镜像。部署/测试范围和缓存
+验证细节见 [V1.1.1 发布说明](../release/v1.1.1-release-notes.md)。
 
 ## V1.1.0 源码、镜像与实机验证（历史）
 
 不可变源码标签 `v1.1.0` 指向 `7db75e05875848fd02d188ba5196c2c1e06b5f5b`。
 Jetson ARM64 镜像 `tuss4470-acquisition-core:1.1.0`（镜像 ID
 `sha256:c4eef7032a72d5e359b77bea2afc9507166b4e853506957beab7e350a269abf3`）
-由该源码修订构建；该单帧验收期间 Core 与 Bridge 均使用此镜像（不代表本次准备
-阶段的当前容器状态）。当时的 Compose/启动器默认值为 1.1.0；后续 V1.1.1 准备仅更新了默认镜像名，
-没有改写该标签或已验收镜像，也没有在本次准备中重新构建或部署。
+由该源码修订构建；该单帧验收期间 Core 与 Bridge 均使用此镜像（不代表当前
+V1.1.1 镜像或服务状态）。当时的 Compose/启动器默认值为 1.1.0；V1.1.1 使用
+独立镜像标签和候选源码修订，没有改写该标签或已验收镜像。
 
 2026-10-13 在备份 Core 和 Bridge 持久目录后完成数据库升级及一次经授权的
 Pulse=1 单次采集。新增记录绑定实验组；既有 7 条归档记录及原始帧字节保持
@@ -81,10 +83,12 @@ docker compose -f deploy/compose.jetson.yaml up -d --force-recreate bridge
 
 ## Jetson 本机一键启动
 
-启动脚本当前默认选择 `tuss4470-acquisition-core:1.1.1`。本次准备尚未构建或
-部署 V1.1.1 镜像；启动脚本执行 `up -d --no-build`，不会自动构建，镜像须已
-存在于 Jetson。更改默认值不会替换当前运行容器；此前已验收的 V1.1.0 镜像身份
-与证据见上方历史记录。回退前应保护新产生的数据并按备份记录恢复匹配版本。
+启动脚本当前默认选择已部署验证的 `tuss4470-acquisition-core:1.1.1`。启动脚本
+执行 `up -d --no-build`，不会自动构建，镜像须已存在于 Jetson；更改默认值不会
+替换已有容器。Core 与 Bridge 当前均处于运行状态，设备状态为 `NORMAL / IDLE`。
+备份持久目录前曾停止服务，备份 SHA-256 为
+`63251fd22ae90c22e227f91a0dd052f002310cbb262730136fa2d49ad71e6720`。回退前应保护
+新产生的数据并按备份记录恢复匹配版本；V1.1.0 镜像身份与历史证据见上文。
 
 在仓库根目录执行：
 
