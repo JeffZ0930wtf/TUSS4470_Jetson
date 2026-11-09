@@ -120,6 +120,22 @@ function makeHarness() {
   };
 }
 
+async function checkHistoryUsesFreshGroupingMetadata() {
+  const harness = makeHarness();
+  harness.run(`
+    state.experiments = [{experiment_id:"exp-a", name:"Old experiment"}];
+    state.groupsByExperiment.set("exp-a", [{group_id:"group-a", name:"Old group", cell_id:"Old cell"}]);
+    bindActions();
+  `);
+  harness.responses.push({payload: {items: [{
+    capture_id: "archived-1", capture_sequence: 1, sample_count: 2048,
+    grouping_metadata: {experiment_id:"exp-a", group_id:"group-a", experiment_name:"New experiment", group_name:"New group", cell_id:null},
+  }], next_cursor: null}});
+  await harness.node("#history-refresh").listeners.click();
+  assert.equal(harness.node("#capture-history").children[0].children[0].children[2].textContent,
+    "New experiment · New group", "a refreshed row uses fresh API metadata, including cleared cell IDs");
+}
+
 async function checkGroupingDialog() {
   const harness = makeHarness();
   const experiment = {experiment_id: "exp-a", name: "Tank A", notes: "Original experiment note"};
@@ -175,6 +191,14 @@ async function checkGroupingDialog() {
   assert.equal(harness.requests.at(-1).method, "POST");
   assert.deepEqual(JSON.parse(harness.requests.at(-1).body), {name: group.name, cell_id: group.cell_id, notes: group.notes});
   assert.equal(harness.run("state.captureGroupId"), "group-a");
+  harness.run(`
+    state.historyFilterType = "experiment"; state.historyExperimentId = "exp-a"; state.historyGroupId = "group-a";
+    state.historyCursor = "cursor-before-edit";
+    state.historyItems = [{capture_id:"archived-1", capture_sequence:1, sample_count:2048, grouping_metadata:{experiment_id:"exp-a", group_id:"group-a", experiment_name:"Tank A", group_name:"Run 1", cell_id:"C-42"}}];
+    state.batchSelectedCaptureIds.add("archived-1"); state.selectedCaptureIds.add("overlay-1");
+    renderHistory();
+  `);
+  const rowLabel = () => harness.node("#capture-history").children[0].children[0].children[2].textContent;
 
   click("experiment-edit");
   assert.equal(harness.node("#grouping-dialog-title").textContent, "编辑实验");
@@ -186,6 +210,7 @@ async function checkGroupingDialog() {
   assert.equal(harness.requests.at(-1).path, "/api/v1/experiments/exp-a");
   assert.equal(harness.requests.at(-1).method, "PATCH");
   assert.equal(harness.run("state.captureGroupId"), "group-a", "editing the experiment leaves its group selected");
+  assert.match(rowLabel(), /^Tank revised · Run 1/);
 
   click("group-edit");
   assert.equal(harness.node("#grouping-dialog-title").textContent, "编辑分组");
@@ -213,11 +238,16 @@ async function checkGroupingDialog() {
   harness.run('setLanguage("en")');
   assert.equal(harness.node("#grouping-dialog-title").textContent, "Edit group");
   assert.equal(harness.node("#group-name").value, "Run revised");
-  harness.responses.push({payload: {...group, name: "Run revised"}});
+  harness.node("#group-cell-id").value = "";
+  harness.responses.push({payload: {...group, name: "Run revised", cell_id: ""}});
   await submit();
   assert.equal(harness.requests.at(-1).path, "/api/v1/groups/group-a");
   assert.equal(harness.requests.at(-1).method, "PATCH");
   assert.equal(harness.run("captureGroupingSnapshot().group_name"), "Run revised");
+  assert.equal(rowLabel(), "Tank revised · Run revised");
+  assert.deepEqual(JSON.parse(harness.run(`JSON.stringify([state.historyExperimentId, state.historyGroupId,
+    state.historyCursor, [...state.batchSelectedCaptureIds], [...state.selectedCaptureIds]])`)),
+    ["exp-a", "group-a", "cursor-before-edit", ["archived-1"], ["overlay-1"]]);
   assert.equal(dialog.open, false);
   assert.match(html, /<dialog\b[^>]*id="grouping-dialog"[^>]*aria-labelledby="grouping-dialog-title"/);
   assert.doesNotMatch(html, /id="group-edit-target"/);
@@ -517,6 +547,7 @@ async function checkIncompleteHistoryTarget(automatic) {
 }
 
 async function main() {
+  await checkHistoryUsesFreshGroupingMetadata();
   await checkExperimentHistoryFilters();
   await checkGroupingDialog();
   [

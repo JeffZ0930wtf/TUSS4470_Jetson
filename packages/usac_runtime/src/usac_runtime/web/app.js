@@ -316,7 +316,20 @@ function applyGroupingSave(editor, payload, selectCreated) {
     }
   }
   renderGroupingControls();
-  if (editor.id) renderHistory();
+  if (editor.id) {
+    // Apply a successful local edit to visible rows without resetting paging or selections.
+    // Later history requests supply their own authoritative grouping metadata.
+    for (const item of state.historyItems) {
+      const metadata = item.grouping_metadata;
+      if (!metadata?.group_id) continue;
+      if (editor.kind === "experiment" && metadata.experiment_id === payload.experiment_id) {
+        item.grouping_metadata = { ...metadata, experiment_name: payload.name };
+      } else if (editor.kind === "group" && metadata.group_id === payload.group_id) {
+        item.grouping_metadata = { ...metadata, group_name: payload.name, cell_id: payload.cell_id };
+      }
+    }
+    renderHistory();
+  }
 }
 
 async function submitGroupingEditor(event) {
@@ -1055,13 +1068,10 @@ function updateMode() {
 function historyGroupingText(item) {
   const metadata = item.grouping_metadata || {};
   if (!metadata.group_id) return t("group.ungrouped");
-  const experiment = state.experiments.find((entry) => entry.experiment_id === metadata.experiment_id);
-  const group = state.groupsByExperiment.get(metadata.experiment_id)?.find((entry) => entry.group_id === metadata.group_id);
-  const cellId = group ? group.cell_id : metadata.cell_id;
   return [
-    experiment?.name || metadata.experiment_name || metadata.experiment_id,
-    group?.name || metadata.group_name || metadata.group_id,
-    cellId ? t("group.cell", { cell: cellId }) : null,
+    metadata.experiment_name || metadata.experiment_id,
+    metadata.group_name || metadata.group_id,
+    metadata.cell_id ? t("group.cell", { cell: metadata.cell_id }) : null,
   ].filter(Boolean).join(" · ");
 }
 
