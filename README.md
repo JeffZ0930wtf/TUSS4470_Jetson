@@ -5,8 +5,8 @@
 ## Document overview
 
 This README is the operator and developer entry point for the standalone
-ultrasonic acquisition submodule, including its V1.1.1 host-UI cache-consistency
-fix. It explains what the module does, how to build and run it on Windows or
+ultrasonic acquisition submodule, including the V1.1.2 experiment/group dialogs
+and history filters. It explains what the module does, how to build and run it on Windows or
 Jetson, where data is stored, and which safety limits remain. Protocol details,
 platform procedures, release evidence, and historical development records live
 in the linked documents.
@@ -14,11 +14,12 @@ in the linked documents.
 V1.0.1 added one-shot Jetson startup from Windows or the Jetson desktop. V1.1.0
 introduced host-side experiment grouping. V1.1.1 fixes mixed-generation browser
 assets by binding JavaScript/CSS URLs to content hashes and requiring
-revalidation for HTML and static asset responses. Repository Compose/startup
-defaults name `tuss4470-acquisition-core:1.1.1`; startup uses `--no-build` and
-requires the selected image to be present first. The V1.1.0 source tag and
-previously validated Jetson ARM64 image remain unchanged. See the
-[V1.1.1 release notes](docs/release/v1.1.1-release-notes.md),
+revalidation for HTML and static asset responses. V1.1.2 moves experiment and
+group editing into dialogs and nests group filters under experiments without
+changing the API, database schema, or firmware. The default image is
+`tuss4470-acquisition-core:1.1.2`; startup uses `--no-build` and requires that
+image to exist first. See the [V1.1.2 release notes](docs/release/v1.1.2-release-notes.md),
+the historical [V1.1.1 release notes](docs/release/v1.1.1-release-notes.md),
 the historical [V1.1.0 release notes](docs/release/v1.1.0-release-notes.md)
 for bounded single-capture evidence, and the
 [V1.0.1 release notes](docs/release/v1.0.1-release-notes.md) for the earlier
@@ -173,15 +174,21 @@ launcher configuration, and manual Compose commands.
 
 ## Experiment data grouping (V1.1.0)
 
-1. Create an experiment, then create its groups with a name, optional cell ID,
-   and notes. IDs are stable; names can be changed and need not be unique.
+1. Use **New experiment** next to the experiment selector, then **New group**
+   next to the group selector. The dialog asks for a name and optional notes;
+   a group also accepts an optional cell ID and shows its parent experiment.
+   Select an existing item and use **Edit experiment** or **Edit group** to open
+   its prefilled dialog. Editing preserves the ID and capture assignment;
+   names need not be unique.
 2. Select the next task's group in the acquisition panel. A single capture,
    periodic task, or sweep freezes this selection at start. Changing it during
    a run affects only the next task. Selecting an experiment alone does not
    assign a capture: no group selected means **Ungrouped**.
-3. Filter saved history independently by all records, ungrouped, experiment,
-   or group. The separate batch checkboxes assign up to 500 archived records
-   to a target group or back to Ungrouped. They do not select waveform overlays.
+3. **All captures** includes legacy ungrouped records. With **Filter by experiment**,
+   choose an experiment to see its groups. **All groups** is selected by default;
+   choose a group to narrow the list. History filters do not change the next capture's
+   group. The separate batch checkboxes assign up to 500 archived records to a target
+   group or back to Ungrouped; they do not select waveform overlays.
 4. Download a group's ZIP from the acquisition panel, or export offline:
 
    ```sh
@@ -235,6 +242,7 @@ SQLite data without requiring Core.
 - [Wire protocol](docs/protocol.md)
 - [Windows deployment](docs/deployment/windows.md)
 - [Jetson deployment](docs/deployment/jetson.md)
+- [V1.1.2 release notes](docs/release/v1.1.2-release-notes.md)
 - [V1.1.0 release notes](docs/release/v1.1.0-release-notes.md)
 - [V1.1.1 release notes](docs/release/v1.1.1-release-notes.md)
 - [V1.0.1 release notes](docs/release/v1.0.1-release-notes.md)

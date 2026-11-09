@@ -44,6 +44,7 @@ function makeHarness() {
         value: "",
         disabled: false,
         hidden: false,
+        open: false,
         textContent: "",
         className: "",
         dataset: {},
@@ -52,6 +53,9 @@ function makeHarness() {
         addEventListener(event, handler) { this.listeners[event] = handler; },
         append(...children) { this.children.push(...children); },
         setAttribute(name, value) { this[name] = value; },
+        showModal() { this.open = true; },
+        close() { this.open = false; this.listeners.close?.(); },
+        focus() {},
         querySelectorAll() { return selector === "#capture-counters" ? counters : []; },
         replaceChildren(...children) { this.children = children; },
         getContext() {
@@ -116,6 +120,109 @@ function makeHarness() {
   };
 }
 
+async function checkGroupingDialog() {
+  const harness = makeHarness();
+  const experiment = {experiment_id: "exp-a", name: "Tank A", notes: "Original experiment note"};
+  const group = {group_id: "group-a", experiment_id: "exp-a", name: "Run 1", cell_id: "C-42", notes: "Original group note", archived_count: 2};
+  harness.run("bindActions(); renderGroupingControls()");
+  const dialog = harness.node("#grouping-dialog");
+  const click = (id) => harness.node(`#${id}`).listeners.click();
+  const submit = () => harness.node("#grouping-form").listeners.submit({preventDefault() {}});
+
+  click("experiment-new");
+  assert.equal(dialog.open, true, "New experiment opens its modal editor");
+  assert.equal(harness.node("#experiment-edit").disabled, true);
+  assert.equal(harness.node("#group-new").disabled, true);
+  assert.equal(harness.node("#group-edit").disabled, true);
+  assert.equal(harness.node("#grouping-dialog-title").textContent, "新建实验");
+  assert.equal(harness.node("#group-fields").hidden, true);
+  assert.equal(harness.node("#experiment-name").value, "");
+  harness.node("#experiment-name").value = "  ";
+  await submit();
+  assert.equal(harness.requests.length, 0, "blank names must not send a request");
+  assert.match(harness.node("#grouping-error").textContent, /名称必填/);
+  harness.node("#experiment-name").value = "unsaved";
+  click("grouping-cancel");
+  assert.equal(dialog.open, false);
+  assert.equal(harness.requests.length, 0, "cancel never writes");
+
+  click("experiment-new");
+  assert.equal(harness.node("#experiment-name").value, "");
+  harness.node("#experiment-name").value = `  ${experiment.name}  `;
+  harness.node("#experiment-notes").value = experiment.notes;
+  harness.responses.push({payload: experiment}, {payload: {items: []}});
+  await submit();
+  assert.equal(harness.requests[0].path, "/api/v1/experiments");
+  assert.equal(harness.requests[0].method, "POST");
+  assert.deepEqual(JSON.parse(harness.requests[0].body), {name: experiment.name, notes: experiment.notes});
+  assert.equal(harness.run("state.captureExperimentId"), "exp-a");
+  assert.equal(dialog.open, false);
+
+  // The new experiment is selected immediately; its separate group-list read must settle before creating a group.
+  await new Promise(setImmediate);
+  click("group-new");
+  assert.equal(dialog.open, true);
+  assert.equal(harness.node("#grouping-dialog-title").textContent, "新建分组");
+  assert.equal(harness.node("#experiment-fields").hidden, true);
+  assert.match(harness.node("#grouping-dialog-context").textContent, /Tank A/);
+  assert.equal(harness.node("#group-name").value, "");
+  harness.node("#group-name").value = group.name;
+  harness.node("#group-cell-id").value = `  ${group.cell_id}  `;
+  harness.node("#group-notes").value = `  ${group.notes}  `;
+  harness.responses.push({payload: group});
+  await submit();
+  assert.equal(harness.requests.at(-1).path, "/api/v1/experiments/exp-a/groups");
+  assert.equal(harness.requests.at(-1).method, "POST");
+  assert.deepEqual(JSON.parse(harness.requests.at(-1).body), {name: group.name, cell_id: group.cell_id, notes: group.notes});
+  assert.equal(harness.run("state.captureGroupId"), "group-a");
+
+  click("experiment-edit");
+  assert.equal(harness.node("#grouping-dialog-title").textContent, "编辑实验");
+  assert.equal(harness.node("#experiment-name").value, experiment.name);
+  assert.equal(harness.node("#experiment-notes").value, experiment.notes);
+  harness.node("#experiment-name").value = "Tank revised";
+  harness.responses.push({payload: {...experiment, name: "Tank revised"}});
+  await submit();
+  assert.equal(harness.requests.at(-1).path, "/api/v1/experiments/exp-a");
+  assert.equal(harness.requests.at(-1).method, "PATCH");
+  assert.equal(harness.run("state.captureGroupId"), "group-a", "editing the experiment leaves its group selected");
+
+  click("group-edit");
+  assert.equal(harness.node("#grouping-dialog-title").textContent, "编辑分组");
+  assert.equal(harness.node("#group-name").value, group.name);
+  assert.equal(harness.node("#group-cell-id").value, group.cell_id);
+  assert.equal(harness.node("#group-notes").value, group.notes);
+  harness.node("#group-name").value = "Run revised";
+  let finishSave;
+  harness.responses.push(new Promise((resolve) => { finishSave = resolve; }));
+  const pendingSave = submit();
+  const requestCount = harness.requests.length;
+  assert.equal(harness.node("#grouping-save").disabled, true);
+  assert.equal(harness.node("#grouping-cancel").disabled, true);
+  let cancelPrevented = false;
+  dialog.listeners.cancel({preventDefault() { cancelPrevented = true; }});
+  assert.equal(cancelPrevented, true, "Escape cannot dismiss a pending save");
+  await submit();
+  assert.equal(harness.requests.length, requestCount, "double submit only writes once");
+  finishSave({ok: false, payload: {detail: "storage unavailable"}});
+  await pendingSave;
+  assert.equal(dialog.open, true);
+  assert.equal(harness.node("#group-name").value, "Run revised");
+  assert.match(harness.node("#grouping-error").textContent, /storage unavailable/);
+  assert.equal(harness.node("#grouping-save").disabled, false);
+  harness.run('setLanguage("en")');
+  assert.equal(harness.node("#grouping-dialog-title").textContent, "Edit group");
+  assert.equal(harness.node("#group-name").value, "Run revised");
+  harness.responses.push({payload: {...group, name: "Run revised"}});
+  await submit();
+  assert.equal(harness.requests.at(-1).path, "/api/v1/groups/group-a");
+  assert.equal(harness.requests.at(-1).method, "PATCH");
+  assert.equal(harness.run("captureGroupingSnapshot().group_name"), "Run revised");
+  assert.equal(dialog.open, false);
+  assert.match(html, /<dialog\b[^>]*id="grouping-dialog"[^>]*aria-labelledby="grouping-dialog-title"/);
+  assert.doesNotMatch(html, /id="group-edit-target"/);
+}
+
 async function checkLateGroupSaveFence(editing, fail) {
   const harness = makeHarness();
   const groupA = {group_id: "group-a", experiment_id: "exp-a", name: "A existing", cell_id: "cell-a", notes: "A notes", archived_count: 1};
@@ -134,26 +241,24 @@ async function checkLateGroupSaveFence(editing, fail) {
       ["exp-b", [${JSON.stringify(groupB)}]],
     ]);
     state.captureGroupId = ${JSON.stringify(editing ? "group-a" : null)};
-    state.groupEditTarget = ${JSON.stringify(editing ? "group-a" : "")};
-    state.groupEditingId = ${JSON.stringify(editing ? "group-a" : null)};
   `);
+  harness.run("bindActions()");
+  harness.node(editing ? "#group-edit" : "#group-new").listeners.click();
   harness.node("#group-name").value = editing ? "A edited" : "A created";
   harness.node("#group-cell-id").value = editing ? "cell-a" : "cell-new";
   harness.node("#group-notes").value = "request A";
   let resolveSave; let rejectSave;
   const saveResponse = new Promise((resolve, reject) => { resolveSave = resolve; rejectSave = reject; });
   harness.responses.push(saveResponse);
-  harness.run("bindActions()");
-  const pendingSave = harness.node("#group-save").listeners.click();
+  const pendingSave = harness.node("#grouping-form").listeners.submit({preventDefault() {}});
   assert.equal(harness.requests[0].path, editing ? "/api/v1/groups/group-a" : "/api/v1/experiments/exp-a/groups");
 
   harness.responses.push({ payload: { items: [groupB] } });
   await harness.run('selectCaptureExperiment("exp-b")');
-  harness.node("#group-edit-target").value = "group-b";
+  harness.node("#grouping-dialog").close();
   harness.run(`
     state.captureGroupId = "group-b";
-    state.groupEditTarget = "group-b";
-    prepareGroupEdit();
+    openGroupingEditor("group", true);
     $("#group-name").value = "B unsaved draft";
     $("#group-notes").value = "B editor notes";
     $("#toast").textContent = "B current message";
@@ -168,8 +273,8 @@ async function checkLateGroupSaveFence(editing, fail) {
 
   assert.equal(harness.run("state.captureExperimentId"), "exp-b");
   assert.equal(harness.run("state.captureGroupId"), "group-b");
-  assert.equal(harness.run("state.groupEditTarget"), "group-b");
-  assert.equal(harness.run("state.groupEditingId"), "group-b");
+  assert.equal(harness.run("state.groupingEditor.id"), "group-b");
+  assert.equal(harness.node("#grouping-dialog").open, true);
   assert.deepEqual(JSON.parse(harness.run("JSON.stringify(state.captureGroups.map((group) => group.group_id))")), ["group-b"]);
   assert.deepEqual(JSON.parse(harness.run("JSON.stringify(state.groupsByExperiment.get('exp-b').map((group) => group.group_id))")), ["group-b"]);
   assert.deepEqual(
@@ -195,17 +300,16 @@ async function checkSameExperimentLateGroupSave(editing, fail) {
     state.captureGroups = ${JSON.stringify(initialGroups)};
     state.groupsByExperiment = new Map([["exp-a", ${JSON.stringify(initialGroups)}]]);
     state.captureGroupId = "group-a1";
-    state.groupEditTarget = ${JSON.stringify(editing ? "group-a1" : "")};
-    state.groupEditingId = ${JSON.stringify(editing ? "group-a1" : null)};
   `);
+  harness.run("bindActions()");
+  harness.node(editing ? "#group-edit" : "#group-new").listeners.click();
   harness.node("#group-name").value = editing ? "A1 edited" : "A1 created";
   harness.node("#group-cell-id").value = "cell-a1";
   harness.node("#group-notes").value = "A1 request";
   let resolveSave; let rejectSave;
   const saveResponse = new Promise((resolve, reject) => { resolveSave = resolve; rejectSave = reject; });
   harness.responses.push(saveResponse);
-  harness.run("bindActions()");
-  const pendingSave = harness.node("#group-save").listeners.click();
+  const pendingSave = harness.node("#grouping-form").listeners.submit({preventDefault() {}});
   assert.equal(harness.requests[0].path, editing ? "/api/v1/groups/group-a1" : "/api/v1/experiments/exp-a/groups");
 
   harness.node("#capture-group").value = "group-a2";
@@ -225,8 +329,8 @@ async function checkSameExperimentLateGroupSave(editing, fail) {
   assert.equal(harness.run("state.captureExperimentId"), "exp-a");
   assert.equal(harness.run("state.captureGroupId"), "group-a2");
   assert.equal(harness.run("captureGroupingSnapshot().group_id"), "group-a2");
-  assert.equal(harness.run("state.groupEditTarget"), editing ? "group-a1" : "");
-  assert.equal(harness.run("state.groupEditingId"), editing ? "group-a1" : null);
+  assert.equal(harness.run("state.groupingEditor.id ?? null"), editing ? "group-a1" : null);
+  assert.equal(harness.node("#grouping-dialog").open, true);
   assert.equal(harness.node("#group-name").value, "current editor draft");
   assert.equal(harness.node("#group-notes").value, "current editor notes");
   assert.equal(harness.node("#toast").textContent, "A2 selection message");
@@ -246,33 +350,33 @@ async function checkLateGroupSaveEditorSwitch(context) {
     state.captureGroupRevision = 20;
     state.captureGroups = ${JSON.stringify(initialGroups)};
     state.groupsByExperiment = new Map([["exp-a", ${JSON.stringify(initialGroups)}]]);
-    state.captureGroupId = "group-a2";
-    state.groupEditTarget = ${JSON.stringify(creating ? "" : "group-a1")};
-    state.groupEditingId = ${JSON.stringify(creating ? null : "group-a1")};
+    state.captureGroupId = ${JSON.stringify(creating ? "group-a2" : "group-a1")};
   `);
+  harness.run("bindActions()");
+  harness.node(creating ? "#group-new" : "#group-edit").listeners.click();
   harness.node("#group-name").value = creating ? "A1 new group" : "A1 edited";
   harness.node("#group-cell-id").value = "cell-a1";
   harness.node("#group-notes").value = "A1 request";
   let resolveSave;
   const saveResponse = new Promise((resolve) => { resolveSave = resolve; });
   harness.responses.push(saveResponse);
-  harness.run("bindActions()");
-  const pendingSave = harness.node("#group-save").listeners.click();
+  const pendingSave = harness.node("#grouping-form").listeners.submit({preventDefault() {}});
   assert.equal(harness.requests[0].path, creating ? "/api/v1/experiments/exp-a/groups" : "/api/v1/groups/group-a1");
 
+  // Programmatic close models an obsolete editor even while user dismissals are disabled.
+  harness.node("#grouping-dialog").close();
   if (creating) {
     harness.node("#group-new").listeners.click();
     harness.node("#group-name").value = "next group draft";
     harness.node("#group-notes").value = "next group notes";
   } else {
-    harness.node("#group-edit-target").value = "group-a2";
-    harness.node("#group-edit-target").listeners.change();
+    harness.node("#capture-group").value = "group-a2";
+    harness.node("#capture-group").listeners.change();
     harness.node("#group-edit").listeners.click();
   }
   harness.run(`$("#toast").textContent = "current editor message"; $("#toast").hidden = false;`);
   const currentEditor = {
-    target: harness.run("state.groupEditTarget"),
-    editingId: harness.run("state.groupEditingId"),
+    editingId: harness.run("state.groupingEditor.id"),
     name: harness.node("#group-name").value,
     notes: harness.node("#group-notes").value,
   };
@@ -284,19 +388,112 @@ async function checkLateGroupSaveEditorSwitch(context) {
   assert.equal(harness.run("state.captureGroupId"), "group-a2");
   assert.equal(harness.run("captureGroupingSnapshot().group_id"), "group-a2");
   assert.deepEqual({
-    target: harness.run("state.groupEditTarget"),
-    editingId: harness.run("state.groupEditingId"),
+    editingId: harness.run("state.groupingEditor.id"),
     name: harness.node("#group-name").value,
     notes: harness.node("#group-notes").value,
   }, currentEditor);
   assert.equal(harness.node("#toast").textContent, "current editor message");
 }
 
-async function checkIncompleteHistoryTarget(filterType, automatic) {
+async function checkExperimentHistoryFilters() {
+  const modes = html.match(/<select id="history-filter-type">(.*?)<\/select>/s)[1];
+  assert.deepEqual([...modes.matchAll(/<option value="([^"]+)"/g)].map((match) => match[1]),
+    ["all", "experiment"], "History exposes only all captures and experiment modes");
   const harness = makeHarness();
   harness.run(`
-    state.historyFilterType = ${JSON.stringify(filterType)};
-    state.historyFilterValue = "";
+    state.experiments = [{experiment_id:"A", name:"Experiment A"}, {experiment_id:"B", name:"Experiment B"}, {experiment_id:"C", name:"Empty experiment"}];
+    state.groupsByExperiment = new Map([
+      ["A", [{group_id:"a1", experiment_id:"A", name:"Baseline"}, {group_id:"a2", experiment_id:"A", name:"Comparison"}]],
+      ["B", [{group_id:"b1", experiment_id:"B", name:"Other experiment group"}]], ["C", []],
+    ]);
+    state.captureExperimentId = "B";
+    state.captureGroups = state.groupsByExperiment.get("B");
+    state.captureGroupId = "b1";
+    bindActions(); renderHistoryFilterOptions();
+  `);
+  const filterMode = harness.node("#history-filter-type");
+  const experiment = harness.node("#history-experiment");
+  const groupPanel = harness.node("#history-group-filters");
+  const choices = harness.node("#history-group-choices");
+  const query = () => new URL(harness.requests.at(-1).path, "http://localhost").searchParams;
+  const records = (ids, cursor = null) => ({payload: {items: ids.map((capture_id) => ({capture_id, capture_sequence:1, sample_count:2})), next_cursor:cursor}});
+  const recordIds = () => JSON.parse(harness.run("JSON.stringify(state.historyItems.map((item) => item.capture_id))"));
+  const names = () => choices.children.map((button) => button.textContent);
+  const pressed = () => choices.children.filter((button) => button["aria-pressed"] === "true").map((button) => button.textContent);
+  const chooseExperiment = async (id) => { experiment.value = id; await experiment.listeners.change(); };
+  const clickGroup = async (label) => { await choices.children.find((button) => button.textContent === label).listeners.click(); };
+
+  assert.equal(harness.node("#history-experiment-field").hidden, true);
+  assert.equal(groupPanel.hidden, true);
+  harness.responses.push(records(["legacy-ungrouped", "a1-record", "b1-record"]));
+  await harness.node("#history-refresh").listeners.click();
+  assert.deepEqual(recordIds(), ["legacy-ungrouped", "a1-record", "b1-record"]);
+  assert.equal(query().has("experiment_id"), false);
+  assert.equal(query().has("ungrouped"), false);
+
+  filterMode.value = "experiment";
+  await filterMode.listeners.change();
+  assert.equal(harness.node("#history-experiment-field").hidden, false);
+  assert.equal(groupPanel.hidden, true);
+  assert.equal(harness.requests.length, 1, "waiting for an experiment does not fetch all captures");
+  assert.deepEqual(recordIds(), []);
+
+  harness.responses.push(records(["a1-record", "a2-record"]));
+  await chooseExperiment("A");
+  assert.equal(groupPanel.hidden, false);
+  assert.deepEqual(names(), ["全部分组", "Baseline", "Comparison"]);
+  assert.deepEqual(pressed(), ["全部分组"]);
+  assert.equal(query().get("experiment_id"), "A");
+  assert.equal(query().has("group_id"), false);
+  assert.deepEqual(recordIds(), ["a1-record", "a2-record"]);
+  assert.equal(harness.run("captureGroupingSnapshot().group_id"), "b1", "history filtering does not change acquisition grouping");
+
+  harness.responses.push(records(["a2-record"], "later-a2"));
+  await clickGroup("Comparison");
+  assert.deepEqual(pressed(), ["Comparison"]);
+  assert.deepEqual(Object.fromEntries(query()), {limit:"20", experiment_id:"A", group_id:"a2"});
+  assert.deepEqual(recordIds(), ["a2-record"]);
+  harness.run('state.batchSelectedCaptureIds.add("a2-record"); state.selectedCaptureIds.add("overlay-kept");');
+  let finishOldPage;
+  harness.responses.push(new Promise((resolve) => { finishOldPage = resolve; }), records(["b1-record"]));
+  const oldPage = harness.node("#history-more").listeners.click();
+  assert.deepEqual(Object.fromEntries(query()), {limit:"20", cursor:"later-a2", experiment_id:"A", group_id:"a2"});
+  await chooseExperiment("B");
+  assert.deepEqual(Object.fromEntries(query()), {limit:"20", experiment_id:"B"});
+  assert.deepEqual(names(), ["全部分组", "Other experiment group"]);
+  assert.deepEqual(pressed(), ["全部分组"]);
+  finishOldPage(records(["stale-record"], "old-cursor"));
+  await oldPage;
+  assert.deepEqual(recordIds(), ["b1-record"]);
+  assert.equal(harness.run("state.historyCursor"), null);
+  assert.equal(harness.run("state.batchSelectedCaptureIds.size"), 0);
+  assert.equal(harness.run('state.selectedCaptureIds.has("overlay-kept")'), true);
+  harness.responses.push(records(["b1-record"]), records(["b1-record"]));
+  await clickGroup("Other experiment group");
+  assert.equal(query().get("group_id"), "b1");
+  await clickGroup("全部分组");
+  assert.equal(query().has("group_id"), false);
+  harness.run('setLanguage("en")');
+  assert.deepEqual(pressed(), ["All groups"]);
+
+  harness.responses.push(records([]));
+  await chooseExperiment("C");
+  assert.deepEqual(names(), []);
+  assert.match(harness.node("#history-group-hint").textContent, /no groups/);
+
+  filterMode.value = "all";
+  harness.responses.push(records(["legacy-ungrouped", "a1-record", "b1-record"]));
+  await filterMode.listeners.change();
+  assert.equal(groupPanel.hidden, true);
+  assert.deepEqual(Object.fromEntries(query()), {limit:"20"});
+  assert.deepEqual(recordIds(), ["legacy-ungrouped", "a1-record", "b1-record"]);
+}
+
+async function checkIncompleteHistoryTarget(automatic) {
+  const harness = makeHarness();
+  harness.run(`
+    state.historyFilterType = "experiment";
+    state.historyExperimentId = "";
     state.historyCursor = "old-cursor";
     state.historyItems = [{capture_id: "old-history", capture_sequence: 1, sample_count: 2, grouping_metadata: {group_id: null}}];
     state.batchSelectedCaptureIds = new Set(["old-history"]);
@@ -313,13 +510,15 @@ async function checkIncompleteHistoryTarget(filterType, automatic) {
   assert.deepEqual(
     harness.requests.filter((request) => request.path.startsWith("/api/v1/captures?")),
     [],
-    `${automatic ? "automatic completion" : "manual refresh"} must not load captures without a ${filterType} target`,
+    `${automatic ? "automatic completion" : "manual refresh"} must not load captures without an experiment`,
   );
   assert.deepEqual(JSON.parse(harness.run("JSON.stringify([state.historyItems.length, state.historyCursor, [...state.batchSelectedCaptureIds]])")), [0, null, []]);
   assert.equal(harness.node("#history-more").hidden, true);
 }
 
 async function main() {
+  await checkExperimentHistoryFilters();
+  await checkGroupingDialog();
   [
     "waveform-workbench", "window-start", "window-count", "waveform-mode",
     "waveform-previous", "waveform-next", "waveform-apply-window",
@@ -777,10 +976,8 @@ async function main() {
   assert.equal(lateGroupFailure.node("#toast").hidden, true, "a stale group failure cannot replace current state");
   assert.equal(lateGroupFailure.run("state.captureGroups[0].group_id"), "group-b");
 
-  for (const filterType of ["experiment", "group"]) {
-    await checkIncompleteHistoryTarget(filterType, false);
-    await checkIncompleteHistoryTarget(filterType, true);
-  }
+  await checkIncompleteHistoryTarget(false);
+  await checkIncompleteHistoryTarget(true);
 
   for (const editing of [false, true]) {
     for (const fail of [false, true]) await checkSameExperimentLateGroupSave(editing, fail);
@@ -793,35 +990,6 @@ async function main() {
   await checkLateGroupSaveFence(true, false);
   await checkLateGroupSaveFence(true, true);
 
-  for (const [filterType, queryName] of [["experiment", "experiment_id"], ["group", "group_id"]]) {
-    const targetedHistory = makeHarness();
-    targetedHistory.run(`state.historyFilterType = ${JSON.stringify(filterType)}; state.historyFilterValue = "selected-target";`);
-    targetedHistory.responses.push({ payload: {items: [], next_cursor: null} });
-    await targetedHistory.run("loadHistory(true)");
-    assert.match(targetedHistory.requests[0].path, new RegExp(`${queryName}=selected-target`));
-  }
-
-  const staleHistoryPage = makeHarness();
-  assert.equal(staleHistoryPage.run("typeof setHistoryFilter"), "function", "history filter changes use the real controller function");
-  staleHistoryPage.run(`
-    state.historyItems = [{capture_id: "old-page"}];
-    state.historyCursor = "old-cursor";
-    state.batchSelectedCaptureIds = new Set(["old-page"]);
-  `);
-  let finishOldPage;
-  staleHistoryPage.responses.push(
-    new Promise((resolve) => { finishOldPage = resolve; }),
-    { payload: { items: [{capture_id: "ungrouped-current", capture_sequence: 8, sample_count: 2, grouping_metadata: {group_id: null, experiment_id: null, group_name: null, experiment_name: null, cell_id: null}}], next_cursor: null } },
-  );
-  const oldPage = staleHistoryPage.run("loadHistory(false)");
-  await Promise.resolve();
-  await staleHistoryPage.run("setHistoryFilter('ungrouped')");
-  assert.deepEqual(JSON.parse(staleHistoryPage.run("JSON.stringify([state.historyCursor, state.historyItems.map((item) => item.capture_id), [...state.batchSelectedCaptureIds]])")), [null, ["ungrouped-current"], []]);
-  finishOldPage({ payload: { items: [{capture_id: "late-page"}], next_cursor: "late-cursor" } });
-  await oldPage;
-  assert.deepEqual(JSON.parse(staleHistoryPage.run("JSON.stringify([state.historyCursor, state.historyItems.map((item) => item.capture_id)])")), [null, ["ungrouped-current"]]);
-  assert.match(staleHistoryPage.requests.at(-1).path, /ungrouped=true/);
-
   const staleHistoryFailure = makeHarness();
   staleHistoryFailure.node("#toast").hidden = true;
   let failOldPage;
@@ -831,7 +999,7 @@ async function main() {
   );
   const oldFailingPage = staleHistoryFailure.run("loadHistory(false)");
   await Promise.resolve();
-  await staleHistoryFailure.run("setHistoryFilter('all')");
+  await staleHistoryFailure.run("setHistoryFilter('experiment', 'current-experiment')");
   failOldPage({ ok: false, status: 500, payload: { detail: "stale page failed" } });
   await oldFailingPage;
   assert.equal(staleHistoryFailure.node("#toast").hidden, true, "a late history failure is fenced by filter revision");
@@ -865,50 +1033,6 @@ async function main() {
   `);
   assert.equal(exportLink.node("#group-export").href, "/api/v1/groups/group-zip/export.zip");
   assert.match(exportLink.node("#group-export-label").textContent, /12/);
-
-  const editors = makeHarness();
-  assert.equal(editors.run("typeof prepareNewExperiment"), "function", "experiment creation has a controller action");
-  assert.equal(editors.run("typeof prepareExperimentEdit"), "function", "experiment editing has a controller action");
-  assert.equal(editors.run("typeof saveExperiment"), "function", "experiment persistence uses a controller function");
-  assert.equal(editors.run("typeof prepareNewGroup"), "function", "group creation has a controller action");
-  assert.equal(editors.run("typeof prepareGroupEdit"), "function", "group editing has a controller action");
-  assert.equal(editors.run("typeof saveGroup"), "function", "group persistence uses a controller function");
-  editors.run("prepareNewExperiment()");
-  editors.node("#experiment-name").value = "  Tank new  ";
-  editors.node("#experiment-notes").value = "  baseline notes  ";
-  editors.responses.push(
-    { payload: {experiment_id: "experiment-new", name: "Tank new", notes: "baseline notes"} },
-    { payload: {items: []} },
-  );
-  await editors.run("saveExperiment()");
-  assert.equal(JSON.parse(editors.requests[0].body).name, "Tank new");
-  assert.equal(JSON.parse(editors.requests[0].body).notes, "baseline notes");
-  assert.equal(editors.run("state.captureExperimentId"), "experiment-new");
-  editors.run("prepareExperimentEdit()");
-  assert.equal(editors.node("#experiment-name").value, "Tank new");
-  editors.node("#experiment-name").value = "  Tank revised  ";
-  editors.responses.push({ payload: {experiment_id: "experiment-new", name: "Tank revised", notes: "baseline notes"} });
-  await editors.run("saveExperiment()");
-  assert.equal(editors.requests.at(-1).path, "/api/v1/experiments/experiment-new");
-  assert.equal(JSON.parse(editors.requests.at(-1).body).name, "Tank revised");
-
-  editors.node("#group-name").value = "  Load 1  ";
-  editors.node("#group-cell-id").value = "  cell-8  ";
-  editors.node("#group-notes").value = "  replicate  ";
-  editors.responses.push({ payload: {group_id: "group-new", experiment_id: "experiment-new", name: "Load 1", cell_id: "cell-8", notes: "replicate", archived_count: 0} });
-  await editors.run("saveGroup()");
-  assert.equal(editors.requests.at(-1).path, "/api/v1/experiments/experiment-new/groups");
-  assert.deepEqual(JSON.parse(editors.requests.at(-1).body), {name: "Load 1", cell_id: "cell-8", notes: "replicate"});
-  assert.equal(editors.run("state.captureGroupId"), "group-new");
-
-  editors.node("#group-edit-target").value = "group-new";
-  editors.run("prepareGroupEdit()");
-  assert.equal(editors.node("#group-name").value, "Load 1");
-  editors.node("#group-name").value = "  Load 2  ";
-  editors.responses.push({ payload: {group_id: "group-new", experiment_id: "experiment-new", name: "Load 2", cell_id: "cell-8", notes: "replicate", archived_count: 0} });
-  await editors.run("saveGroup()");
-  assert.equal(editors.requests.at(-1).path, "/api/v1/groups/group-new");
-  assert.equal(JSON.parse(editors.requests.at(-1).body).name, "Load 2");
 
   const language = makeHarness();
   const prefixExpression = "key.startsWith('group.') || key.startsWith('history.filter.') || key.startsWith('batch.')";
@@ -948,20 +1072,21 @@ async function main() {
   assert.equal(staticAriaFor("language.aria").attributes["aria-label"], "Switch to Chinese");
   language.run(`
     state.captureExperimentId = "exp-a"; state.captureGroupId = "group-a";
-    state.historyFilterType = "group"; state.historyFilterValue = "group-a";
+    state.historyFilterType = "experiment"; state.historyExperimentId = "exp-a"; state.historyGroupId = "group-a";
     $("#experiment-name").value = "  unsaved draft  ";
     $("#group-notes").value = "keep me";
     setLanguage("en");
   `);
   assert.equal(language.node("#capture-experiment").value, "exp-a");
   assert.equal(language.node("#capture-group").value, "group-a");
+  assert.equal(language.node("#history-experiment").value, "exp-a");
   assert.equal(language.node("#experiment-name").value, "  unsaved draft  ");
   assert.equal(language.node("#group-notes").value, "keep me");
 
   [
     "capture-experiment", "capture-group", "capture-binding-next", "capture-binding-active",
-    "group-editor", "experiment-name", "group-name", "group-cell-id",
-    "history-filter-type", "history-filter-value", "batch-assignment-target",
+    "grouping-dialog", "experiment-name", "group-name", "group-cell-id",
+    "history-filter-type", "history-experiment", "history-group-choices", "batch-assignment-target",
     "batch-assignment-apply", "group-export", "batch-selection-count",
   ].forEach((id) => assert.match(html, new RegExp(`id=["']${id}["']`)));
 }

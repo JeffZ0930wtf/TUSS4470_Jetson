@@ -9,9 +9,10 @@ work. The completed M0–M6 archive is indexed in `pre-v1/README.md`. Current
 decisions live in the active ADRs, protocol, deployment guides, release
 documents, and repository README.
 
-Release-specific implementation history is grouped under `v1.0.0/` and
-`v1.0.1/`. The V1.0.0 directory contains the frozen pre-consolidation baseline,
+Release-specific implementation history is grouped under `v1.0.0/`,
+`v1.0.1/`, and `v1.1.2/`. The V1.0.0 directory contains the frozen pre-consolidation baseline,
 firmware-check migration, and consolidation plan. The V1.0.1 directory contains
-the completed release and image-deployment plans. Their final conclusions were
+the completed release and image-deployment plans. V1.1.2 archives the experiment/group
+dialog and hierarchical-history work. Their final conclusions were
 carried into the active release notes, acceptance summary, known limitations,
 and `CONTRIBUTING.md` before archival.

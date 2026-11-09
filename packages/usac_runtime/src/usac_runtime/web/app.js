@@ -58,12 +58,10 @@ const state = {
   followLatest: true, latestCaptureId: null, viewRevision: 0,
   experiments: [], captureGroups: [], groupsByExperiment: new Map(),
   captureExperimentId: null, captureGroupId: null, captureGroupRevision: 0,
-  // Save responses own this user context; captureGroupRevision remains reserved for group-list reads.
-  groupSaveContextRevision: 0,
+  groupingSelectionRevision: 0, groupingEditor: null,
   captureGroupStatusKey: null,
-  historyFilterType: "all", historyFilterValue: "", historyRevision: 0,
-  batchSelectedCaptureIds: new Set(), experimentEditingId: null, groupEditingId: null,
-  batchAssignmentTarget: "", groupEditTarget: "",
+  historyFilterType: "all", historyExperimentId: "", historyGroupId: "", historyRevision: 0,
+  batchSelectedCaptureIds: new Set(), batchAssignmentTarget: "",
 };
 const $ = (selector) => document.querySelector(selector);
 
@@ -77,14 +75,17 @@ Object.assign(I18N.zh, {
   "group.nextBinding": "下一次采集：{target}", "group.activeBinding": "当前任务分组：{target}", "group.activeNone": "当前没有运行任务",
   "group.cell": "电芯编号 {cell}", "group.exportDisabled": "选择实验组后下载 ZIP", "group.export": "下载 {name} · {count} 条记录 ZIP",
   "group.manage": "管理实验与分组", "group.experiment": "实验", "group.experimentName": "实验名称", "group.experimentNotes": "实验备注",
-  "group.newExperiment": "新建实验", "group.editExperiment": "编辑所选实验", "group.saveExperiment": "保存实验",
+  "group.newExperiment": "新建实验", "group.editExperiment": "编辑实验", "group.createExperiment": "创建实验",
   "group.groupName": "分组名称", "group.cellId": "电芯编号（可选）", "group.groupNotes": "分组备注",
-  "group.newGroup": "新建分组", "group.editGroup": "编辑所选分组", "group.saveGroup": "保存分组",
-  "group.chooseExperiment": "请先选择实验", "group.chooseGroup": "选择分组进行编辑", "group.saved": "分组信息已保存",
+  "group.newGroup": "新建分组", "group.editGroup": "编辑分组", "group.createGroup": "创建分组",
+  "group.cancel": "取消", "group.saveChanges": "保存修改", "group.saving": "正在保存…", "group.parent": "所属实验：{name}",
+  "group.saveFailed": "未保存：{detail}", "group.saved": "分组信息已保存",
   "group.experimentSaved": "实验信息已保存", "group.invalidName": "名称必填且不得超过 120 个字符。",
   "group.invalidCell": "电芯编号不得超过 120 个字符。", "group.invalidNotes": "备注不得超过 2000 个字符。",
-  "history.filter.all": "全部记录", "history.filter.ungrouped": "仅未分组", "history.filter.experiment": "按实验筛选",
-  "history.filter.group": "按分组筛选", "history.filter.mode": "筛选方式", "history.filter.target": "筛选目标", "history.grouping": "{experiment} · {group}",
+  "history.filter.all": "全部记录", "history.filter.experiment": "按实验筛选", "history.filter.mode": "筛选方式",
+  "history.filter.groups": "实验分组", "history.filter.allGroups": "全部分组",
+  "history.filter.chooseExperiment": "选择实验后查看其分组和记录。", "history.filter.empty": "当前筛选没有已保存记录。",
+  "history.filter.groupsUnavailable": "未能加载分组，仍可查看该实验的全部记录。",
   "history.selectBatch": "归组", "batch.count": "已选 {count} 条（当前页可选）", "batch.target": "归入目标组",
   "batch.apply": "归组所选记录", "batch.chooseTarget": "先选择目标组或未分组", "batch.limit": "一次最多归组 500 条记录",
   "batch.assigned": "已归组 {count} 条记录",
@@ -99,15 +100,17 @@ Object.assign(I18N.en, {
   "group.nextBinding": "Next task: {target}", "group.activeBinding": "Active task group: {target}", "group.activeNone": "No task is running",
   "group.cell": "Cell ID {cell}", "group.exportDisabled": "Select a group to download its ZIP", "group.export": "Download {name} · {count} captures ZIP",
   "group.manage": "Manage experiments and groups", "group.experiment": "Experiment", "group.experimentName": "Experiment name", "group.experimentNotes": "Experiment notes",
-  "group.newExperiment": "New experiment", "group.editExperiment": "Edit selected experiment", "group.saveExperiment": "Save experiment",
+  "group.newExperiment": "New experiment", "group.editExperiment": "Edit experiment", "group.createExperiment": "Create experiment",
   "group.groupName": "Group name", "group.cellId": "Cell ID (optional)", "group.groupNotes": "Group notes",
-  "group.newGroup": "New group", "group.editGroup": "Edit selected group", "group.saveGroup": "Save group",
-  "group.chooseExperiment": "Choose an experiment first", "group.chooseGroup": "Choose a group to edit", "group.saved": "Group saved",
+  "group.newGroup": "New group", "group.editGroup": "Edit group", "group.createGroup": "Create group",
+  "group.cancel": "Cancel", "group.saveChanges": "Save changes", "group.saving": "Saving…", "group.parent": "Experiment: {name}",
+  "group.saveFailed": "Not saved: {detail}", "group.saved": "Group saved",
   "group.experimentSaved": "Experiment saved", "group.invalidName": "A name is required and must be at most 120 characters.",
   "group.invalidCell": "Cell ID must be at most 120 characters.", "group.invalidNotes": "Notes must be at most 2000 characters.",
-  "history.filter.all": "All captures", "history.filter.ungrouped": "Ungrouped only", "history.filter.experiment": "Filter by experiment",
-  "history.filter.group": "Filter by group", "history.filter.target": "Filter target", "history.grouping": "{experiment} · {group}",
-  "history.filter.mode": "Filter by",
+  "history.filter.all": "All captures", "history.filter.experiment": "Filter by experiment", "history.filter.mode": "Filter by",
+  "history.filter.groups": "Experiment groups", "history.filter.allGroups": "All groups",
+  "history.filter.chooseExperiment": "Select an experiment to see its groups and captures.", "history.filter.empty": "No saved captures match this filter.",
+  "history.filter.groupsUnavailable": "Groups could not be loaded. You can still view all captures for this experiment.",
   "history.selectBatch": "Assign", "batch.count": "{count} selected (visible records)", "batch.target": "Assign to group",
   "batch.apply": "Assign selected captures", "batch.chooseTarget": "Choose a group or Ungrouped first", "batch.limit": "Assign at most 500 captures at a time",
   "batch.assigned": "Assigned {count} captures",
@@ -124,6 +127,7 @@ function setCaptureGroupStatus(key) {
   state.captureGroupStatusKey = key;
   const status = $("#group-load-status");
   if (status) status.textContent = key ? t(key) : "";
+  renderGroupingEditorActions();
 }
 
 function renderCaptureGrouping() {
@@ -149,7 +153,7 @@ function renderCaptureGrouping() {
   if (status) status.textContent = state.captureExperimentId && state.captureGroupStatusKey ? t(state.captureGroupStatusKey) : "";
   renderCaptureBinding();
   renderGroupExport();
-  renderGroupEditorTargets();
+  renderGroupingEditorActions();
 }
 
 async function loadExperiments() {
@@ -170,23 +174,43 @@ function allCachedGroups() {
 }
 
 function renderHistoryFilterOptions() {
-  const type = $("#history-filter-type");
-  const value = $("#history-filter-value");
-  if (!type || !value) return;
-  type.value = state.historyFilterType;
-  value.replaceChildren();
-  const experimentFilter = state.historyFilterType === "experiment";
-  const groupFilter = state.historyFilterType === "group";
-  if (experimentFilter) {
-    state.experiments.forEach((experiment) => appendOption(value, experiment.experiment_id, experiment.name));
-  } else if (groupFilter) {
-    allCachedGroups().forEach((group) => {
-      const experiment = state.experiments.find((item) => item.experiment_id === group.experiment_id);
-      appendOption(value, group.group_id, [experiment?.name, group.name].filter(Boolean).join(" · "));
+  $("#history-filter-type").value = state.historyFilterType;
+  const byExperiment = state.historyFilterType === "experiment";
+  const experiment = $("#history-experiment");
+  $("#history-experiment-field").hidden = !byExperiment;
+  experiment.replaceChildren();
+  appendOption(experiment, "", t("group.selectExperiment"));
+  state.experiments.forEach((item) => appendOption(experiment, item.experiment_id, item.name));
+  experiment.value = state.historyExperimentId;
+  renderHistoryGroupChoices(byExperiment ? state.historyExperimentId : "");
+}
+
+function renderHistoryGroupChoices(experimentId) {
+  $("#history-group-filters").hidden = !experimentId;
+  const choices = $("#history-group-choices");
+  const focusId = document.activeElement?.dataset.historyGroupId;
+  choices.replaceChildren();
+  const hint = $("#history-group-hint");
+  const groups = state.groupsByExperiment.get(experimentId);
+  hint.hidden = !experimentId || Boolean(groups?.length);
+  hint.textContent = hint.hidden ? "" : t(groups ? "group.empty" : "history.filter.groupsUnavailable");
+  if (!experimentId || !groups?.length) return;
+  const addChoice = (id, label) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "history-group-choice quiet";
+    button.textContent = label;
+    button.dataset.historyGroupId = id;
+    button.setAttribute("aria-pressed", String(id === state.historyGroupId));
+    button.addEventListener("click", () => {
+      if (id !== state.historyGroupId) return setHistoryFilter("experiment", experimentId, id).catch((error) => toast(error.message));
     });
-  }
-  value.value = state.historyFilterValue || "";
-  value.hidden = !experimentFilter && !groupFilter;
+    choices.append(button);
+    // Re-rendering a selected chip must not move keyboard focus back to the page.
+    if (id === focusId) button.focus();
+  };
+  addChoice("", t("history.filter.allGroups"));
+  groups.forEach((group) => addChoice(group.group_id, group.name));
 }
 
 function renderBatchAssignmentTargets() {
@@ -206,69 +230,67 @@ function renderBatchAssignmentTargets() {
   renderBatchSelectionControls();
 }
 
-function renderGroupEditorTargets() {
-  const target = $("#group-edit-target");
-  if (!target) return;
-  const selected = state.groupEditTarget || target.value;
-  target.replaceChildren();
-  appendOption(target, "", t("group.chooseGroup"));
-  state.captureGroups.forEach((group) => appendOption(target, group.group_id, group.name));
-  target.value = selected;
-  state.groupEditTarget = target.value;
+function renderGroupingEditorActions() {
+  const hasExperiment = state.experiments.some((item) => item.experiment_id === state.captureExperimentId);
+  $("#experiment-edit").disabled = !hasExperiment;
+  $("#group-new").disabled = !hasExperiment || state.captureGroupStatusKey === "group.loading";
+  $("#group-edit").disabled = !hasExperiment || !state.captureGroups.some((item) => item.group_id === state.captureGroupId);
 }
 
 function renderGroupingControls() {
   renderCaptureGrouping();
   renderHistoryFilterOptions();
   renderBatchAssignmentTargets();
-  renderGroupEditorTargets();
 }
 
-function prepareNewExperiment() {
-  state.experimentEditingId = null;
-  $("#experiment-name").value = "";
-  $("#experiment-notes").value = "";
-  $("#experiment-save").textContent = t("group.saveExperiment");
-}
-
-function prepareExperimentEdit() {
+function openGroupingEditor(kind, editing = false) {
+  const dialog = $("#grouping-dialog");
+  if (dialog.open) return;
   const experiment = state.experiments.find((item) => item.experiment_id === state.captureExperimentId);
-  if (!experiment) {
-    toast(t("group.chooseExperiment"));
-    return;
-  }
-  state.experimentEditingId = experiment.experiment_id;
-  $("#experiment-name").value = experiment.name ?? "";
-  $("#experiment-notes").value = experiment.notes ?? "";
-  $("#experiment-save").textContent = t("group.saveExperiment");
+  const isGroup = kind === "group";
+  if (isGroup && (!experiment || state.captureGroupStatusKey === "group.loading")) return;
+  const item = !editing ? null : isGroup
+    ? state.captureGroups.find((group) => group.group_id === state.captureGroupId)
+    : experiment;
+  if (editing && !item) return;
+  // Freeze the write target when opening; a later selection cannot retarget the form.
+  state.groupingEditor = {
+    kind, id: isGroup ? item?.group_id : item?.experiment_id,
+    experimentId: experiment?.experiment_id, parentName: experiment?.name,
+    selectionRevision: state.groupingSelectionRevision, saving: false,
+  };
+  const name = $(`#${kind}-name`);
+  name.value = item?.name ?? "";
+  $(`#${kind}-notes`).value = item?.notes ?? "";
+  if (isGroup) $("#group-cell-id").value = item?.cell_id ?? "";
+  $("#experiment-fields").hidden = isGroup;
+  $("#group-fields").hidden = !isGroup;
+  setGroupingError("");
+  renderGroupingEditor();
+  dialog.showModal();
+  name.focus();
 }
 
-function prepareNewGroup() {
-  if (!state.captureExperimentId) {
-    toast(t("group.chooseExperiment"));
-    return;
-  }
-  state.groupSaveContextRevision += 1;
-  state.groupEditingId = null;
-  $("#group-name").value = "";
-  $("#group-cell-id").value = "";
-  $("#group-notes").value = "";
-  $("#group-save").textContent = t("group.saveGroup");
+function renderGroupingEditor() {
+  const editor = state.groupingEditor;
+  if (!editor) return;
+  const isGroup = editor.kind === "group";
+  const title = isGroup ? (editor.id ? "group.editGroup" : "group.newGroup")
+    : (editor.id ? "group.editExperiment" : "group.newExperiment");
+  $("#grouping-dialog-title").textContent = t(title);
+  const context = $("#grouping-dialog-context");
+  context.hidden = !isGroup;
+  context.textContent = isGroup ? t("group.parent", { name: editor.parentName }) : "";
+  const save = $("#grouping-save");
+  save.textContent = t(editor.saving ? "group.saving" : editor.id ? "group.saveChanges"
+    : isGroup ? "group.createGroup" : "group.createExperiment");
+  save.disabled = $("#grouping-fields").disabled = $("#grouping-cancel").disabled = editor.saving;
 }
 
-function prepareGroupEdit() {
-  const group = currentGroup($("#group-edit-target").value || state.groupEditTarget);
-  if (!group) {
-    toast(t("group.chooseGroup"));
-    return;
-  }
-  state.groupSaveContextRevision += 1;
-  state.groupEditTarget = group.group_id;
-  state.groupEditingId = group.group_id;
-  $("#group-name").value = group.name ?? "";
-  $("#group-cell-id").value = group.cell_id ?? "";
-  $("#group-notes").value = group.notes ?? "";
-  $("#group-save").textContent = t("group.saveGroup");
+function setGroupingError(message) {
+  const error = $("#grouping-error");
+  error.textContent = message;
+  error.hidden = !message;
 }
 
 function validatedText(value, maxLength, errorKey, required = false) {
@@ -277,73 +299,59 @@ function validatedText(value, maxLength, errorKey, required = false) {
   return normalized;
 }
 
-async function saveExperiment() {
-  const name = validatedText($("#experiment-name").value, 120, "group.invalidName", true);
-  const notes = validatedText($("#experiment-notes").value, 2000, "group.invalidNotes");
-  const editingId = state.experimentEditingId;
-  const path = editingId ? `/api/v1/experiments/${encodeURIComponent(editingId)}` : "/api/v1/experiments";
-  const method = editingId ? "PATCH" : "POST";
-  const { payload } = await fetchJson(path, { method, body: JSON.stringify({ name, notes }) });
-  if (editingId) {
-    state.experiments = state.experiments.map((item) => item.experiment_id === editingId ? payload : item);
-  } else {
+function applyGroupingSave(editor, payload, selectCreated) {
+  // Update the catalog even for a late success, but only its original UI context can select a new entity.
+  if (editor.kind === "experiment") {
     state.experiments = state.experiments.filter((item) => item.experiment_id !== payload.experiment_id).concat(payload);
-    state.groupsByExperiment.set(payload.experiment_id, []);
-    state.captureExperimentId = payload.experiment_id;
-    state.captureGroupId = null;
-    state.captureGroups = [];
+    if (selectCreated) void selectCaptureExperiment(payload.experiment_id);
+  } else {
+    const current = state.captureExperimentId === editor.experimentId;
+    const groups = state.groupsByExperiment.get(editor.experimentId) ?? (current ? state.captureGroups : []);
+    const updated = groups.filter((item) => item.group_id !== payload.group_id).concat(payload);
+    state.groupsByExperiment.set(editor.experimentId, updated);
+    if (current) {
+      state.captureGroups = updated;
+      if (selectCreated) state.captureGroupId = payload.group_id;
+      if (state.captureGroupStatusKey === "group.empty") state.captureGroupStatusKey = null;
+    }
   }
-  state.experimentEditingId = null;
   renderGroupingControls();
-  if (!editingId) await selectCaptureExperiment(payload.experiment_id);
-  $("#experiment-save").textContent = t("group.saveExperiment");
-  toast(t("group.experimentSaved"));
-  return payload;
+  if (editor.id) renderHistory();
 }
 
-async function saveGroup() {
-  if (!state.captureExperimentId) throw new Error(t("group.chooseExperiment"));
-  const experimentId = state.captureExperimentId;
-  const selectionRevision = state.captureGroupRevision;
-  const saveContextRevision = state.groupSaveContextRevision;
-  const name = validatedText($("#group-name").value, 120, "group.invalidName", true);
-  const cell_id = validatedText($("#group-cell-id").value, 120, "group.invalidCell");
-  const notes = validatedText($("#group-notes").value, 2000, "group.invalidNotes");
-  const editingId = state.groupEditingId;
-  const ownsSelection = () => state.captureExperimentId === experimentId
-    && state.captureGroupRevision === selectionRevision
-    && state.groupSaveContextRevision === saveContextRevision;
-  const path = editingId
-    ? `/api/v1/groups/${encodeURIComponent(editingId)}`
-    : `/api/v1/experiments/${encodeURIComponent(experimentId)}/groups`;
-  const method = editingId ? "PATCH" : "POST";
-  let payload;
+async function submitGroupingEditor(event) {
+  event.preventDefault();
+  const editor = state.groupingEditor;
+  const dialog = $("#grouping-dialog");
+  if (!dialog.open || !editor || editor.saving) return;
+  const ownsEditor = () => state.groupingEditor === editor && dialog.open;
+  const ownsSelection = () => ownsEditor() && state.groupingSelectionRevision === editor.selectionRevision;
+  const { kind, id, experimentId } = editor;
+  const isGroup = kind === "group";
+  setGroupingError("");
   try {
-    ({ payload } = await fetchJson(path, { method, body: JSON.stringify({ name, cell_id, notes }) }));
+    const body = {
+      name: validatedText($(`#${kind}-name`).value, 120, "group.invalidName", true),
+      notes: validatedText($(`#${kind}-notes`).value, 2000, "group.invalidNotes"),
+    };
+    if (isGroup) body.cell_id = validatedText($("#group-cell-id").value, 120, "group.invalidCell");
+    const path = id ? `/api/v1/${isGroup ? "groups" : "experiments"}/${encodeURIComponent(id)}`
+      : isGroup ? `/api/v1/experiments/${encodeURIComponent(experimentId)}/groups` : "/api/v1/experiments";
+    editor.saving = true;
+    renderGroupingEditor();
+    const { payload } = await fetchJson(path, { method: id ? "PATCH" : "POST", body: JSON.stringify(body) });
+    const current = ownsSelection();
+    applyGroupingSave(editor, payload, current && !id);
+    if (current) {
+      dialog.close();
+      toast(t(isGroup ? "group.saved" : "group.experimentSaved"));
+    }
   } catch (error) {
-    if (ownsSelection()) throw error;
-    return null;
+    if (ownsSelection()) setGroupingError(t("group.saveFailed", { detail: error.message }));
+  } finally {
+    editor.saving = false;
+    if (ownsEditor()) renderGroupingEditor();
   }
-  // Cache by the request's experiment; only the still-current selection may change capture/editor state.
-  const cachedGroups = state.groupsByExperiment.get(experimentId)
-    ?? (ownsSelection() ? state.captureGroups : []);
-  const updatedGroups = cachedGroups.filter((item) => item.group_id !== payload.group_id).concat(payload);
-  state.groupsByExperiment.set(experimentId, updatedGroups);
-  if (!ownsSelection()) {
-    renderHistoryFilterOptions();
-    renderBatchAssignmentTargets();
-    return payload;
-  }
-  state.captureGroups = updatedGroups;
-  state.captureGroupId = payload.group_id;
-  state.groupEditTarget = payload.group_id;
-  state.groupEditingId = null;
-  renderGroupingControls();
-  renderCaptureBinding();
-  renderGroupExport();
-  $("#group-save").textContent = t("group.saveGroup");
-  toast(t("group.saved"));
-  return payload;
 }
 
 async function loadCaptureGroups(experimentId = state.captureExperimentId, revision) {
@@ -367,12 +375,10 @@ async function loadCaptureGroups(experimentId = state.captureExperimentId, revis
 }
 
 function selectCaptureExperiment(experimentId) {
-  state.groupSaveContextRevision += 1;
+  state.groupingSelectionRevision += 1;
   state.captureExperimentId = experimentId || null;
   state.captureGroupId = null;
   state.captureGroups = [];
-  state.groupEditTarget = "";
-  state.groupEditingId = null;
   state.captureGroupStatusKey = null;
   const revision = ++state.captureGroupRevision;
   renderGroupingControls();
@@ -847,6 +853,7 @@ function setLanguage(language) {
   localStorage.setItem("usac-language", state.language);
   applyStaticTranslations(); updateMode();
   renderGroupingControls(); renderCaptureBinding(); renderGroupExport();
+  renderGroupingEditor();
   if (state.schema && state.config) renderParameters();
   if (state.devicePayload) updateDevice(state.devicePayload);
   renderCounters(state.counterPayload); renderHistory();
@@ -1048,10 +1055,13 @@ function updateMode() {
 function historyGroupingText(item) {
   const metadata = item.grouping_metadata || {};
   if (!metadata.group_id) return t("group.ungrouped");
+  const experiment = state.experiments.find((entry) => entry.experiment_id === metadata.experiment_id);
+  const group = state.groupsByExperiment.get(metadata.experiment_id)?.find((entry) => entry.group_id === metadata.group_id);
+  const cellId = group ? group.cell_id : metadata.cell_id;
   return [
-    metadata.experiment_name || metadata.experiment_id,
-    metadata.group_name || metadata.group_id,
-    metadata.cell_id ? t("group.cell", { cell: metadata.cell_id }) : null,
+    experiment?.name || metadata.experiment_name || metadata.experiment_id,
+    group?.name || metadata.group_name || metadata.group_id,
+    cellId ? t("group.cell", { cell: cellId }) : null,
   ].filter(Boolean).join(" · ");
 }
 
@@ -1103,7 +1113,9 @@ async function assignSelectedCaptures() {
 function renderHistory() {
   const root = $("#capture-history"); root.replaceChildren();
   if (!state.historyItems.length) {
-    root.textContent = t("history.empty");
+    const key = state.historyFilterType === "all" ? "history.empty"
+      : state.historyExperimentId ? "history.filter.empty" : "history.filter.chooseExperiment";
+    root.textContent = t(key);
     renderBatchSelectionControls();
     return;
   }
@@ -1135,14 +1147,16 @@ function renderHistory() {
 }
 
 function addHistoryFilter(parameters) {
-  if (state.historyFilterType === "ungrouped") parameters.set("ungrouped", "true");
-  else if (state.historyFilterType === "experiment" && state.historyFilterValue) parameters.set("experiment_id", state.historyFilterValue);
-  else if (state.historyFilterType === "group" && state.historyFilterValue) parameters.set("group_id", state.historyFilterValue);
+  if (state.historyFilterType !== "experiment") return;
+  parameters.set("experiment_id", state.historyExperimentId);
+  if (state.historyGroupId) parameters.set("group_id", state.historyGroupId);
 }
 
-async function setHistoryFilter(type, value = "") {
-  state.historyFilterType = ["all", "ungrouped", "experiment", "group"].includes(type) ? type : "all";
-  state.historyFilterValue = value;
+async function setHistoryFilter(type, experimentId = "", groupId = "") {
+  state.historyFilterType = type === "experiment" ? "experiment" : "all";
+  state.historyExperimentId = state.historyFilterType === "experiment" ? experimentId : "";
+  const groups = state.groupsByExperiment.get(state.historyExperimentId);
+  state.historyGroupId = groups?.some((group) => group.group_id === groupId) ? groupId : "";
   state.historyRevision += 1;
   state.historyCursor = null;
   state.historyItems = [];
@@ -1150,13 +1164,13 @@ async function setHistoryFilter(type, value = "") {
   $("#history-more").hidden = true;
   renderHistoryFilterOptions();
   renderHistory();
-  if (["experiment", "group"].includes(state.historyFilterType) && !state.historyFilterValue) return false;
+  if (state.historyFilterType === "experiment" && !state.historyExperimentId) return false;
   return loadHistory(true);
 }
 
 async function loadHistory(reset = true) {
-  // Never let refresh or terminal-poll paths turn an incomplete target filter into an all-records request.
-  if (["experiment", "group"].includes(state.historyFilterType) && !state.historyFilterValue) {
+  // Refresh and automatic completion must wait for an experiment selection, not fetch all records.
+  if (state.historyFilterType === "experiment" && !state.historyExperimentId) {
     state.historyRevision += 1;
     state.historyCursor = null;
     state.historyItems = [];
@@ -1289,31 +1303,31 @@ function bindActions() {
   $("#history-refresh").addEventListener("click", guarded(() => loadHistory(true))); $("#history-more").addEventListener("click", guarded(() => loadHistory(false)));
   $("#capture-experiment").addEventListener("change", guarded(() => selectCaptureExperiment($("#capture-experiment").value)));
   $("#capture-group").addEventListener("change", () => {
-    state.groupSaveContextRevision += 1;
+    state.groupingSelectionRevision += 1;
     state.captureGroupId = $("#capture-group").value || null;
-    renderCaptureBinding(); renderGroupExport();
+    renderCaptureBinding(); renderGroupExport(); renderGroupingEditorActions();
   });
-  $("#history-filter-type").addEventListener("change", guarded(async () => {
-    state.historyFilterType = $("#history-filter-type").value;
-    state.historyFilterValue = "";
-    renderHistoryFilterOptions();
-    await setHistoryFilter(state.historyFilterType, "");
-  }));
-  $("#history-filter-value").addEventListener("change", guarded(() => setHistoryFilter(state.historyFilterType, $("#history-filter-value").value)));
+  $("#history-filter-type").addEventListener("change", guarded(() => setHistoryFilter($("#history-filter-type").value)));
+  $("#history-experiment").addEventListener("change", guarded(() => setHistoryFilter("experiment", $("#history-experiment").value)));
   $("#batch-assignment-target").addEventListener("change", () => {
     state.batchAssignmentTarget = $("#batch-assignment-target").value;
     renderBatchSelectionControls();
   });
   $("#batch-assignment-apply").addEventListener("click", guarded(assignSelectedCaptures));
-  $("#experiment-new").addEventListener("click", prepareNewExperiment);
-  $("#experiment-edit").addEventListener("click", prepareExperimentEdit);
-  $("#experiment-save").addEventListener("click", guarded(saveExperiment));
-  $("#group-new").addEventListener("click", prepareNewGroup);
-  $("#group-edit").addEventListener("click", prepareGroupEdit);
-  $("#group-save").addEventListener("click", guarded(saveGroup));
-  $("#group-edit-target").addEventListener("change", () => {
-    state.groupSaveContextRevision += 1;
-    state.groupEditTarget = $("#group-edit-target").value;
+  $("#experiment-new").addEventListener("click", () => openGroupingEditor("experiment"));
+  $("#experiment-edit").addEventListener("click", () => openGroupingEditor("experiment", true));
+  $("#group-new").addEventListener("click", () => openGroupingEditor("group"));
+  $("#group-edit").addEventListener("click", () => openGroupingEditor("group", true));
+  const groupingDialog = $("#grouping-dialog");
+  $("#grouping-form").addEventListener("submit", submitGroupingEditor);
+  $("#grouping-cancel").addEventListener("click", () => {
+    if (!state.groupingEditor?.saving) groupingDialog.close();
+  });
+  groupingDialog.addEventListener("cancel", (event) => {
+    if (state.groupingEditor?.saving) event.preventDefault();
+  });
+  groupingDialog.addEventListener("close", () => {
+    if (!groupingDialog.open) state.groupingEditor = null;
   });
   $("#waveform-apply-window").addEventListener("click", guarded(async () => applyWaveformWindow()));
   $("#waveform-previous").addEventListener("click", () => moveWaveformWindow(-1)); $("#waveform-next").addEventListener("click", () => moveWaveformWindow(1));

@@ -79,10 +79,25 @@ label input, label select { display: block; margin-top: .3rem; color: var(--ink)
 .group-export { color: var(--signal-blue); font-size: .76rem; font-weight: 650; text-align: right; }
 .group-export[aria-disabled="true"] { color: var(--muted); pointer-events: none; text-decoration: none; }
 .group-bindings { display: flex; flex-wrap: wrap; gap: .35rem 1rem; margin-top: .45rem; color: var(--muted); font: .7rem "Cascadia Mono", monospace; }
-.group-editor { margin-top: .7rem; border-top: 1px solid #dde4e1; padding-top: .65rem; }
-.group-editor-actions { margin-top: .65rem; }
-.group-notes-field { grid-column: 1 / -1; }
+.grouping-choice { display: flex; align-items: end; flex-wrap: wrap; gap: .45rem; min-width: 0; }
+.grouping-choice > label { flex: 1 1 12rem; min-width: 0; }
+.grouping-choice .action-row { gap: .35rem; }
+.grouping-choice button { min-height: 2.25rem; padding: .35rem .6rem; font-size: .76rem; }
+.grouping-dialog { width: min(32rem, calc(100% - 2rem)); max-height: calc(100% - 2rem); padding: 0; overflow: auto; border: 1px solid var(--line); border-top: 3px solid var(--copper); background: var(--paper); color: var(--ink); box-shadow: 0 24px 64px rgba(22, 34, 31, .25); }
+.grouping-dialog::backdrop { background: rgba(22, 34, 31, .45); }
+.grouping-dialog form { padding: clamp(.9rem, 4vw, 1.35rem); }
+.grouping-dialog-head { padding-bottom: .75rem; border-bottom: 1px solid var(--line); }
+.grouping-dialog-head p { overflow-wrap: anywhere; }
+.grouping-fields { min-inline-size: 0; border: 0; padding: 0; margin: 0; }
+.grouping-fields textarea { display: block; margin-top: .3rem; color: var(--ink); font-size: .9rem; resize: vertical; }
+.grouping-error { margin: .8rem 0 0; overflow-wrap: anywhere; }
+.grouping-dialog-actions { justify-content: flex-end; margin-top: 1rem; }
 .history-grouping-tools { margin-bottom: .55rem; }
+.history-group-filters { margin-top: .7rem; padding: .55rem .65rem; border-left: 2px solid var(--line); background: #eef2f0; }
+.history-group-filters > p:first-child { margin: 0 0 .35rem; color: var(--muted); font-size: .76rem; }
+.history-group-filters .action-row { gap: .35rem; }
+.history-group-choice { min-height: 2rem; max-width: 100%; padding: .3rem .6rem; font-size: .76rem; text-align: left; overflow-wrap: anywhere; }
+.history-group-choice[aria-pressed="true"] { border-color: var(--signal-blue); background: #edf3ff; color: var(--ink); }
 .batch-toolbar { display: grid; grid-template-columns: minmax(12rem, 1fr) auto auto; align-items: end; gap: .6rem; margin-top: .6rem; }
 .batch-toolbar > span { padding-bottom: .65rem; color: var(--muted); font: .7rem "Cascadia Mono", monospace; }
 .history-row { align-items: flex-start; flex-wrap: wrap; }
@@ -120,5 +135,5 @@ canvas { width: 100%; height: clamp(18rem, 42vw, 31rem); display: block; backgro
 .hint { font-size: .75rem; }
 .toast { position: fixed; right: 1.2rem; bottom: 1.2rem; max-width: min(28rem, calc(100vw - 2.4rem)); background: var(--ink); color: white; padding: .8rem 1rem; box-shadow: var(--shadow); z-index: 10; }
 @media (max-width: 1050px) { .waveform-toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)); } .waveform-actions { grid-column: 1 / -1; justify-content: flex-start; } }
-@media (max-width: 760px) { .instrument-head, .section-head { align-items: stretch; flex-direction: column; } .header-tools { align-items: stretch; flex-direction: column; } .language-toggle { align-self: flex-end; } .device-badge { min-width: 0; } .parameter-groups, .records-grid, .form-grid.two, .waveform-toolbar, .batch-toolbar { grid-template-columns: 1fr; } .group-notes-field { grid-column: auto; } .batch-toolbar > span { padding: 0; } .history-actions { justify-content: flex-start; } .waveform-actions { grid-column: auto; } .counter-strip { grid-template-columns: repeat(2, 1fr); } .signal-strip { gap: .35rem; font-size: .6rem; } .field-row { grid-template-columns: 1fr; gap: .35rem; } .waveform-state { text-align: left; } .waveform-footer { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 760px) { .instrument-head, .section-head { align-items: stretch; flex-direction: column; } .header-tools { align-items: stretch; flex-direction: column; } .language-toggle { align-self: flex-end; } .device-badge { min-width: 0; } .parameter-groups, .records-grid, .form-grid.two, .waveform-toolbar, .batch-toolbar { grid-template-columns: 1fr; } .batch-toolbar > span { padding: 0; } .history-actions { justify-content: flex-start; } .waveform-actions { grid-column: auto; } .counter-strip { grid-template-columns: repeat(2, 1fr); } .signal-strip { gap: .35rem; font-size: .6rem; } .field-row { grid-template-columns: 1fr; gap: .35rem; } .waveform-state { text-align: left; } .waveform-footer { align-items: flex-start; flex-direction: column; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }

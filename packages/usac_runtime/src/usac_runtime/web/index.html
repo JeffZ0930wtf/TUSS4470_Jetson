@@ -42,29 +42,23 @@
             <a id="group-export" class="group-export" href="#" aria-disabled="true" tabindex="-1"><span id="group-export-label" data-i18n="group.exportDisabled">选择实验组后下载 ZIP</span></a>
           </div>
           <div class="form-grid two">
-            <label><span data-i18n="group.experiment">实验</span><select id="capture-experiment"></select></label>
-            <label><span data-i18n="group.captureGroup">采集分组</span><select id="capture-group" disabled></select></label>
+            <div class="grouping-choice">
+              <label><span data-i18n="group.experiment">实验</span><select id="capture-experiment"></select></label>
+              <div class="action-row">
+                <button id="experiment-new" type="button" class="quiet" aria-haspopup="dialog" data-i18n="group.newExperiment">新建实验</button>
+                <button id="experiment-edit" type="button" class="quiet" aria-haspopup="dialog" data-i18n="group.editExperiment" disabled>编辑实验</button>
+              </div>
+            </div>
+            <div class="grouping-choice">
+              <label><span data-i18n="group.captureGroup">采集分组</span><select id="capture-group" disabled></select></label>
+              <div class="action-row">
+                <button id="group-new" type="button" class="quiet" aria-haspopup="dialog" data-i18n="group.newGroup" disabled>新建分组</button>
+                <button id="group-edit" type="button" class="quiet" aria-haspopup="dialog" data-i18n="group.editGroup" disabled>编辑分组</button>
+              </div>
+            </div>
           </div>
           <p id="group-load-status" class="hint" role="status" aria-live="polite"></p>
           <div class="group-bindings"><span id="capture-binding-next"></span><span id="capture-binding-active"></span></div>
-          <div id="group-editor" class="group-editor">
-            <div class="form-grid two">
-              <label><span data-i18n="group.experimentName">实验名称</span><input id="experiment-name" maxlength="120"></label>
-              <label><span data-i18n="group.experimentNotes">实验备注</span><textarea id="experiment-notes" maxlength="2000" rows="2"></textarea></label>
-              <label><span data-i18n="group.groupName">分组名称</span><input id="group-name" maxlength="120"></label>
-              <label><span data-i18n="group.cellId">电芯编号（可选）</span><input id="group-cell-id" maxlength="120"></label>
-              <label class="group-notes-field"><span data-i18n="group.groupNotes">分组备注</span><textarea id="group-notes" maxlength="2000" rows="2"></textarea></label>
-              <label><span data-i18n="group.chooseGroup">选择分组进行编辑</span><select id="group-edit-target"></select></label>
-            </div>
-            <div class="action-row group-editor-actions">
-              <button id="experiment-new" class="quiet" data-i18n="group.newExperiment">新建实验</button>
-              <button id="experiment-edit" class="quiet" data-i18n="group.editExperiment">编辑所选实验</button>
-              <button id="experiment-save" data-i18n="group.saveExperiment">保存实验</button>
-              <button id="group-new" class="quiet" data-i18n="group.newGroup">新建分组</button>
-              <button id="group-edit" class="quiet" data-i18n="group.editGroup">编辑所选分组</button>
-              <button id="group-save" data-i18n="group.saveGroup">保存分组</button>
-            </div>
-          </div>
         </section>
         <div id="trigger-fields" class="form-grid two">
           <label><span data-i18n="capture.trigger">触发方式</span><select id="trigger-source"><option value="SOFTWARE" data-i18n="trigger.software">软件触发</option><option value="EXTERNAL_SYNC_SLAVE" data-i18n="trigger.slave">外部同步从机</option><option value="EXTERNAL_SYNC_MASTER" data-i18n="trigger.master">外部同步主机</option></select></label>
@@ -124,8 +118,13 @@
         </div>
         <div class="history-grouping-tools">
           <div class="form-grid two">
-            <label><span data-i18n="history.filter.mode">筛选方式</span><select id="history-filter-type"><option value="all" data-i18n="history.filter.all">全部记录</option><option value="ungrouped" data-i18n="history.filter.ungrouped">仅未分组</option><option value="experiment" data-i18n="history.filter.experiment">按实验筛选</option><option value="group" data-i18n="history.filter.group">按分组筛选</option></select></label>
-            <label><span data-i18n="history.filter.target">筛选目标</span><select id="history-filter-value" hidden></select></label>
+            <label><span data-i18n="history.filter.mode">筛选方式</span><select id="history-filter-type"><option value="all" data-i18n="history.filter.all">全部记录</option><option value="experiment" data-i18n="history.filter.experiment">按实验筛选</option></select></label>
+            <label id="history-experiment-field" hidden><span data-i18n="group.experiment">实验</span><select id="history-experiment"></select></label>
+          </div>
+          <div id="history-group-filters" class="history-group-filters" role="group" aria-labelledby="history-group-label" hidden>
+            <p id="history-group-label" data-i18n="history.filter.groups">实验分组</p>
+            <div id="history-group-choices" class="action-row"></div>
+            <p id="history-group-hint" class="hint" role="status" hidden></p>
           </div>
           <div class="batch-toolbar">
             <label><span data-i18n="batch.target">归入目标组</span><select id="batch-assignment-target"></select></label>
@@ -163,6 +162,30 @@
       <div id="parameter-groups" class="parameter-groups" aria-live="polite"></div>
     </section>
   </main>
+  <dialog id="grouping-dialog" class="grouping-dialog" aria-labelledby="grouping-dialog-title" aria-describedby="grouping-dialog-context">
+    <form id="grouping-form" novalidate>
+      <header class="grouping-dialog-head">
+        <h2 id="grouping-dialog-title"></h2>
+        <p id="grouping-dialog-context" class="hint" hidden></p>
+      </header>
+      <fieldset id="grouping-fields" class="grouping-fields">
+        <div id="experiment-fields" class="form-grid" hidden>
+          <label><span data-i18n="group.experimentName">实验名称</span><input id="experiment-name" maxlength="120" required></label>
+          <label><span data-i18n="group.experimentNotes">实验备注</span><textarea id="experiment-notes" maxlength="2000" rows="3"></textarea></label>
+        </div>
+        <div id="group-fields" class="form-grid" hidden>
+          <label><span data-i18n="group.groupName">分组名称</span><input id="group-name" maxlength="120" required></label>
+          <label><span data-i18n="group.cellId">电芯编号（可选）</span><input id="group-cell-id" maxlength="120"></label>
+          <label><span data-i18n="group.groupNotes">分组备注</span><textarea id="group-notes" maxlength="2000" rows="3"></textarea></label>
+        </div>
+      </fieldset>
+      <p id="grouping-error" class="message grouping-error" role="alert" hidden></p>
+      <footer class="action-row grouping-dialog-actions">
+        <button id="grouping-cancel" type="button" class="quiet" data-i18n="group.cancel">取消</button>
+        <button id="grouping-save" type="submit" class="primary"></button>
+      </footer>
+    </form>
+  </dialog>
   <div id="toast" class="toast" role="status" hidden></div>
   <script src="/assets/app.js" defer></script>
 </body>

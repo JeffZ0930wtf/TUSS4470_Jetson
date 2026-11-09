@@ -2,9 +2,15 @@
 
 ## 文档说明
 
-本文档说明 V1 超声采集子模块在 Jetson 宿主机和容器内的设备、网络与持久目录边界，解决“哪些配置属于宿主机、哪些路径属于容器”的问题，并记录当前 V1.1.1 主机 UI 缓存修复状态及 V1.1.0 历史实机验证。它适用于 V1 的部署、启动、停止和真实设备运行；协议与安全边界分别以 `docs/protocol.md` 和 V1 已知限制为准。完整真实证据不放入 Git。
+本文档说明 V1 超声采集子模块在 Jetson 宿主机和容器内的设备、网络与持久目录边界，解决“哪些配置属于宿主机、哪些路径属于容器”的问题。它适用于 V1 的部署、启动、停止、网页候选版切换与回退；协议与安全边界分别以 `docs/protocol.md` 和 V1 已知限制为准。完整真实证据不放入 Git。
 
-## V1.1.1 主机 UI 缓存修复状态
+## V1.1.2 网页补丁
+
+V1.1.2 增加实验／分组弹窗，以及「已保存记录」按实验再按分组的两级筛选。它沿用
+V1.1.1 的静态资源哈希校验，不改 REST、数据结构、采集协议或固件。正式镜像、已验证
+的候选镜像与实机检查范围见 [V1.1.2 发布说明](../release/v1.1.2-release-notes.md)。
+
+## V1.1.1 主机 UI 缓存修复（历史）
 
 V1.1.1 修复浏览器静态资源混版：API 进程启动时固定 HTML、JavaScript 与
 CSS 内容快照，HTML 用 JavaScript/CSS 的完整 SHA-256 生成资源 URL，并对三类
@@ -14,7 +20,7 @@ CSS 内容快照，HTML 用 JavaScript/CSS 的完整 SHA-256 生成资源 URL，
 Jetson ARM64 已部署并验证镜像 `tuss4470-acquisition-core:1.1.1`，镜像 ID 为
 `sha256:acbc213fd0ae3ded2e15196995567e544f576d99efc3516d1a80fd804b2d1a7d`，
 OCI revision 为候选源码 `7ab2b19c460b8f6f11ab504cf0ee7fd56d222ad5`。Core 与
-Bridge 当前均运行该镜像。备份持久目录前曾停止服务，随后重新创建并启动；启动器使用
+Bridge 在正式部署验收时均运行该镜像。备份持久目录前曾停止服务，随后重新创建并启动；启动器使用
 `up -d --no-build`，再次启动时要求 Jetson 上已有该镜像。部署/测试范围和缓存
 验证细节见 [V1.1.1 发布说明](../release/v1.1.1-release-notes.md)。
 
@@ -83,9 +89,10 @@ docker compose -f deploy/compose.jetson.yaml up -d --force-recreate bridge
 
 ## Jetson 本机一键启动
 
-启动脚本当前默认选择已部署验证的 `tuss4470-acquisition-core:1.1.1`。启动脚本
+启动脚本当前默认选择 `tuss4470-acquisition-core:1.1.2`。启动脚本
 执行 `up -d --no-build`，不会自动构建，镜像须已存在于 Jetson；更改默认值不会
-替换已有容器。Core 与 Bridge 当前均处于运行状态，设备状态为 `NORMAL / IDLE`。
+替换已有容器，实际镜像以 `docker inspect` 为准。重新执行默认启动器会按正式镜像配置启动，
+可能将试用中的 Core 切到正式版。
 备份持久目录前曾停止服务，备份 SHA-256 为
 `63251fd22ae90c22e227f91a0dd052f002310cbb262730136fa2d49ad71e6720`。回退前应保护
 新产生的数据并按备份记录恢复匹配版本；V1.1.0 镜像身份与历史证据见上文。
@@ -111,7 +118,7 @@ docker compose -f deploy/compose.jetson.yaml up -d --force-recreate bridge
 需要手动启动时仍可执行：
 
 ```sh
-export USAC_CORE_IMAGE=tuss4470-acquisition-core:1.1.1
+export USAC_CORE_IMAGE=tuss4470-acquisition-core:1.1.2
 export USAC_SERIAL_DEVICE=/dev/serial/by-id/usb-Texas_Instruments_MSP430-USB_Example_<本板32位小写十六进制序列号>-if00
 docker compose -f deploy/compose.jetson.yaml up -d --no-build
 ```
@@ -130,3 +137,40 @@ docker compose -f deploy/compose.jetson.yaml down
 ```
 
 停止不会删除 `/var/lib/tuss4470/core` 或 `/var/lib/tuss4470/bridge/spool`。
+
+## 仅网页变更：切换与回退
+
+本流程适用于 V1.1.2 这类仅改网页交互的兼容升级。若后端、数据库结构、Bridge 或
+固件有变化，不沿用这个简化流程。V1.1.2 试用过的候选镜像和 V1.1.1 正式镜像在本机
+独立保留；版本详情见 [V1.1.2 发布说明](../release/v1.1.2-release-notes.md)。
+
+1. **切换前**：结束所有采集任务，确认设备 `NORMAL / IDLE`，无运行计划和待交付帧；
+   按「启动前提」人工确认外部 VPWR 和 S3 复位，并为正式 SQLite 与 Bridge spool
+   保留一致性备份。即使不重建 Bridge 容器，Core 切换也会触发重新握手。
+2. **切换镜像**：以下在 Jetson 仓库根目录执行。只执行所需方向的一条命令；
+   `--no-deps` 保留 Bridge 容器，`--no-build` 复用已经构建的镜像。若现场不是默认
+   数据目录，先核对现有挂载并把命令中的 `USAC_CORE_DATA_DIR` 改为原值。
+
+   ```sh
+   # 切到正式 V1.1.2
+   USAC_CORE_IMAGE=tuss4470-acquisition-core:1.1.2 \
+     USAC_CORE_DATA_DIR=/var/lib/tuss4470/core \
+     docker compose -p deploy -f deploy/compose.jetson.yaml up -d --no-deps --no-build core
+
+   # 回到旧版正式 V1.1.1
+   USAC_CORE_IMAGE=tuss4470-acquisition-core:1.1.1 \
+     USAC_CORE_DATA_DIR=/var/lib/tuss4470/core \
+     docker compose -p deploy -f deploy/compose.jetson.yaml up -d --no-deps --no-build core
+   ```
+
+3. **切换后**：核对两个容器的镜像和运行状态，等 Bridge 重连后确认设备空闲，再打开网页。
+
+   ```sh
+   docker inspect deploy-core-1 deploy-bridge-1 --format '{{.Name}} {{.Config.Image}} {{.State.Status}}'
+   curl -fsS http://127.0.0.1:8000/api/v1/health
+   curl -fsS http://127.0.0.1:8000/api/v1/device
+   ```
+
+Jetson 本机访问 `http://127.0.0.1:8000/`；Windows 通过已建立的 SSH 隧道访问
+`http://127.0.0.1:18080/`。切换后刷新浏览器即可，必要时用 `Ctrl+Shift+R`。
+回退只切 Core 镜像，**不要恢复旧数据库快照**，否则可能覆盖实机测试期间新保存的数据。

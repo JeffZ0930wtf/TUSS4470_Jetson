@@ -4,7 +4,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.core
-    image: ${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.1.1}
+    image: ${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.1.2}
     command:
       - --backend
       - bridge
@@ -34,7 +34,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.core
-    image: ${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.1.1}
+    image: ${USAC_CORE_IMAGE:-tuss4470-acquisition-core:1.1.2}
     entrypoint: ["python", "-m", "usac_runtime.bridge_cli"]
     command:
       - --config
