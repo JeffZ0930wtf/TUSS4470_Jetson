@@ -45,6 +45,7 @@ function makeHarness() {
         disabled: false,
         hidden: false,
         open: false,
+        focused: false,
         textContent: "",
         className: "",
         dataset: {},
@@ -55,7 +56,7 @@ function makeHarness() {
         setAttribute(name, value) { this[name] = value; },
         showModal() { this.open = true; },
         close() { this.open = false; this.listeners.close?.(); },
-        focus() {},
+        focus() { this.focused = true; },
         querySelectorAll() { return selector === "#capture-counters" ? counters : []; },
         replaceChildren(...children) { this.children = children; },
         getContext() {
@@ -546,10 +547,337 @@ async function checkIncompleteHistoryTarget(automatic) {
   assert.equal(harness.node("#history-more").hidden, true);
 }
 
+async function checkDeletionConfirmationAndCreateMode() {
+  const harness = makeHarness();
+  harness.run(`
+    state.experiments = [{experiment_id:"exp-a", name:"Tank A", notes:""}];
+    state.captureExperimentId = "exp-a";
+    state.captureGroups = [{group_id:"group-a", experiment_id:"exp-a", name:"Run 1", cell_id:"", notes:"", archived_count:3}];
+    state.groupsByExperiment = new Map([["exp-a", state.captureGroups]]);
+    state.captureGroupId = "group-a";
+    bindActions(); renderGroupingControls();
+  `);
+  const click = (id) => harness.node(`#${id}`).listeners.click();
+  const deletion = harness.node("#delete-confirmation");
+  click("experiment-new");
+  assert.equal(harness.node("#experiment-delete").hidden, true, "create mode never exposes experiment deletion");
+  click("grouping-cancel");
+
+  click("experiment-edit");
+  assert.equal(harness.node("#experiment-delete").hidden, false, "editing an experiment exposes its delete action");
+  harness.node("#experiment-name").value = "unsaved experiment draft";
+  click("experiment-delete");
+  assert.equal(deletion.open, true, "delete action opens a separate confirmation dialog");
+  assert.equal(harness.node("#delete-confirmation-cancel").focused, true, "the safe cancel action receives initial focus");
+  assert.equal(harness.node("#delete-confirmation-title").textContent, "删除实验");
+  assert.equal(harness.node("#delete-confirmation-target").textContent, "Tank A", "confirmation names the persisted target, not the unsaved form draft");
+  assert.match(harness.node("#delete-confirmation-impact").textContent, /不可撤销/);
+  assert.match(harness.node("#delete-confirmation-impact").textContent, /所有分组/);
+  assert.match(harness.node("#delete-confirmation-impact").textContent, /所有.*记录/);
+  click("delete-confirmation-cancel");
+  assert.equal(deletion.open, false);
+  assert.deepEqual(harness.requests, [], "cancel never sends DELETE");
+  click("grouping-cancel");
+
+  click("group-edit");
+  click("group-delete");
+  assert.equal(harness.node("#delete-confirmation-title").textContent, "删除分组");
+  assert.equal(harness.node("#delete-confirmation-target").textContent, "Run 1");
+  assert.match(harness.node("#delete-confirmation-impact").textContent, /该分组/);
+  assert.match(harness.node("#delete-confirmation-impact").textContent, /记录/);
+  click("delete-confirmation-cancel");
+  click("grouping-cancel");
+
+  harness.run("setLanguage('en')");
+  click("experiment-edit");
+  click("experiment-delete");
+  assert.equal(harness.node("#delete-confirmation-title").textContent, "Delete experiment");
+  assert.match(harness.node("#delete-confirmation-impact").textContent, /cannot be undone/i);
+  assert.match(harness.node("#delete-confirmation-impact").textContent, /all its groups/i);
+  click("delete-confirmation-cancel");
+}
+
+async function checkCaptureDeletionConfirmAndConflict() {
+  const harness = makeHarness();
+  harness.run(`
+    state.historyItems = [
+      {capture_id:"capture-a", capture_sequence:1, sample_count:2, grouping_metadata:{experiment_id:"exp-a", group_id:"group-a", experiment_name:"A", group_name:"A1"}},
+      {capture_id:"capture-b", capture_sequence:2, sample_count:2, grouping_metadata:{experiment_id:"exp-b", group_id:"group-b", experiment_name:"B", group_name:"B1"}},
+    ];
+    state.historyFilterType = "experiment"; state.historyExperimentId = "exp-a"; state.historyGroupId = "group-a";
+    state.batchSelectedCaptureIds = new Set(["capture-a", "capture-b"]);
+    state.selectedCaptureIds = new Set(["capture-a", "capture-b"]); state.primaryCaptureId = "capture-a";
+    state.waveforms = new Map([
+      ["capture-a", {metadata:{capture_id:"capture-a", grouping_metadata:{experiment_id:"exp-a", group_id:"group-a"}}, samples:[1]}],
+      ["capture-b", {metadata:{capture_id:"capture-b", grouping_metadata:{experiment_id:"exp-b", group_id:"group-b"}}, samples:[2]}],
+    ]);
+    bindActions(); renderHistory();
+  `);
+  const row = harness.node("#capture-history").children[0];
+  const actions = row.children[1].children;
+  const editButton = actions.find((child) => child.textContent === "编辑");
+  assert.ok(editButton, "each saved history row opens its individual record actions");
+  editButton.listeners.click();
+  assert.equal(harness.node("#record-dialog").open, true);
+  assert.equal(harness.node("#record-dialog-target").textContent, "capture-a");
+  harness.node("#record-delete").listeners.click();
+  assert.equal(harness.node("#delete-confirmation-title").textContent, "删除记录");
+  assert.match(harness.node("#delete-confirmation-impact").textContent, /仅删除.*记录/);
+  harness.responses.push({ok:false, status:409, payload:{detail:"capture belongs to an active run"}});
+  await harness.node("#delete-confirmation-confirm").listeners.click();
+  assert.equal(harness.requests[0].path, "/api/v1/captures/capture-a?confirm=true");
+  assert.equal(harness.requests[0].method, "DELETE");
+  assert.equal(harness.node("#delete-confirmation").open, true, "a conflict keeps the confirmation open for feedback");
+  assert.match(harness.node("#delete-confirmation-error").textContent, /active run/);
+  assert.deepEqual(JSON.parse(harness.run("JSON.stringify([state.historyItems.map((item) => item.capture_id), [...state.selectedCaptureIds], [...state.batchSelectedCaptureIds]])")),
+    [["capture-a", "capture-b"], ["capture-a", "capture-b"], ["capture-a", "capture-b"]], "failed deletion keeps history and selections");
+  assert.equal(harness.node("#delete-confirmation-confirm").disabled, false);
+
+  harness.node("#delete-confirmation-cancel").listeners.click();
+  assert.equal(harness.requests.length, 1, "cancel after a conflict sends no additional DELETE");
+  harness.node("#record-delete").listeners.click();
+  harness.responses.push({payload:{deleted:true, captures_deleted:1, groups_deleted:0}});
+  harness.responses.push({payload:{items:[{group_id:"group-a", experiment_id:"exp-a", name:"A1", archived_count:0}]}});
+  harness.responses.push({payload:{items:[], next_cursor:null}});
+  await harness.node("#delete-confirmation-confirm").listeners.click();
+  assert.equal(harness.requests[1].path, "/api/v1/captures/capture-a?confirm=true");
+  assert.equal(harness.requests[1].method, "DELETE");
+  assert.equal(harness.requests[2].path, "/api/v1/experiments/exp-a/groups", "capture deletion refreshes its parent group catalog");
+  assert.match(harness.requests[3].path, /\/api\/v1\/captures\?/);
+  assert.deepEqual(JSON.parse(harness.run("JSON.stringify({items:state.historyItems.map((item)=>item.capture_id), selected:[...state.selectedCaptureIds], batch:[...state.batchSelectedCaptureIds], waves:[...state.waveforms.keys()], filter:[state.historyFilterType,state.historyExperimentId,state.historyGroupId]})")),
+    {items:[], selected:["capture-b"], batch:["capture-b"], waves:["capture-b"], filter:["experiment","exp-a","group-a"]},
+    "successful capture deletion clears only its own cached and selected state");
+}
+
+async function checkGroupDeletionCascadeAndPendingCatalogFence() {
+  const harness = makeHarness();
+  harness.run(`
+    const groupA1 = {group_id:"group-a1", experiment_id:"exp-a", name:"A1", archived_count:1};
+    const groupA2 = {group_id:"group-a2", experiment_id:"exp-a", name:"A2", archived_count:1};
+    state.experiments = [{experiment_id:"exp-a", name:"A"}, {experiment_id:"exp-b", name:"B"}];
+    state.captureExperimentId = "exp-a"; state.captureGroupId = "group-a1"; state.captureGroups = [groupA1, groupA2];
+    state.groupsByExperiment = new Map([["exp-a", [groupA1, groupA2]], ["exp-b", [{group_id:"group-b", experiment_id:"exp-b", name:"B1"}]]]);
+    state.historyFilterType = "experiment"; state.historyExperimentId = "exp-a"; state.historyGroupId = "group-a1";
+    state.historyItems = [
+      {capture_id:"capture-a1", capture_sequence:1, sample_count:2, grouping_metadata:{experiment_id:"exp-a", group_id:"group-a1"}},
+      {capture_id:"capture-a2", capture_sequence:2, sample_count:2, grouping_metadata:{experiment_id:"exp-a", group_id:"group-a2"}},
+      {capture_id:"capture-b", capture_sequence:3, sample_count:2, grouping_metadata:{experiment_id:"exp-b", group_id:"group-b"}},
+    ];
+    state.batchSelectedCaptureIds = new Set(["capture-a1", "capture-a2", "capture-b"]);
+    state.selectedCaptureIds = new Set(["capture-a1", "capture-a2", "capture-b"]); state.primaryCaptureId = "capture-a1";
+    state.waveforms = new Map([
+      ["capture-a1", {metadata:{capture_id:"capture-a1", grouping_metadata:{experiment_id:"exp-a", group_id:"group-a1"}}, samples:[1]}],
+      ["capture-a2", {metadata:{capture_id:"capture-a2", grouping_metadata:{experiment_id:"exp-a", group_id:"group-a2"}}, samples:[2]}],
+      ["capture-b", {metadata:{capture_id:"capture-b", grouping_metadata:{experiment_id:"exp-b", group_id:"group-b"}}, samples:[3]}],
+    ]);
+    bindActions(); renderGroupingControls(); renderHistory();
+  `);
+  harness.node("#group-edit").listeners.click();
+  let finishStaleGroups;
+  harness.responses.push(new Promise((resolve) => { finishStaleGroups = resolve; }));
+  const staleGroups = harness.run("loadCaptureGroups('exp-a')");
+  await Promise.resolve();
+  harness.node("#group-delete").listeners.click();
+  harness.responses.push({payload:{deleted:true, captures_deleted:2, groups_deleted:1}});
+  harness.responses.push({payload:{items:[{group_id:"group-a2", experiment_id:"exp-a", name:"A2", archived_count:1}]}});
+  harness.responses.push({payload:{items:[{capture_id:"capture-a2", capture_sequence:2, sample_count:2, grouping_metadata:{experiment_id:"exp-a", group_id:"group-a2"}}], next_cursor:null}});
+  const revisionBefore = harness.run("state.captureGroupRevision");
+  await harness.node("#delete-confirmation-confirm").listeners.click();
+  assert.equal(harness.requests.find((request) => request.method === "DELETE").path, "/api/v1/groups/group-a1?confirm=true");
+  assert.ok(harness.requests.some((request) => request.path === "/api/v1/experiments/exp-a/groups"), "group deletion refreshes its parent catalog");
+  const groupHistoryRefresh = harness.requests.find((request) => request.path.startsWith("/api/v1/captures?"));
+  assert.match(groupHistoryRefresh.path, /experiment_id=exp-a/);
+  assert.doesNotMatch(groupHistoryRefresh.path, /group_id=group-a1/);
+  assert.ok(harness.run("state.captureGroupRevision") > revisionBefore, "group deletion fences an in-flight group list read");
+  finishStaleGroups({payload:{items:[
+    {group_id:"group-a1", experiment_id:"exp-a", name:"A1", archived_count:1},
+    {group_id:"group-a2", experiment_id:"exp-a", name:"A2", archived_count:1},
+  ]}});
+  await staleGroups;
+  assert.deepEqual(JSON.parse(harness.run(`JSON.stringify({
+    capture:[state.captureExperimentId,state.captureGroupId], groups:state.captureGroups.map((group)=>group.group_id),
+    status:state.captureGroupStatusKey,
+    cached:state.groupsByExperiment.get("exp-a").map((group)=>group.group_id),
+    filter:[state.historyFilterType,state.historyExperimentId,state.historyGroupId],
+    items:state.historyItems.map((item)=>item.capture_id), batch:[...state.batchSelectedCaptureIds],
+    selected:[...state.selectedCaptureIds], waves:[...state.waveforms.keys()], primary:state.primaryCaptureId,
+  })`)), {
+    capture:["exp-a", null], groups:["group-a2"], status:null, cached:["group-a2"], filter:["experiment","exp-a",""],
+    items:["capture-a2"], batch:["capture-a2","capture-b"], selected:["capture-a2","capture-b"],
+    waves:["capture-a2","capture-b"], primary:"capture-a2",
+  });
+}
+
+async function checkExperimentDeletionCascadeAndStaleHistoryFence() {
+  const harness = makeHarness();
+  harness.run(`
+    state.experiments = [{experiment_id:"exp-a", name:"A"}, {experiment_id:"exp-b", name:"B"}];
+    state.captureExperimentId = "exp-a"; state.captureGroupId = "group-a1";
+    state.captureGroups = [{group_id:"group-a1", experiment_id:"exp-a", name:"A1"}, {group_id:"group-a2", experiment_id:"exp-a", name:"A2"}];
+    state.groupsByExperiment = new Map([
+      ["exp-a", [{group_id:"group-a1", experiment_id:"exp-a", name:"A1"}, {group_id:"group-a2", experiment_id:"exp-a", name:"A2"}]],
+      ["exp-b", state.captureGroups],
+    ]);
+    state.historyFilterType = "experiment"; state.historyExperimentId = "exp-a"; state.historyGroupId = "group-a1";
+    state.historyItems = [
+      {capture_id:"capture-a", capture_sequence:1, sample_count:2, grouping_metadata:{experiment_id:"exp-a", group_id:"group-a1"}},
+      {capture_id:"capture-b", capture_sequence:2, sample_count:2, grouping_metadata:{experiment_id:"exp-b", group_id:"group-b"}},
+    ];
+    state.batchSelectedCaptureIds = new Set(["capture-a", "capture-b"]);
+    state.selectedCaptureIds = new Set(["capture-a", "capture-b"]); state.primaryCaptureId = "capture-a";
+    state.waveforms = new Map([
+      ["capture-a", {metadata:{capture_id:"capture-a", grouping_metadata:{experiment_id:"exp-a", group_id:"group-a1"}}, samples:[1]}],
+      ["capture-b", {metadata:{capture_id:"capture-b", grouping_metadata:{experiment_id:"exp-b", group_id:"group-b"}}, samples:[2]}],
+    ]);
+    bindActions(); renderGroupingControls(); renderHistory();
+    openGroupingEditor("experiment", true);
+  `);
+
+  let finishOldHistory;
+  harness.responses.push(new Promise((resolve) => { finishOldHistory = resolve; }));
+  const staleHistory = harness.run("loadHistory(true)");
+  await Promise.resolve();
+  harness.node("#experiment-delete").listeners.click();
+  let finishDelete;
+  harness.responses.push(new Promise((resolve) => { finishDelete = resolve; }));
+  harness.responses.push({payload:{items:[{experiment_id:"exp-b", name:"B"}]}});
+  harness.responses.push({payload:{items:[{group_id:"group-b", experiment_id:"exp-b", name:"B1", archived_count:1}]}});
+  harness.responses.push({payload:{items:[{capture_id:"capture-b", capture_sequence:2, sample_count:2, grouping_metadata:{experiment_id:"exp-b", group_id:"group-b"}}], next_cursor:null}});
+  let completedDelete;
+  const deletePromise = new Promise((resolve) => { completedDelete = resolve; });
+  harness.node("#delete-confirmation-confirm").listeners.click().then(completedDelete, completedDelete);
+  await Promise.resolve();
+  assert.equal(harness.node("#delete-confirmation-confirm").disabled, true, "confirmation disables during the request");
+  await harness.node("#delete-confirmation-confirm").listeners.click();
+  assert.equal(harness.requests.filter((request) => request.method === "DELETE").length, 1, "double click submits once");
+  finishDelete({payload:{deleted:true, captures_deleted:4, groups_deleted:2}});
+  await deletePromise;
+  finishOldHistory({payload:{items:[{capture_id:"capture-a", capture_sequence:1, sample_count:2, grouping_metadata:{experiment_id:"exp-a", group_id:"group-a1"}}], next_cursor:null}});
+  await staleHistory;
+
+  assert.equal(harness.requests.find((request) => request.method === "DELETE").path, "/api/v1/experiments/exp-a?confirm=true");
+  assert.ok(harness.requests.some((request) => request.path === "/api/v1/experiments"), "experiment deletion refreshes the experiment catalog");
+  assert.ok(harness.requests.some((request) => request.path === "/api/v1/experiments/exp-b/groups"), "experiment deletion refreshes remaining group catalogs");
+  const after = JSON.parse(harness.run(`JSON.stringify({
+    experiments:state.experiments.map((item) => item.experiment_id),
+    groups:[...state.groupsByExperiment.keys()],
+    capture:[state.captureExperimentId, state.captureGroupId],
+    filter:[state.historyFilterType, state.historyExperimentId, state.historyGroupId],
+    history:state.historyItems.map((item) => item.capture_id),
+    batch:[...state.batchSelectedCaptureIds], selected:[...state.selectedCaptureIds],
+    waveforms:[...state.waveforms.keys()], primary:state.primaryCaptureId,
+  })`));
+  assert.deepEqual(after, {
+    experiments:["exp-b"], groups:["exp-b"], capture:[null, null],
+    filter:["all", "", ""], history:["capture-b"], batch:["capture-b"], selected:["capture-b"],
+    waveforms:["capture-b"], primary:"capture-b",
+  }, "experiment cascade clears only affected catalog/history/cache state and preserves unrelated capture context");
+  assert.equal(harness.node("#delete-confirmation").open, false);
+}
+
+async function checkDeletionFencesPendingWaveformLoads() {
+  const harness = makeHarness();
+  harness.run(`
+    state.captureExperimentId = "exp-a";
+    state.captureGroups = [{group_id:"group-a", experiment_id:"exp-a", name:"A1"}];
+    state.groupsByExperiment = new Map([["exp-a", state.captureGroups]]);
+    state.selectedCaptureIds = new Set(["loaded-unrelated"]);
+    state.primaryCaptureId = "loaded-unrelated";
+    state.waveforms = new Map([["loaded-unrelated", {metadata:{capture_id:"loaded-unrelated", sample_count:2, sample_interval_ticks:120, pretrigger_count:1, grouping_metadata:{experiment_id:"exp-b", group_id:"group-b"}}, samples:Uint16Array.from([9, 9])}]]);
+  `);
+  let finishUnknownMetadata;
+  let finishDeletedGroupSamples;
+  harness.responses.push(new Promise((resolve) => { finishUnknownMetadata = resolve; }));
+  harness.responses.push(new Promise((resolve) => { finishDeletedGroupSamples = resolve; }));
+  const knownPending = harness.run(`loadWaveform({
+    capture_id:"deleted-group-capture", capture_sequence:1, sample_count:2,
+    sample_interval_ticks:120, pretrigger_count:1,
+    grouping_metadata:{experiment_id:"exp-a", group_id:"group-a"}, storage:"ARCHIVE",
+  })`);
+  const unknownPending = harness.run("loadWaveformById('unknown-metadata-capture')");
+  await new Promise(setImmediate);
+  assert.equal(harness.run("state.waveformLoads.get('deleted-group-capture').metadata.grouping_metadata.group_id"), "group-a");
+  assert.equal(harness.run("state.waveformLoads.has('unknown-metadata-capture')"), true);
+
+  // Simulate switching the history filter while both a sample read and a metadata read are pending.
+  harness.run(`state.historyItems = []; state.historyFilterType = "all"; state.historyExperimentId = ""; state.historyGroupId = "";`);
+  harness.run(`applyDeletionLocally({kind:"group", id:"group-a", experimentId:"exp-a"})`);
+  assert.deepEqual(JSON.parse(harness.run("JSON.stringify({loads:[...state.waveformLoads.keys()], selected:[...state.selectedCaptureIds], waves:[...state.waveforms.keys()], primary:state.primaryCaptureId})")),
+    {loads:[], selected:["loaded-unrelated"], waves:["loaded-unrelated"], primary:"loaded-unrelated"},
+    "a cascade cancels matching and unknown pending loads without clearing unrelated loaded curves");
+
+  finishDeletedGroupSamples({ok:true, bytes:[1,0,2,0]});
+  finishUnknownMetadata({payload:{
+    capture_id:"unknown-metadata-capture", sample_count:2, sample_interval_ticks:120, pretrigger_count:1,
+    grouping_metadata:{experiment_id:"exp-a", group_id:"group-a"}, storage:"ARCHIVE",
+  }});
+  await Promise.all([knownPending, unknownPending]);
+  assert.deepEqual(JSON.parse(harness.run("JSON.stringify({loads:[...state.waveformLoads.keys()], selected:[...state.selectedCaptureIds], waves:[...state.waveforms.keys()]})")),
+    {loads:[], selected:["loaded-unrelated"], waves:["loaded-unrelated"]}, "late metadata and sample responses cannot resurrect deleted records");
+}
+
+async function checkDeletedGroupFencesStaleCatalogRefresh() {
+  const harness = makeHarness();
+  harness.run(`
+    state.experiments = [{experiment_id:"exp-a", name:"A"}];
+    state.captureExperimentId = "exp-a"; state.captureGroupId = "group-a1";
+    state.captureGroups = [{group_id:"group-a1", experiment_id:"exp-a", name:"A1"}, {group_id:"group-a2", experiment_id:"exp-a", name:"A2"}];
+    state.groupsByExperiment = new Map([["exp-a", state.captureGroups]]);
+  `);
+  let finishStale;
+  harness.responses.push(new Promise((resolve) => { finishStale = resolve; }));
+  const staleRefresh = harness.run("refreshGroupCatalog('exp-a')");
+  await new Promise(setImmediate);
+  harness.run(`applyDeletionLocally({kind:"group", id:"group-a1", experimentId:"exp-a"})`);
+  harness.responses.push({payload:{items:[{group_id:"group-a2", experiment_id:"exp-a", name:"A2"}]}});
+  await harness.run("refreshGroupCatalog('exp-a')");
+  finishStale({payload:{items:[
+    {group_id:"group-a1", experiment_id:"exp-a", name:"A1"},
+    {group_id:"group-a2", experiment_id:"exp-a", name:"A2"},
+  ]}});
+  await staleRefresh;
+  assert.deepEqual(JSON.parse(harness.run("JSON.stringify(state.groupsByExperiment.get('exp-a').map((group)=>group.group_id))")),
+    ["group-a2"], "a late catalog refresh cannot restore a group removed after that read began");
+}
+
+async function checkDeletedGroupFencesExperimentCatalogChildReads() {
+  const harness = makeHarness();
+  let finishStaleGroupList;
+  let finishOtherGroupList;
+  harness.responses.push({payload:{items:[{experiment_id:"exp-a", name:"A"}, {experiment_id:"exp-b", name:"B"}]}});
+  harness.responses.push(new Promise((resolve) => { finishStaleGroupList = resolve; }));
+  harness.responses.push(new Promise((resolve) => { finishOtherGroupList = resolve; }));
+  const staleCatalog = harness.run("loadExperiments()");
+  await new Promise(setImmediate);
+  assert.equal(harness.requests.filter((request) => request.path.endsWith("/groups")).length, 2,
+    "the catalog load has both background group reads in flight before deletion");
+  harness.run(`
+    state.captureExperimentId = "exp-a";
+    state.captureGroups = [{group_id:"group-a1", experiment_id:"exp-a", name:"A1"}, {group_id:"group-a2", experiment_id:"exp-a", name:"A2"}];
+    state.groupsByExperiment = new Map([["exp-a", state.captureGroups]]);
+    applyDeletionLocally({kind:"group", id:"group-a1", experimentId:"exp-a"});
+  `);
+  finishStaleGroupList({payload:{items:[
+    {group_id:"group-a1", experiment_id:"exp-a", name:"A1"},
+    {group_id:"group-a2", experiment_id:"exp-a", name:"A2"},
+  ]}});
+  finishOtherGroupList({payload:{items:[{group_id:"group-b", experiment_id:"exp-b", name:"B1"}]}});
+  await staleCatalog;
+  assert.deepEqual(JSON.parse(harness.run("JSON.stringify(state.groupsByExperiment.get('exp-a').map((group)=>group.group_id))")),
+    ["group-a2"], "loadExperiments ignores stale background group reads for a deleted group");
+}
+
 async function main() {
   await checkHistoryUsesFreshGroupingMetadata();
   await checkExperimentHistoryFilters();
   await checkGroupingDialog();
+  await checkDeletionConfirmationAndCreateMode();
+  await checkCaptureDeletionConfirmAndConflict();
+  await checkGroupDeletionCascadeAndPendingCatalogFence();
+  await checkExperimentDeletionCascadeAndStaleHistoryFence();
+  await checkDeletionFencesPendingWaveformLoads();
+  await checkDeletedGroupFencesStaleCatalogRefresh();
+  await checkDeletedGroupFencesExperimentCatalogChildReads();
   [
     "waveform-workbench", "window-start", "window-count", "waveform-mode",
     "waveform-previous", "waveform-next", "waveform-apply-window",
@@ -1066,7 +1394,7 @@ async function main() {
   assert.match(exportLink.node("#group-export-label").textContent, /12/);
 
   const language = makeHarness();
-  const prefixExpression = "key.startsWith('group.') || key.startsWith('history.filter.') || key.startsWith('batch.')";
+  const prefixExpression = "key.startsWith('group.') || key.startsWith('history.filter.') || key.startsWith('batch.') || key.startsWith('deletion.') || key.startsWith('record.') || key.startsWith('history.edit')";
   const zhKeys = JSON.parse(language.run(`JSON.stringify(Object.keys(I18N.zh).filter((key) => ${prefixExpression}).sort())`));
   const enKeys = JSON.parse(language.run(`JSON.stringify(Object.keys(I18N.en).filter((key) => ${prefixExpression}).sort())`));
   assert.ok(zhKeys.length > 0, "grouping controls have translated labels and status messages");
@@ -1119,6 +1447,7 @@ async function main() {
     "grouping-dialog", "experiment-name", "group-name", "group-cell-id",
     "history-filter-type", "history-experiment", "history-group-choices", "batch-assignment-target",
     "batch-assignment-apply", "group-export", "batch-selection-count",
+    "record-dialog", "record-delete", "delete-confirmation", "delete-confirmation-confirm",
   ].forEach((id) => assert.match(html, new RegExp(`id=["']${id}["']`)));
 }
 

@@ -8,6 +8,7 @@ import re
 import shutil
 import sqlite3
 import time
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 import pytest
@@ -21,6 +22,7 @@ from usac_runtime.device_executor import SingleDeviceExecutor
 from usac_runtime.api import create_api
 from usac_runtime.parameter_service import ParameterService
 from usac_runtime.simulated_device_client import SimulatedDeviceClient
+from test_core_store import _capture_frame_with_identity, _delivery
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -238,6 +240,128 @@ def test_grouping_rest_contracts_work_without_a_connected_device(tmp_path: Path)
         f"/api/v1/experiments/{experiment_id}", json={"experiment_id": "bad"}
     ).status_code == 422
     assert api.post("/api/v1/experiments", json={"name": "x", "extra": True}).status_code == 422
+
+
+def test_delete_endpoints_require_confirmation_and_return_stable_contract(
+    tmp_path: Path,
+) -> None:
+    unavailable = client().delete(f"/api/v1/experiments/{'0' * 32}?confirm=true")
+    assert unavailable.status_code == 503
+
+    database = tmp_path / "delete-api.sqlite3"
+    api = client(database)
+    experiment = api.post("/api/v1/experiments", json={"name": "delete"}).json()
+    group = api.post(
+        f"/api/v1/experiments/{experiment['experiment_id']}/groups",
+        json={"name": "group"},
+    ).json()
+    store = CaptureStore(database)
+    frame = _capture_frame_with_identity(1)
+    capture_id = store.commit_delivery(
+        _delivery(frame), group_id=group["group_id"]
+    ).receipt.capture_id.hex()
+
+    missing_confirmation = api.delete(
+        f"/api/v1/captures/{capture_id}"
+    )
+    false_confirmation = api.delete(
+        f"/api/v1/groups/{group['group_id']}?confirm=false"
+    )
+    malformed_confirmation = api.delete(
+        f"/api/v1/experiments/{experiment['experiment_id']}?confirm=perhaps"
+    )
+    assert missing_confirmation.status_code == 422
+    assert false_confirmation.status_code == 422
+    assert malformed_confirmation.status_code == 422
+
+    deleted_capture = api.delete(f"/api/v1/captures/{capture_id}?confirm=true")
+    assert deleted_capture.status_code == 200
+    assert deleted_capture.json() == {
+        "deleted": True,
+        "captures_deleted": 1,
+        "groups_deleted": 0,
+    }
+    deleted_group = api.delete(
+        f"/api/v1/groups/{group['group_id']}?confirm=true"
+    )
+    assert deleted_group.status_code == 200
+    assert deleted_group.json() == {
+        "deleted": True,
+        "captures_deleted": 0,
+        "groups_deleted": 1,
+    }
+    deleted_experiment = api.delete(
+        f"/api/v1/experiments/{experiment['experiment_id']}?confirm=true"
+    )
+    assert deleted_experiment.status_code == 200
+    assert deleted_experiment.json() == {
+        "deleted": True,
+        "captures_deleted": 0,
+        "groups_deleted": 0,
+    }
+    assert api.delete(
+        f"/api/v1/captures/{capture_id}?confirm=true"
+    ).status_code == 404
+    assert api.delete(
+        f"/api/v1/groups/{group['group_id']}?confirm=true"
+    ).status_code == 404
+    assert api.delete(
+        f"/api/v1/experiments/{experiment['experiment_id']}?confirm=true"
+    ).status_code == 404
+
+
+def test_delete_endpoints_conflict_for_live_run_and_moved_capture(
+    tmp_path: Path,
+) -> None:
+    service = ParameterService.from_schema_file(SCHEMA_PATH, smclk_hz=24_000_000)
+    device = ReconnectableBridgeDeviceClient()
+    store = CaptureStore(tmp_path / "delete-live-run.sqlite3")
+    application = AcquisitionApplication(
+        service,
+        SingleDeviceExecutor(service, device),
+        device,
+        store=store,
+    )
+    api = TestClient(create_api(application))
+    experiment = application.create_experiment(name="live")
+    bound_group = application.create_group(
+        experiment["experiment_id"], name="bound"
+    )
+    moved_group = application.create_group(
+        experiment["experiment_id"], name="moved"
+    )
+    session_id = "12" * 16
+    frame = _capture_frame_with_identity(1)
+    result = store.commit_delivery(
+        _delivery(frame),
+        save_policy=SavePolicy.SAVE_ALL,
+        session_id=session_id,
+        group_id=bound_group["group_id"],
+    )
+    store.save_session_summary(
+        {
+            "session_id": session_id,
+            "kind": "SWEEP",
+            "state": "RUNNING",
+            "save_policy": SavePolicy.SAVE_ALL.value,
+            "grouping_metadata": store.grouping_metadata(bound_group["group_id"]),
+        }
+    )
+    store.assign_capture_group([result.receipt.capture_id], moved_group["group_id"])
+    application._sessions[bytes.fromhex(session_id)] = SimpleNamespace(
+        state="RUNNING", group_id=bound_group["group_id"]
+    )
+
+    moved_capture = api.delete(
+        f"/api/v1/captures/{result.receipt.capture_id.hex()}?confirm=true"
+    )
+    bound_group_delete = api.delete(
+        f"/api/v1/groups/{bound_group['group_id']}?confirm=true"
+    )
+
+    assert moved_capture.status_code == 409
+    assert bound_group_delete.status_code == 409
+    assert store.capture_count() == 1
 
 
 def test_grouping_requires_storage_and_rejects_bad_group_before_device_io(

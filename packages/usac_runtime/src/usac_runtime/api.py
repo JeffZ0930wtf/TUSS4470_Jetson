@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import hashlib
 from pathlib import Path
 import tempfile
@@ -17,7 +18,7 @@ from .application import (
     ConfigurationEtagConflict,
     SessionConflict,
 )
-from .core_store import SavePolicy
+from .core_store import DeletionConflictError, SavePolicy
 from .device_executor import ConfigConflictError, ConfigValidationError, DeviceUnavailable
 
 
@@ -240,6 +241,34 @@ def create_api(application: AcquisitionApplication) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+
+    def confirmed_delete(
+        action: Callable[[str], dict[str, object]], identifier: str, confirm: bool
+    ) -> dict[str, object]:
+        if not confirm:
+            raise HTTPException(status_code=422, detail="Deletion requires confirm=true")
+        try:
+            return action(identifier)
+        except CaptureStorageUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        except (DeletionConflictError, SessionConflict) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @api.delete("/api/v1/experiments/{experiment_id}")
+    def delete_experiment(experiment_id: str, confirm: bool) -> dict[str, object]:
+        return confirmed_delete(application.delete_experiment, experiment_id, confirm)
+
+    @api.delete("/api/v1/groups/{group_id}")
+    def delete_group(group_id: str, confirm: bool) -> dict[str, object]:
+        return confirmed_delete(application.delete_group, group_id, confirm)
+
+    @api.delete("/api/v1/captures/{capture_id}")
+    def delete_capture(capture_id: str, confirm: bool) -> dict[str, object]:
+        return confirmed_delete(application.delete_capture, capture_id, confirm)
 
     @api.post("/api/v1/experiments/{experiment_id}/groups", status_code=201)
     def create_group(

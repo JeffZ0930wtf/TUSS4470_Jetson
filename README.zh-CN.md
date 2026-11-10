@@ -4,17 +4,18 @@
 
 ## 文档说明
 
-本文档是 TUSS4470 独立超声采集子模块的中文操作与开发入口，涵盖 V1.1.2 的实验／分组
-弹窗与历史筛选，帮助实验人员、上位机开发人员和固件开发人员快速判断
+本文档是 TUSS4470 独立超声采集子模块的中文操作与开发入口，涵盖实验／分组编辑、
+历史筛选与删除，帮助实验人员、上位机开发人员和固件开发人员快速判断
 系统边界、启动方式、数据位置，以及每项功能对应的维护代码。协议细节、平台部署、
 发布证据和历史开发记录由文末链接的正式文档分别维护。
 
 V1.0.1 增加了 Windows 远程拉起 Jetson 和 Jetson 本机一键启动入口；V1.1.0
 增加主机端实验分组。V1.1.1 修复浏览器静态资源混版：JavaScript/CSS URL 使用
 内容哈希，HTML 与静态资源响应要求缓存重新验证。V1.1.2 改用弹窗新建和编辑实验／分组，
-历史记录按实验再按分组查看，不改接口、数据库结构或固件。Compose/启动默认镜像为
-`tuss4470-acquisition-core:1.1.2`；启动脚本使用 `--no-build`，要求目标镜像已预先存在。
-当前发布与部署状态详见 [V1.1.2 发布说明](docs/release/v1.1.2-release-notes.md)、
+历史记录按实验再按分组查看。V1.1.3 增加实验、分组及单条已保存记录的删除。
+Compose/启动默认镜像为 `tuss4470-acquisition-core:1.1.3`；启动脚本使用 `--no-build`，
+要求目标镜像已预先存在。详见 [V1.1.3 说明](docs/release/v1.1.3-release-notes.md)、
+[历史 V1.1.2 发布说明](docs/release/v1.1.2-release-notes.md)、
 [历史 V1.1.1 发布说明](docs/release/v1.1.1-release-notes.md)、
 记录单帧实测边界的[历史 V1.1.0 发布说明](docs/release/v1.1.0-release-notes.md)，此前启动器说明见
 [V1.0.1 发布说明](docs/release/v1.0.1-release-notes.md)。
@@ -30,7 +31,7 @@ V1.1.0 增加**实验数据分组**。固件、线协议和原始采集样本保
 ## 建议的交接阅读顺序
 
 1. 阅读本文档，理解模块边界、组成、运行和数据位置。
-2. 阅读 [V1.1.2 发布说明](docs/release/v1.1.2-release-notes.md)、
+2. 阅读 [V1.1.3 说明](docs/release/v1.1.3-release-notes.md)、
    [V1.1.0 历史发布说明](docs/release/v1.1.0-release-notes.md)、
    [V1.0.1 发布说明](docs/release/v1.0.1-release-notes.md)和
    [V1 已知限制](docs/release/v1.0.0-known-limitations.md)，确认当前版本可以
@@ -41,7 +42,7 @@ V1.1.0 增加**实验数据分组**。固件、线协议和原始采集样本保
 5. 先使用模拟器熟悉配置、采集、历史和导出，再接入真实硬件。
 
 `docs/archive/pre-v1/` 保存 M1-M6 的设计历史、故障调查和验收证据，主要用于
-追溯原因，不是理解当前 V1.1.2 操作的首要入口。
+追溯原因，当前操作以本 README 和部署指南为准。
 
 ## 系统组成
 
@@ -105,7 +106,7 @@ V1 安装后只提供四个正式命令：
   离线界面/API 验证使用 `--backend simulator`。
 - `usac-bridge`：长期运行的 USB CDC 到 Core 桥接服务，参数直接传给命令，
   不存在 `serve` 子命令。
-- `usac-cli`：用于状态、配置、采集、会话、历史和样本下载的 REST 客户端。
+- `usac-cli`：用于状态、配置、采集、会话、历史、样本下载和删除的 REST 客户端。
 - `usac-export`：不启动 Core，直接从 SQLite 查看记录并导出完整 `.usac`、
   `.u16le` 和 `.json` 文件。
 
@@ -210,7 +211,13 @@ ZIP 包含 `manifest.json`，以及每条归档记录的完整 `.usac`、`.u16le
 Jetson 部署在完成整目录备份后执行了可加 SQLite 迁移；7 条既有采集记录保持
 逐字节不变，新增的一条分组记录已保存并导出。该有限检查不等于通用恢复或
 耐久性保证，详见 [V1.1.0 发布说明](docs/release/v1.1.0-release-notes.md)。
-本次不提供删除实验/组或跨实验移动组。
+
+在**编辑实验**中删除会同时删除该实验的所有分组及其中的已保存记录。在**编辑分组**中
+删除会同时删除组内已保存记录。也可从历史记录的编辑入口删除单条。每次删除都须通过
+独立确认弹窗，确认后无法在应用中恢复。级联按当前归属执行，未分组记录保留。
+
+命令行使用 `usac-cli experiment-delete ID --yes`、`usac-cli group-delete ID --yes`
+或 `usac-cli capture-delete ID --yes`。接口及响应见[协议与 API](docs/protocol.md)。
 
 ## 数据位置和离线导出
 
@@ -243,6 +250,7 @@ Jetson 部署在完成整目录备份后执行了可加 SQLite 迁移；7 条既
 - [协议与参数契约](docs/protocol.md)
 - [Windows 部署](docs/deployment/windows.md)
 - [Jetson 部署](docs/deployment/jetson.md)
+- [V1.1.3 说明](docs/release/v1.1.3-release-notes.md)
 - [V1.1.2 发布说明](docs/release/v1.1.2-release-notes.md)
 - [V1.1.1 发布说明](docs/release/v1.1.1-release-notes.md)
 - [V1.1.0 发布说明](docs/release/v1.1.0-release-notes.md)

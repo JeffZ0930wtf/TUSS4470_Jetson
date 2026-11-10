@@ -28,9 +28,9 @@
 
 脚本使用现有 SSH 密钥登录 Jetson，调用 Jetson 上的 `scripts/start-jetson.sh`，然后复用或建立 `127.0.0.1:18080` 到 Jetson `127.0.0.1:8000` 的隧道并打开 Windows 默认浏览器。它不在 Windows 启动 Core 或 Bridge，也不应用配置、采集或产生 Burst。
 
-Jetson 侧启动器当前默认选择 `tuss4470-acquisition-core:1.1.2`。
+Jetson 侧启动器当前默认选择 `tuss4470-acquisition-core:1.1.3`。
 启动仍使用 `--no-build`，要求目标 Jetson 已有该镜像；仅同步源码不会替换正在运行的容器。
-镜像身份、实际运行状态和验证范围见 [V1.1.2 发布说明](../release/v1.1.2-release-notes.md)。
+版本、数据边界和验证范围见 [V1.1.3 说明](../release/v1.1.3-release-notes.md)。
 V1.1.0 已验收镜像和单帧证据
 属于历史状态，详见 [V1.1.0 历史发布说明](../release/v1.1.0-release-notes.md)。
 

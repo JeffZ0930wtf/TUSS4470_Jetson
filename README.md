@@ -5,8 +5,8 @@
 ## Document overview
 
 This README is the operator and developer entry point for the standalone
-ultrasonic acquisition submodule, including the V1.1.2 experiment/group dialogs
-and history filters. It explains what the module does, how to build and run it on Windows or
+ultrasonic acquisition submodule, including experiment/group editing, history
+filters, and deletion. It explains what the module does, how to build and run it on Windows or
 Jetson, where data is stored, and which safety limits remain. Protocol details,
 platform procedures, release evidence, and historical development records live
 in the linked documents.
@@ -15,10 +15,11 @@ V1.0.1 added one-shot Jetson startup from Windows or the Jetson desktop. V1.1.0
 introduced host-side experiment grouping. V1.1.1 fixes mixed-generation browser
 assets by binding JavaScript/CSS URLs to content hashes and requiring
 revalidation for HTML and static asset responses. V1.1.2 moves experiment and
-group editing into dialogs and nests group filters under experiments without
-changing the API, database schema, or firmware. The default image is
-`tuss4470-acquisition-core:1.1.2`; startup uses `--no-build` and requires that
-image to exist first. See the [V1.1.2 release notes](docs/release/v1.1.2-release-notes.md),
+group editing into dialogs and nests group filters under experiments. V1.1.3
+adds deletion of experiments, groups, and individual saved records. The default
+image is `tuss4470-acquisition-core:1.1.3`; startup uses `--no-build` and requires
+that image to exist first. See the [V1.1.3 notes](docs/release/v1.1.3-release-notes.md),
+the historical [V1.1.2 release notes](docs/release/v1.1.2-release-notes.md),
 the historical [V1.1.1 release notes](docs/release/v1.1.1-release-notes.md),
 the historical [V1.1.0 release notes](docs/release/v1.1.0-release-notes.md)
 for bounded single-capture evidence, and the
@@ -207,8 +208,17 @@ data directories together. The 2026-10-13 Jetson deployment exercised the
 additive SQLite migration after a full backup: the seven pre-existing captures
 remained byte-identical, and one new grouped capture was saved and exported.
 This bounded check is not a general restore or endurance guarantee; see the
-[V1.1.0 release notes](docs/release/v1.1.0-release-notes.md). Group deletion
-and moving groups between experiments remain out of scope.
+[V1.1.0 release notes](docs/release/v1.1.0-release-notes.md).
+
+Use **Delete** in the experiment or group editor, or edit a saved history row
+to delete just that record. Experiment deletion removes its groups and their
+saved records. Group deletion removes its saved records. The confirmation
+dialog explains the scope and that the application cannot undo it. Cascades
+follow current assignments and preserve ungrouped captures.
+
+The corresponding commands are `usac-cli experiment-delete ID --yes`,
+`usac-cli group-delete ID --yes`, and `usac-cli capture-delete ID --yes`.
+See the [API contract](docs/protocol.md) for the routes and response fields.
 
 ## Data and offline export
 
@@ -242,6 +252,7 @@ SQLite data without requiring Core.
 - [Wire protocol](docs/protocol.md)
 - [Windows deployment](docs/deployment/windows.md)
 - [Jetson deployment](docs/deployment/jetson.md)
+- [V1.1.3 notes](docs/release/v1.1.3-release-notes.md)
 - [V1.1.2 release notes](docs/release/v1.1.2-release-notes.md)
 - [V1.1.0 release notes](docs/release/v1.1.0-release-notes.md)
 - [V1.1.1 release notes](docs/release/v1.1.1-release-notes.md)

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from usac_runtime.client_cli import main
 
 
@@ -188,3 +190,35 @@ def test_history_can_filter_one_run_session(capsys) -> None:
         ("GET", f"/api/v1/captures?limit=50&session_id={session_id}", None, None)
     ]
     assert json.loads(capsys.readouterr().out) == {"ok": True}
+
+
+@pytest.mark.parametrize(
+    ("command", "resource"),
+    [
+        ("experiment-delete", "experiments"),
+        ("group-delete", "groups"),
+        ("capture-delete", "captures"),
+    ],
+)
+def test_delete_requires_explicit_confirmation(command, resource, capsys) -> None:
+    client = FakeApiClient()
+    identifier = "12" * 16
+
+    with pytest.raises(SystemExit, match="2"):
+        main([command, identifier], client=client)
+    assert not client.calls
+    assert "--yes" in capsys.readouterr().err
+
+    assert main([command, identifier, "--yes"], client=client) == 0
+    assert client.calls == [
+        ("DELETE", f"/api/v1/{resource}/{identifier}?confirm=true", None, None)
+    ]
+    assert json.loads(capsys.readouterr().out) == {"ok": True}
+
+
+def test_delete_rejects_identifier_with_url_delimiters(capsys) -> None:
+    client = FakeApiClient()
+
+    assert main(["group-delete", "../captures?id=x", "--yes"], client=client) == 1
+    assert not client.calls
+    assert "32 hexadecimal" in capsys.readouterr().err

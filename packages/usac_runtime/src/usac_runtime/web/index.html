@@ -181,10 +181,38 @@
       </fieldset>
       <p id="grouping-error" class="message grouping-error" role="alert" hidden></p>
       <footer class="action-row grouping-dialog-actions">
+        <button id="experiment-delete" type="button" class="quiet danger" aria-haspopup="dialog" data-i18n="group.deleteExperiment" hidden>删除实验</button>
+        <button id="group-delete" type="button" class="quiet danger" aria-haspopup="dialog" data-i18n="group.deleteGroup" hidden>删除分组</button>
         <button id="grouping-cancel" type="button" class="quiet" data-i18n="group.cancel">取消</button>
         <button id="grouping-save" type="submit" class="primary"></button>
       </footer>
     </form>
+  </dialog>
+  <dialog id="delete-confirmation" class="grouping-dialog delete-dialog" aria-labelledby="delete-confirmation-title" aria-describedby="delete-confirmation-impact">
+    <section class="delete-dialog-content">
+      <header class="grouping-dialog-head">
+        <h2 id="delete-confirmation-title"></h2>
+        <p id="delete-confirmation-target" class="hint"></p>
+      </header>
+      <p id="delete-confirmation-impact" class="delete-impact"></p>
+      <p id="delete-confirmation-error" class="message grouping-error" role="alert" hidden></p>
+      <footer class="action-row grouping-dialog-actions">
+        <button id="delete-confirmation-cancel" type="button" class="quiet" data-i18n="deletion.cancel">取消</button>
+        <button id="delete-confirmation-confirm" type="button" class="danger" data-i18n="deletion.confirm">永久删除</button>
+      </footer>
+    </section>
+  </dialog>
+  <dialog id="record-dialog" class="grouping-dialog" aria-labelledby="record-dialog-title">
+    <section class="delete-dialog-content">
+      <header class="grouping-dialog-head">
+        <h2 id="record-dialog-title"></h2>
+        <p id="record-dialog-target" class="hint"></p>
+      </header>
+      <footer class="action-row grouping-dialog-actions">
+        <button id="record-cancel" type="button" class="quiet" data-i18n="record.cancel">关闭</button>
+        <button id="record-delete" type="button" class="quiet danger" data-i18n="record.delete">删除此记录</button>
+      </footer>
+    </section>
   </dialog>
   <div id="toast" class="toast" role="status" hidden></div>
   <script src="/assets/app.js" defer></script>

@@ -92,6 +92,11 @@ label input, label select { display: block; margin-top: .3rem; color: var(--ink)
 .grouping-fields textarea { display: block; margin-top: .3rem; color: var(--ink); font-size: .9rem; resize: vertical; }
 .grouping-error { margin: .8rem 0 0; overflow-wrap: anywhere; }
 .grouping-dialog-actions { justify-content: flex-end; margin-top: 1rem; }
+.danger { border-color: #a6372f; color: #a6372f; }
+.danger:hover:not(:disabled) { border-color: #8f2b24; background: #fff0ee; color: #8f2b24; }
+.delete-dialog-content { padding: clamp(.9rem, 4vw, 1.35rem); }
+.delete-impact { margin: .9rem 0 0; padding: .7rem .8rem; border-left: 3px solid #a6372f; background: #fff0ee; color: var(--ink); line-height: 1.5; }
+.delete-dialog .grouping-dialog-actions { flex-wrap: wrap; }
 .history-grouping-tools { margin-bottom: .55rem; }
 .history-group-filters { margin-top: .7rem; padding: .55rem .65rem; border-left: 2px solid var(--line); background: #eef2f0; }
 .history-group-filters > p:first-child { margin: 0 0 .35rem; color: var(--muted); font-size: .76rem; }

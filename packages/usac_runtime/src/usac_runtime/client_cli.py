@@ -11,10 +11,20 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from typing import Sequence
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+
+_DELETE_COMMANDS = {
+    "experiment-delete": (
+        "experiments", "Permanently delete an experiment, its groups, and their captures"
+    ),
+    "group-delete": ("groups", "Permanently delete a group and its captures"),
+    "capture-delete": ("captures", "Permanently delete one saved capture"),
+}
 
 
 class ApiRequestError(RuntimeError):
@@ -127,6 +137,13 @@ def _parser() -> argparse.ArgumentParser:
     download = sub.add_parser("download")
     download.add_argument("capture_id")
     download.add_argument("output")
+
+    for name, (_, description) in _DELETE_COMMANDS.items():
+        command = sub.add_parser(name, help=description, description=description)
+        command.add_argument("id")
+        command.add_argument(
+            "--yes", action="store_true", required=True, help="confirm irreversible deletion"
+        )
     return parser
 
 
@@ -267,6 +284,11 @@ def main(
             payload, _ = client.json("GET", path)
         elif args.command == "show":
             payload, _ = client.json("GET", f"/api/v1/captures/{args.capture_id}")
+        elif args.command in _DELETE_COMMANDS:
+            if re.fullmatch(r"[0-9a-fA-F]{32}", args.id) is None:
+                raise ValueError("id must contain exactly 32 hexadecimal characters")
+            resource, _ = _DELETE_COMMANDS[args.command]
+            payload, _ = client.json("DELETE", f"/api/v1/{resource}/{args.id}?confirm=true")
         else:
             raw = client.bytes(f"/api/v1/captures/{args.capture_id}/samples")
             target = Path(args.output)

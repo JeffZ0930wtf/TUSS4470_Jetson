@@ -20,7 +20,12 @@ import uuid
 from usac_protocol.bridge_messages import BridgeCaptureDelivery
 from usac_protocol.capture_data import CaptureData
 
-from .core_store import CaptureRecord, CaptureResolution, CaptureStore, SavePolicy
+from .core_store import (
+    CaptureRecord,
+    CaptureResolution,
+    CaptureStore,
+    SavePolicy,
+)
 from .device_executor import (
     ConfigConflictError,
     DeviceUnavailable,
@@ -164,6 +169,8 @@ class AcquisitionApplication:
         self._sessions: dict[bytes, _PeriodicSession | _SweepSession] = {}
         self._latest_transient: _TransientCapture | None = None
         self._operation_activity: str | None = None
+        self._operation_group_id: str | None = None
+        self._operation_session_id: str | None = None
         if self._store is not None:
             # An interrupted host never resumes hardware work implicitly. The
             # store freezes any rolling SAVE_LAST frame before marking it.
@@ -417,6 +424,75 @@ class AcquisitionApplication:
     def write_group_export(self, group_id: str, output: BinaryIO) -> dict[str, object]:
         return write_group_export(self._require_store(), group_id, output)
 
+    def _raise_if_groups_active_locked(self, group_ids: set[str]) -> None:
+        if not group_ids:
+            return
+        if self._operation_activity is not None and self._operation_group_id in group_ids:
+            raise SessionConflict("an active or pending run uses a group being deleted")
+        if any(
+            session.state in {"RUNNING", "STOPPING"}
+            and session.group_id in group_ids
+            for session in self._sessions.values()
+        ):
+            raise SessionConflict("an active or pending run uses a group being deleted")
+
+    def _clear_deleted_group_memory_locked(self, group_ids: set[str]) -> None:
+        for session in self._sessions.values():
+            if session.group_id not in group_ids:
+                continue
+            with session.control_lock:
+                session.group_id = None
+        transient = self._latest_transient
+        if transient is not None:
+            grouping = transient.payload.get("grouping_metadata")
+            transient_group = grouping.get("group_id") if isinstance(grouping, dict) else None
+            if transient_group in group_ids:
+                self._latest_transient = None
+
+    def delete_experiment(self, experiment_id: str) -> dict[str, object]:
+        store = self._require_store()
+        with self._session_lock:
+            groups = store.list_groups(experiment_id)
+            group_ids = {str(group["group_id"]) for group in groups}
+            self._raise_if_groups_active_locked(group_ids)
+            result = store.delete_experiment(experiment_id)
+            self._clear_deleted_group_memory_locked(group_ids)
+            return result
+
+    def delete_group(self, group_id: str) -> dict[str, object]:
+        store = self._require_store()
+        with self._session_lock:
+            group = store.get_group(group_id)
+            group_ids = {str(group["group_id"])}
+            self._raise_if_groups_active_locked(group_ids)
+            result = store.delete_group(group_id)
+            self._clear_deleted_group_memory_locked(group_ids)
+            return result
+
+    def delete_capture(self, capture_id: str) -> dict[str, object]:
+        if (
+            not isinstance(capture_id, str)
+            or len(capture_id) != 32
+            or any(character not in "0123456789abcdefABCDEF" for character in capture_id)
+        ):
+            raise ValueError("capture_id must be exactly 32 hexadecimal characters")
+        identifier = bytes.fromhex(capture_id)
+        store = self._require_store()
+        with self._session_lock:
+            record = store.get_capture(identifier)
+            if record.session_id:
+                session_identifier = bytes.fromhex(record.session_id)
+                session = self._sessions.get(session_identifier)
+                if session is not None and session.state in {"RUNNING", "STOPPING"}:
+                    raise SessionConflict("capture belongs to an active run")
+                if self._operation_session_id == record.session_id:
+                    raise SessionConflict("capture belongs to an active run")
+            result = store.delete_capture(identifier)
+            transient = self._latest_transient
+            if transient is not None and transient.capture_id == identifier.hex():
+                self._latest_transient = None
+            return result
+
     def _refresh_summary_grouping(
         self, summary: dict[str, object]
     ) -> dict[str, object]:
@@ -564,10 +640,17 @@ class AcquisitionApplication:
 
         store = self._require_store()
         grouping = store.grouping_metadata(group_id)
-        group_id = grouping["group_id"]
-        self._require_device()
-        self._require_idle()
-        session_id = uuid.uuid4().hex
+        with self._session_lock:
+            # Recheck after taking the runtime lock so a completed group
+            # deletion between the initial validation and reservation is a
+            # clean 404 instead of a partially registered operation.
+            grouping = store.grouping_metadata(group_id)
+            group_id = grouping["group_id"]
+            self._ensure_idle_locked()
+            session_id = uuid.uuid4().hex
+            self._operation_activity = "CAPTURING_SINGLE"
+            self._operation_group_id = group_id
+            self._operation_session_id = session_id
         started_utc_ns = time.time_ns()
         storage_policy = (
             SavePolicy.SAVE_ALL if save_policy is SavePolicy.SAVE_LAST else save_policy
@@ -601,39 +684,38 @@ class AcquisitionApplication:
             "started_utc_ns": started_utc_ns,
             "finished_utc_ns": None,
         }
-        self._register_delivery_policy(
-            session_id=session_id,
-            save_policy=storage_policy,
-            group_id=group_id,
-        )
-        store.save_session_summary(summary)
-
-        def record_resolved(persisted: _PersistedCapture) -> None:
-            capture_id = str(persisted.payload["capture_id"])
-            summary.update(
-                {
-                    **persisted.payload,
-                    "grouping_metadata": self.grouping_metadata(group_id),
-                    "acquired_count": 1,
-                    "saved_count": int(
-                        persisted.resolution is CaptureResolution.RAW_ARCHIVED
-                    ),
-                    "discarded_by_policy_count": int(
-                        persisted.resolution is CaptureResolution.DISCARDED_BY_POLICY
-                    ),
-                    "last_capture_id": capture_id,
-                    "last_saved_capture_id": (
-                        capture_id
-                        if persisted.resolution is CaptureResolution.RAW_ARCHIVED
-                        else None
-                    ),
-                }
+        try:
+            self._require_device()
+            self._register_delivery_policy(
+                session_id=session_id,
+                save_policy=storage_policy,
+                group_id=group_id,
             )
             store.save_session_summary(summary)
 
-        with self._session_lock:
-            self._operation_activity = "CAPTURING_SINGLE"
-        try:
+            def record_resolved(persisted: _PersistedCapture) -> None:
+                capture_id = str(persisted.payload["capture_id"])
+                summary.update(
+                    {
+                        **persisted.payload,
+                        "grouping_metadata": self.grouping_metadata(group_id),
+                        "acquired_count": 1,
+                        "saved_count": int(
+                            persisted.resolution is CaptureResolution.RAW_ARCHIVED
+                        ),
+                        "discarded_by_policy_count": int(
+                            persisted.resolution is CaptureResolution.DISCARDED_BY_POLICY
+                        ),
+                        "last_capture_id": capture_id,
+                        "last_saved_capture_id": (
+                            capture_id
+                            if persisted.resolution is CaptureResolution.RAW_ARCHIVED
+                            else None
+                        ),
+                    }
+                )
+                store.save_session_summary(summary)
+
             def resolve(executed: ExecutedCapture) -> _PersistedCapture:
                 if not isinstance(executed.capture, CaptureData):
                     raise TypeError("device client returned an unsupported capture object")
@@ -647,70 +729,74 @@ class AcquisitionApplication:
                     on_resolved=record_resolved,
                 )
 
-            persisted = self._executor.capture_once(
-                expected_profile_sha256=expected_profile_sha256,
-                expected_device_config_crc32=expected_device_config_crc32,
-                trigger_source=trigger_source,
-                sync_timeout_ms=sync_timeout_ms,
-                on_capture=resolve,
+            try:
+                persisted = self._executor.capture_once(
+                    expected_profile_sha256=expected_profile_sha256,
+                    expected_device_config_crc32=expected_device_config_crc32,
+                    trigger_source=trigger_source,
+                    sync_timeout_ms=sync_timeout_ms,
+                    on_capture=resolve,
+                )
+            except Exception as error:
+                summary.update(
+                    {
+                        "state": "FAILED",
+                        "terminal_reason": "FAILED",
+                        "error": f"{type(error).__name__}: {error}",
+                        "finished_utc_ns": time.time_ns(),
+                    }
+                )
+                summary["grouping_metadata"] = self.grouping_metadata(group_id)
+                store.finalize_session_summary(summary)
+                raise
+            payload = persisted.payload
+            payload.update(
+                {
+                    "session_id": session_id,
+                    "save_policy": save_policy.value,
+                    "requested_count": 1,
+                    "acquired_count": 1,
+                    "saved_count": int(
+                        persisted.resolution is CaptureResolution.RAW_ARCHIVED
+                    ),
+                    "discarded_by_policy_count": int(
+                        persisted.resolution is CaptureResolution.DISCARDED_BY_POLICY
+                    ),
+                    "last_capture_id": str(persisted.payload["capture_id"]),
+                    "last_saved_capture_id": (
+                        str(persisted.payload["capture_id"])
+                        if persisted.resolution is CaptureResolution.RAW_ARCHIVED
+                        else None
+                    ),
+                    "terminal_reason": "COMPLETED",
+                }
             )
-        except Exception as error:
             summary.update(
                 {
-                    "state": "FAILED",
-                    "terminal_reason": "FAILED",
-                    "error": f"{type(error).__name__}: {error}",
+                    **payload,
+                    "grouping_metadata": self.grouping_metadata(group_id),
+                    "state": "COMPLETED",
+                    "terminal_reason": "COMPLETED",
                     "finished_utc_ns": time.time_ns(),
                 }
             )
-            summary["grouping_metadata"] = self.grouping_metadata(group_id)
-            store.finalize_session_summary(summary)
-            raise
+            final_summary = store.finalize_session_summary(summary)
+            payload["grouping_metadata"] = self.grouping_metadata(group_id)
+            for key in (
+                "acquired_count",
+                "saved_count",
+                "discarded_by_policy_count",
+                "last_capture_id",
+                "last_saved_capture_id",
+            ):
+                payload[key] = final_summary[key]
+            return payload
         finally:
             with self._session_lock:
-                self._operation_activity = None
-        payload = persisted.payload
-        payload.update(
-            {
-                "session_id": session_id,
-                "save_policy": save_policy.value,
-                "requested_count": 1,
-                "acquired_count": 1,
-                "saved_count": int(
-                    persisted.resolution is CaptureResolution.RAW_ARCHIVED
-                ),
-                "discarded_by_policy_count": int(
-                    persisted.resolution is CaptureResolution.DISCARDED_BY_POLICY
-                ),
-                "last_capture_id": str(persisted.payload["capture_id"]),
-                "last_saved_capture_id": (
-                    str(persisted.payload["capture_id"])
-                    if persisted.resolution is CaptureResolution.RAW_ARCHIVED
-                    else None
-                ),
-                "terminal_reason": "COMPLETED",
-            }
-        )
-        summary.update(
-            {
-                **payload,
-                "grouping_metadata": self.grouping_metadata(group_id),
-                "state": "COMPLETED",
-                "terminal_reason": "COMPLETED",
-                "finished_utc_ns": time.time_ns(),
-            }
-        )
-        final_summary = store.finalize_session_summary(summary)
-        payload["grouping_metadata"] = self.grouping_metadata(group_id)
-        for key in (
-            "acquired_count",
-            "saved_count",
-            "discarded_by_policy_count",
-            "last_capture_id",
-            "last_saved_capture_id",
-        ):
-            payload[key] = final_summary[key]
-        return payload
+                if self._operation_session_id == session_id:
+                    self._operation_activity = None
+                    self._operation_group_id = None
+                    self._operation_session_id = None
 
     def _require_idle(self) -> None:
         with self._session_lock:
@@ -719,6 +805,13 @@ class AcquisitionApplication:
                 for session in self._sessions.values()
             ):
                 raise SessionConflict("the device already has an active run session")
+
+    def _ensure_idle_locked(self) -> None:
+        if self._operation_activity is not None or any(
+            session.state in {"RUNNING", "STOPPING"}
+            for session in self._sessions.values()
+        ):
+            raise SessionConflict("the device already has an active run session")
 
     def _prune_finished_sessions_locked(self) -> None:
         """Keep a bounded recent cache while active sessions remain addressable."""

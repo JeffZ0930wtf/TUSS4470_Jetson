@@ -57,8 +57,9 @@ const state = {
   primaryCaptureId: null, windowStart: 0, windowCount: 2048, displayMode: "raw",
   followLatest: true, latestCaptureId: null, viewRevision: 0,
   experiments: [], captureGroups: [], groupsByExperiment: new Map(),
+  groupCatalogRevisions: new Map(), experimentsCatalogRevision: 0,
   captureExperimentId: null, captureGroupId: null, captureGroupRevision: 0,
-  groupingSelectionRevision: 0, groupingEditor: null,
+  groupingSelectionRevision: 0, groupingEditor: null, recordEditor: null, deletion: null,
   captureGroupStatusKey: null,
   historyFilterType: "all", historyExperimentId: "", historyGroupId: "", historyRevision: 0,
   batchSelectedCaptureIds: new Set(), batchAssignmentTarget: "",
@@ -89,6 +90,14 @@ Object.assign(I18N.zh, {
   "history.selectBatch": "归组", "batch.count": "已选 {count} 条（当前页可选）", "batch.target": "归入目标组",
   "batch.apply": "归组所选记录", "batch.chooseTarget": "先选择目标组或未分组", "batch.limit": "一次最多归组 500 条记录",
   "batch.assigned": "已归组 {count} 条记录",
+  "group.deleteExperiment": "删除实验", "group.deleteGroup": "删除分组", "history.edit": "编辑",
+  "record.title": "记录操作", "record.delete": "删除此记录", "record.cancel": "关闭",
+  "deletion.cancel": "取消", "deletion.confirm": "永久删除", "deletion.saving": "正在删除…",
+  "deletion.title.experiment": "删除实验", "deletion.title.group": "删除分组", "deletion.title.capture": "删除记录",
+  "deletion.impact.experiment": "此操作不可撤销。将删除该实验、其下所有分组，以及这些分组中的所有已保存记录。",
+  "deletion.impact.group": "此操作不可撤销。将删除该分组，以及该分组中的所有已保存记录。",
+  "deletion.impact.capture": "此操作不可撤销。将仅删除所选的这条已保存记录。",
+  "deletion.success": "删除完成：{groups} 个分组，{captures} 条记录。",
 });
 Object.assign(I18N.en, {
   "group.selectExperiment": "Select an experiment",
@@ -114,6 +123,14 @@ Object.assign(I18N.en, {
   "history.selectBatch": "Assign", "batch.count": "{count} selected (visible records)", "batch.target": "Assign to group",
   "batch.apply": "Assign selected captures", "batch.chooseTarget": "Choose a group or Ungrouped first", "batch.limit": "Assign at most 500 captures at a time",
   "batch.assigned": "Assigned {count} captures",
+  "group.deleteExperiment": "Delete experiment", "group.deleteGroup": "Delete group", "history.edit": "Edit",
+  "record.title": "Capture actions", "record.delete": "Delete this capture", "record.cancel": "Close",
+  "deletion.cancel": "Cancel", "deletion.confirm": "Delete permanently", "deletion.saving": "Deleting…",
+  "deletion.title.experiment": "Delete experiment", "deletion.title.group": "Delete group", "deletion.title.capture": "Delete capture",
+  "deletion.impact.experiment": "This cannot be undone. The experiment, all its groups, and all saved captures in those groups will be deleted.",
+  "deletion.impact.group": "This cannot be undone. The group and all saved captures in it will be deleted.",
+  "deletion.impact.capture": "This cannot be undone. Only this selected saved capture will be deleted.",
+  "deletion.success": "Deleted: {groups} groups and {captures} captures.",
 });
 
 function appendOption(select, value, label) {
@@ -157,14 +174,20 @@ function renderCaptureGrouping() {
 }
 
 async function loadExperiments() {
+  const revision = ++state.experimentsCatalogRevision;
   const { payload } = await fetchJson("/api/v1/experiments");
+  if (revision !== state.experimentsCatalogRevision) return state.experiments;
   state.experiments = payload.items;
   await Promise.all(state.experiments.map(async (experiment) => {
+    const groupRevision = state.groupCatalogRevisions.get(experiment.experiment_id) ?? 0;
     try {
       const result = await fetchJson(`/api/v1/experiments/${experiment.experiment_id}/groups`);
+      if (revision !== state.experimentsCatalogRevision
+          || groupRevision !== (state.groupCatalogRevisions.get(experiment.experiment_id) ?? 0)) return;
       state.groupsByExperiment.set(experiment.experiment_id, result.payload.items);
     } catch (_error) { /* A failed catalog request does not invalidate capture controls. */ }
   }));
+  if (revision !== state.experimentsCatalogRevision) return state.experiments;
   renderGroupingControls();
   return state.experiments;
 }
@@ -284,7 +307,179 @@ function renderGroupingEditor() {
   const save = $("#grouping-save");
   save.textContent = t(editor.saving ? "group.saving" : editor.id ? "group.saveChanges"
     : isGroup ? "group.createGroup" : "group.createExperiment");
+  $("#experiment-delete").hidden = isGroup || !editor.id;
+  $("#group-delete").hidden = !isGroup || !editor.id;
+  $("#experiment-delete").disabled = $("#group-delete").disabled = editor.saving;
   save.disabled = $("#grouping-fields").disabled = $("#grouping-cancel").disabled = editor.saving;
+}
+
+function renderDeletionConfirmation() {
+  const deletion = state.deletion;
+  if (!deletion) return;
+  $("#delete-confirmation-title").textContent = t(`deletion.title.${deletion.kind}`);
+  $("#delete-confirmation-target").textContent = deletion.name || deletion.id;
+  $("#delete-confirmation-impact").textContent = t(`deletion.impact.${deletion.kind}`);
+  $("#delete-confirmation-confirm").textContent = t(deletion.saving ? "deletion.saving" : "deletion.confirm");
+  $("#delete-confirmation-confirm").disabled = deletion.saving;
+  $("#delete-confirmation-cancel").disabled = deletion.saving;
+}
+
+function renderRecordEditor() {
+  if (!state.recordEditor) return;
+  $("#record-dialog-title").textContent = t("record.title");
+  $("#record-dialog-target").textContent = state.recordEditor.id;
+}
+
+function openDeletionConfirmation(kind, id, name = "", experimentId = null) {
+  const dialog = $("#delete-confirmation");
+  if (dialog.open || state.deletion || !id) return;
+  state.deletion = { kind, id, name, experimentId, saving: false };
+  const error = $("#delete-confirmation-error");
+  error.textContent = ""; error.hidden = true;
+  renderDeletionConfirmation();
+  dialog.showModal();
+  $("#delete-confirmation-cancel").focus();
+}
+
+function openRecordEditor(item) {
+  const dialog = $("#record-dialog");
+  if (dialog.open) return;
+  state.recordEditor = { id: item.capture_id, experimentId: item.grouping_metadata?.experiment_id ?? null };
+  renderRecordEditor();
+  dialog.showModal();
+  $("#record-delete").focus();
+}
+
+function deleteGroupingEntity(kind) {
+  const editor = state.groupingEditor;
+  if (!editor?.id || editor.kind !== kind || editor.saving) return;
+  const item = kind === "experiment"
+    ? state.experiments.find((experiment) => experiment.experiment_id === editor.id)
+    : currentGroup(editor.id);
+  openDeletionConfirmation(kind, editor.id, item?.name ?? editor.id, editor.experimentId);
+}
+
+function deletionMetadataMatches(deletion, metadata, groupIds) {
+  if (!metadata) return false;
+  if (deletion.kind === "capture") return metadata.capture_id === deletion.id;
+  if (deletion.kind === "group") return metadata.group_id === deletion.id;
+  return metadata.experiment_id === deletion.id || groupIds.has(metadata.group_id);
+}
+
+function applyDeletionLocally(deletion) {
+  const { kind, id } = deletion;
+  const groupIds = new Set();
+  if (kind === "experiment") {
+    const groups = state.groupsByExperiment.get(id) ?? (state.captureExperimentId === id ? state.captureGroups : []);
+    for (const group of groups) groupIds.add(group.group_id);
+  } else if (kind === "group") groupIds.add(id);
+
+  const affectedCaptureIds = new Set(kind === "capture" ? [id] : []);
+  for (const item of state.historyItems) {
+    if (deletionMetadataMatches(deletion, { ...item.grouping_metadata, capture_id: item.capture_id }, groupIds)) {
+      affectedCaptureIds.add(item.capture_id);
+    }
+  }
+  for (const [captureId, entry] of state.waveforms) {
+    if (deletionMetadataMatches(deletion, { ...entry.metadata?.grouping_metadata, capture_id: captureId }, groupIds)) {
+      affectedCaptureIds.add(captureId);
+    }
+  }
+  const unknownPendingIds = new Set();
+  for (const [captureId, reservation] of state.waveformLoads) {
+    const metadata = reservation.metadata;
+    if (deletionMetadataMatches(deletion, { ...metadata?.grouping_metadata, capture_id: captureId }, groupIds)) {
+      affectedCaptureIds.add(captureId);
+    } else if ((kind === "experiment" || kind === "group") && !metadata) {
+      // Metadata reads do not yet identify their group; invalidate only the pending load.
+      unknownPendingIds.add(captureId);
+    }
+  }
+
+  if (kind === "experiment") {
+    state.experimentsCatalogRevision += 1;
+    invalidateGroupCatalog(id);
+    state.experiments = state.experiments.filter((item) => item.experiment_id !== id);
+    state.groupsByExperiment.delete(id);
+    if (state.captureExperimentId === id) {
+      state.captureExperimentId = null; state.captureGroupId = null; state.captureGroups = [];
+      state.captureGroupStatusKey = null; state.captureGroupRevision += 1;
+    }
+    if (state.historyFilterType === "experiment" && state.historyExperimentId === id) {
+      state.historyFilterType = "all"; state.historyExperimentId = ""; state.historyGroupId = "";
+    }
+  } else if (kind === "group") {
+    invalidateGroupCatalog(deletion.experimentId);
+    if (state.captureExperimentId === deletion.experimentId) state.captureGroupRevision += 1;
+    const cachedGroups = state.groupsByExperiment.get(deletion.experimentId)
+      ?? (state.captureExperimentId === deletion.experimentId ? state.captureGroups : []);
+    const groups = cachedGroups.filter((group) => group.group_id !== id);
+    state.groupsByExperiment.set(deletion.experimentId, groups);
+    if (state.captureExperimentId === deletion.experimentId) {
+      state.captureGroups = groups;
+      if (state.captureGroupId === id) state.captureGroupId = null;
+      state.captureGroupStatusKey = groups.length ? null : "group.empty";
+    }
+    if (state.historyFilterType === "experiment" && state.historyExperimentId === deletion.experimentId && state.historyGroupId === id) {
+      state.historyGroupId = "";
+    }
+    if (state.batchAssignmentTarget === id) state.batchAssignmentTarget = "";
+  }
+
+  state.historyItems = state.historyItems.filter((item) => !affectedCaptureIds.has(item.capture_id));
+  state.batchSelectedCaptureIds = new Set([...state.batchSelectedCaptureIds].filter((captureId) => !affectedCaptureIds.has(captureId)));
+  for (const captureId of affectedCaptureIds) removeWaveform(captureId);
+  for (const captureId of unknownPendingIds) {
+    if (affectedCaptureIds.has(captureId)) continue;
+    state.waveformLoads.delete(captureId);
+    if (!state.waveforms.has(captureId)) {
+      state.selectedCaptureIds.delete(captureId);
+      if (state.primaryCaptureId === captureId) state.primaryCaptureId = state.selectedCaptureIds.values().next().value ?? null;
+    }
+  }
+  if (affectedCaptureIds.has(state.latestCaptureId)) state.latestCaptureId = null;
+
+  // Invalidate in-flight history reads before the replacement request starts.
+  state.historyRevision += 1;
+  state.historyCursor = null;
+  $("#history-more").hidden = true;
+  if (state.groupingEditor?.kind === kind && state.groupingEditor.id === id) $("#grouping-dialog").close();
+  if (kind === "capture" && state.recordEditor?.id === id) $("#record-dialog").close();
+  renderGroupingControls();
+  renderHistory(); renderWaveformWorkbench();
+}
+
+async function submitDeletion() {
+  const deletion = state.deletion;
+  const dialog = $("#delete-confirmation");
+  if (!dialog.open || !deletion || deletion.saving) return;
+  const ownsDeletion = () => state.deletion === deletion && dialog.open;
+  const error = $("#delete-confirmation-error");
+  error.textContent = ""; error.hidden = true;
+  deletion.saving = true; renderDeletionConfirmation();
+  try {
+    const endpoint = { experiment: "experiments", group: "groups", capture: "captures" }[deletion.kind];
+    const { payload } = await fetchJson(`/api/v1/${endpoint}/${encodeURIComponent(deletion.id)}?confirm=true`, { method: "DELETE" });
+    if (!ownsDeletion()) return;
+    applyDeletionLocally(deletion);
+    dialog.close();
+
+    const refreshErrors = [];
+    try {
+      if (deletion.kind === "experiment") await loadExperiments();
+      else await refreshGroupCatalog(deletion.experimentId);
+    } catch (refreshError) { refreshErrors.push(refreshError); }
+    try { await loadHistory(true); } catch (refreshError) { refreshErrors.push(refreshError); }
+    if (refreshErrors.length) toast(refreshErrors[0].message);
+    else toast(t("deletion.success", { groups: payload.groups_deleted ?? 0, captures: payload.captures_deleted ?? 0 }));
+  } catch (requestError) {
+    if (ownsDeletion()) {
+      error.textContent = requestError.message; error.hidden = false;
+    }
+  } finally {
+    deletion.saving = false;
+    if (ownsDeletion()) renderDeletionConfirmation();
+  }
 }
 
 function setGroupingError(message) {
@@ -455,8 +650,12 @@ function renderGroupExport() {
 async function refreshGroupCatalog(experimentId) {
   if (!experimentId) return [];
   const revision = state.captureGroupRevision;
+  const catalogRevision = state.groupCatalogRevisions.get(experimentId) ?? 0;
   try {
     const { payload } = await fetchJson(`/api/v1/experiments/${experimentId}/groups`);
+    if (catalogRevision !== (state.groupCatalogRevisions.get(experimentId) ?? 0)) {
+      return state.groupsByExperiment.get(experimentId) ?? [];
+    }
     state.groupsByExperiment.set(experimentId, payload.items);
     if (state.captureExperimentId === experimentId && state.captureGroupRevision === revision) {
       state.captureGroups = payload.items;
@@ -468,6 +667,11 @@ async function refreshGroupCatalog(experimentId) {
   } catch (_error) {
     return [];
   }
+}
+
+function invalidateGroupCatalog(experimentId) {
+  if (!experimentId) return;
+  state.groupCatalogRevisions.set(experimentId, (state.groupCatalogRevisions.get(experimentId) ?? 0) + 1);
 }
 
 // A view revision plus per-load token prevents a late Promise from an old
@@ -708,6 +912,7 @@ async function completeWaveformLoad(reservation, metadataPromise) {
 
 function loadWaveform(metadata) {
   const reservation = reserveWaveform(metadata.capture_id);
+  reservation.metadata = metadata;
   return completeWaveformLoad(reservation, Promise.resolve(metadata));
 }
 
@@ -867,6 +1072,8 @@ function setLanguage(language) {
   applyStaticTranslations(); updateMode();
   renderGroupingControls(); renderCaptureBinding(); renderGroupExport();
   renderGroupingEditor();
+  renderDeletionConfirmation();
+  renderRecordEditor();
   if (state.schema && state.config) renderParameters();
   if (state.devicePayload) updateDevice(state.devicePayload);
   renderCounters(state.counterPayload); renderHistory();
@@ -1151,7 +1358,10 @@ function renderHistory() {
     const view = document.createElement("button"); view.className = "quiet"; view.textContent = t("history.view");
     view.addEventListener("click", () => viewHistoricalCapture(item).catch((error) => toast(error.message)));
     const download = document.createElement("a"); download.textContent = t("history.download"); download.href = `/api/v1/captures/${item.capture_id}/samples`; download.download = `${item.capture_id}.u16le`;
-    actions.append(batchLabel, selectLabel, view, download); row.append(meta, actions); root.append(row);
+    const edit = document.createElement("button"); edit.type = "button"; edit.className = "quiet";
+    edit.textContent = t("history.edit");
+    edit.addEventListener("click", () => openRecordEditor(item));
+    actions.append(batchLabel, selectLabel, view, download, edit); row.append(meta, actions); root.append(row);
   });
   renderBatchSelectionControls();
 }
@@ -1328,6 +1538,8 @@ function bindActions() {
   $("#experiment-edit").addEventListener("click", () => openGroupingEditor("experiment", true));
   $("#group-new").addEventListener("click", () => openGroupingEditor("group"));
   $("#group-edit").addEventListener("click", () => openGroupingEditor("group", true));
+  $("#experiment-delete").addEventListener("click", () => deleteGroupingEntity("experiment"));
+  $("#group-delete").addEventListener("click", () => deleteGroupingEntity("group"));
   const groupingDialog = $("#grouping-dialog");
   $("#grouping-form").addEventListener("submit", submitGroupingEditor);
   $("#grouping-cancel").addEventListener("click", () => {
@@ -1338,6 +1550,26 @@ function bindActions() {
   });
   groupingDialog.addEventListener("close", () => {
     if (!groupingDialog.open) state.groupingEditor = null;
+  });
+  const deletionDialog = $("#delete-confirmation");
+  $("#delete-confirmation-confirm").addEventListener("click", () => submitDeletion());
+  $("#delete-confirmation-cancel").addEventListener("click", () => {
+    if (!state.deletion?.saving) deletionDialog.close();
+  });
+  deletionDialog.addEventListener("cancel", (event) => {
+    if (state.deletion?.saving) event.preventDefault();
+  });
+  deletionDialog.addEventListener("close", () => {
+    if (!deletionDialog.open) state.deletion = null;
+  });
+  const recordDialog = $("#record-dialog");
+  $("#record-delete").addEventListener("click", () => {
+    const record = state.recordEditor;
+    if (record) openDeletionConfirmation("capture", record.id, record.id, record.experimentId);
+  });
+  $("#record-cancel").addEventListener("click", () => recordDialog.close());
+  recordDialog.addEventListener("close", () => {
+    if (!recordDialog.open) state.recordEditor = null;
   });
   $("#waveform-apply-window").addEventListener("click", guarded(async () => applyWaveformWindow()));
   $("#waveform-previous").addEventListener("click", () => moveWaveformWindow(-1)); $("#waveform-next").addEventListener("click", () => moveWaveformWindow(1));

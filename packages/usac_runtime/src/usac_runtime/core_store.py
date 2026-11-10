@@ -27,6 +27,10 @@ class StorageConflictError(RuntimeError):
     """Raised when one capture identity is delivered with different bytes."""
 
 
+class DeletionConflictError(RuntimeError):
+    """Raised when deleting a group would disrupt a live run."""
+
+
 class SavePolicy(str, Enum):
     """User-selected lifetime for fully validated raw capture frames."""
 
@@ -94,6 +98,7 @@ class CaptureRecord:
     experiment_name: str | None = None
     cell_id: str | None = None
     events: tuple["CaptureEventRecord", ...] = ()
+    session_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +247,19 @@ class CaptureStore:
         )
         connection.execute(
             """
+            CREATE TABLE IF NOT EXISTS deleted_capture_tombstones (
+                device_id BLOB NOT NULL,
+                boot_id BLOB NOT NULL,
+                capture_id BLOB NOT NULL,
+                inner_frame_crc32 INTEGER NOT NULL,
+                inner_frame_sha256 BLOB NOT NULL,
+                deleted_utc_ns INTEGER NOT NULL,
+                PRIMARY KEY(device_id, boot_id, capture_id)
+            )
+            """
+        )
+        connection.execute(
+            """
             CREATE TABLE IF NOT EXISTS session_latest_captures (
                 session_id TEXT PRIMARY KEY,
                 connection_id INTEGER NOT NULL,
@@ -281,10 +299,20 @@ class CaptureStore:
                 boot_id BLOB NOT NULL,
                 session_id TEXT NOT NULL,
                 save_policy TEXT NOT NULL,
+                suppress_archive INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY(device_id, boot_id)
             )
             """
         )
+        context_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(delivery_policy_contexts)")
+        }
+        if "suppress_archive" not in context_columns:
+            connection.execute(
+                "ALTER TABLE delivery_policy_contexts "
+                "ADD COLUMN suppress_archive INTEGER NOT NULL DEFAULT 0"
+            )
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS capture_events (
@@ -546,6 +574,10 @@ class CaptureStore:
         group_id = uuid.uuid4().hex
         now = time.time_ns()
         with self._connect() as connection:
+            # Reserve the writer before checking the parent. SQLite foreign
+            # keys are intentionally not enabled on legacy stores, so a
+            # deferred read could otherwise race an experiment cascade.
+            connection.execute("BEGIN IMMEDIATE")
             if connection.execute(
                 "SELECT 1 FROM experiments WHERE experiment_id=?",
                 (normalized_experiment_id,),
@@ -619,6 +651,305 @@ class CaptureStore:
             if cursor.rowcount == 0:
                 raise KeyError(normalized_id)
         return self.get_group(normalized_id)
+
+    @staticmethod
+    def _empty_grouping_metadata() -> dict[str, None]:
+        return {
+            "group_id": None,
+            "experiment_id": None,
+            "group_name": None,
+            "experiment_name": None,
+            "cell_id": None,
+        }
+
+    def _assert_groups_not_active(
+        self, connection: sqlite3.Connection, group_ids: Sequence[str]
+    ) -> None:
+        if not group_ids:
+            return
+        placeholders = ",".join("?" for _ in group_ids)
+        active_context = connection.execute(
+            f"""
+            SELECT context.session_id, session.state
+            FROM delivery_policy_contexts AS context
+            LEFT JOIN acquisition_sessions AS session
+              ON session.session_id=context.session_id
+            WHERE context.group_id IN ({placeholders})
+              AND (session.state IS NULL OR session.state IN ('RUNNING', 'STOPPING'))
+            LIMIT 1
+            """,
+            tuple(group_ids),
+        ).fetchone()
+        if active_context is not None:
+            raise DeletionConflictError(
+                "an active or pending run uses a group being deleted"
+            )
+        # Summaries are the durable run ledger. Check them as well as replay
+        # contexts so cleanup is safe if a legacy database lacks a context row.
+        active_summaries = connection.execute(
+            "SELECT summary_json FROM acquisition_sessions "
+            "WHERE state IN ('RUNNING', 'STOPPING')"
+        )
+        target_ids = set(group_ids)
+        active_capture = connection.execute(
+            f"""
+            SELECT capture.capture_id
+            FROM captures AS capture
+            JOIN acquisition_sessions AS session
+              ON session.session_id=capture.session_id
+            WHERE capture.group_id IN ({placeholders})
+              AND session.state IN ('RUNNING', 'STOPPING')
+            LIMIT 1
+            """,
+            tuple(group_ids),
+        ).fetchone()
+        if active_capture is not None:
+            raise DeletionConflictError(
+                "a capture assigned to this group belongs to an active run"
+            )
+        for (raw_summary,) in active_summaries:
+            summary = json.loads(str(raw_summary))
+            grouping = summary.get("grouping_metadata")
+            if isinstance(grouping, dict) and grouping.get("group_id") in target_ids:
+                raise DeletionConflictError(
+                    "an active or pending run uses a group being deleted"
+                )
+
+    def _record_deleted_identity(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        device_id: bytes,
+        boot_id: bytes,
+        capture_id: bytes,
+        wire_frame: bytes,
+    ) -> None:
+        inner_crc = crc32_iso_hdlc(wire_frame)
+        inner_sha = hashlib.sha256(wire_frame).digest()
+        existing = connection.execute(
+            """
+            SELECT inner_frame_crc32, inner_frame_sha256
+            FROM deleted_capture_tombstones
+            WHERE device_id=? AND boot_id=? AND capture_id=?
+            """,
+            (device_id, boot_id, capture_id),
+        ).fetchone()
+        if existing is not None:
+            if int(existing[0]) != inner_crc or bytes(existing[1]) != inner_sha:
+                raise StorageConflictError(
+                    "capture identity already exists with a different frame"
+                )
+            return
+        connection.execute(
+            """
+            INSERT INTO deleted_capture_tombstones (
+                device_id, boot_id, capture_id, inner_frame_crc32,
+                inner_frame_sha256, deleted_utc_ns
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (device_id, boot_id, capture_id, inner_crc, inner_sha, time.time_ns()),
+        )
+
+    def _neutralize_group_history(
+        self, connection: sqlite3.Connection, group_ids: Sequence[str]
+    ) -> None:
+        if not group_ids:
+            return
+        target_ids = set(group_ids)
+        rows = connection.execute(
+            "SELECT session_id, summary_json FROM acquisition_sessions"
+        )
+        for session_id, raw_summary in rows:
+            summary = json.loads(str(raw_summary))
+            grouping = summary.get("grouping_metadata")
+            if not isinstance(grouping, dict) or grouping.get("group_id") not in target_ids:
+                continue
+            summary["grouping_metadata"] = self._empty_grouping_metadata()
+            connection.execute(
+                "UPDATE acquisition_sessions SET summary_json=? WHERE session_id=?",
+                (self._canonical_json(summary), str(session_id)),
+            )
+
+    def _delete_group_members(
+        self, connection: sqlite3.Connection, group_ids: Sequence[str]
+    ) -> int:
+        if not group_ids:
+            return 0
+        placeholders = ",".join("?" for _ in group_ids)
+        parameters = tuple(group_ids)
+
+        # Stream the immutable frame BLOBs instead of loading a whole large
+        # group into memory. Permanent markers outlive the bounded resolution
+        # table so a deleted identity cannot be resurrected by bridge replay.
+        archived = connection.execute(
+            f"""
+            SELECT device_id, boot_id, capture_id, wire_frame_blob
+            FROM captures WHERE group_id IN ({placeholders})
+            """,
+            parameters,
+        )
+        captures_deleted = 0
+        for device_id, boot_id, capture_id, wire_frame in archived:
+            self._record_deleted_identity(
+                connection,
+                device_id=bytes(device_id),
+                boot_id=bytes(boot_id),
+                capture_id=bytes(capture_id),
+                wire_frame=bytes(wire_frame),
+            )
+            captures_deleted += 1
+
+        # SAVE_LAST can still have a rolling frame before terminal finalization.
+        # Remove and tombstone it too, so a later finalize cannot restore it.
+        rolling = connection.execute(
+            f"""
+            SELECT inner_frame_blob FROM session_latest_captures
+            WHERE group_id IN ({placeholders})
+            """,
+            parameters,
+        )
+        for (raw_frame,) in rolling:
+            wire_frame = bytes(raw_frame)
+            capture = decode_capture_data(decode_frame(wire_frame).payload)
+            self._record_deleted_identity(
+                connection,
+                device_id=capture.device_id,
+                boot_id=capture.boot_id,
+                capture_id=capture.capture_id,
+                wire_frame=wire_frame,
+            )
+            connection.execute(
+                """
+                DELETE FROM configuration_contexts
+                WHERE profile_sha256=? AND device_config_crc32=? AND request_id=?
+                """,
+                (
+                    capture.profile_sha256,
+                    capture.device_config_crc32,
+                    capture.request_id,
+                ),
+            )
+
+        connection.execute(
+            f"""
+            UPDATE delivery_policy_contexts
+            SET group_id=NULL, suppress_archive=1
+            WHERE group_id IN ({placeholders})
+            """,
+            parameters,
+        )
+        connection.execute(
+            f"""
+            DELETE FROM capture_events WHERE capture_row_id IN (
+                SELECT row_id FROM captures WHERE group_id IN ({placeholders})
+            )
+            """,
+            parameters,
+        )
+        connection.execute(
+            f"DELETE FROM captures WHERE group_id IN ({placeholders})", parameters
+        )
+        connection.execute(
+            f"DELETE FROM session_latest_captures WHERE group_id IN ({placeholders})",
+            parameters,
+        )
+        self._neutralize_group_history(connection, group_ids)
+        return captures_deleted
+
+    @staticmethod
+    def _deletion_result(*, captures: int, groups: int) -> dict[str, object]:
+        return {
+            "deleted": True,
+            "captures_deleted": captures,
+            "groups_deleted": groups,
+        }
+
+    def delete_experiment(self, experiment_id: str) -> dict[str, object]:
+        normalized_id = self._validate_entity_id(experiment_id, "experiment_id")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute(
+                "SELECT 1 FROM experiments WHERE experiment_id=?", (normalized_id,)
+            ).fetchone() is None:
+                raise KeyError(normalized_id)
+            group_ids = tuple(
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT group_id FROM experiment_groups WHERE experiment_id=?",
+                    (normalized_id,),
+                )
+            )
+            self._assert_groups_not_active(connection, group_ids)
+            captures_deleted = self._delete_group_members(connection, group_ids)
+            if group_ids:
+                placeholders = ",".join("?" for _ in group_ids)
+                connection.execute(
+                    f"DELETE FROM experiment_groups WHERE group_id IN ({placeholders})",
+                    group_ids,
+                )
+            connection.execute(
+                "DELETE FROM experiments WHERE experiment_id=?", (normalized_id,)
+            )
+        return self._deletion_result(captures=captures_deleted, groups=len(group_ids))
+
+    def delete_group(self, group_id: str) -> dict[str, object]:
+        normalized_id = self._validate_entity_id(group_id, "group_id")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute(
+                "SELECT 1 FROM experiment_groups WHERE group_id=?", (normalized_id,)
+            ).fetchone() is None:
+                raise KeyError(normalized_id)
+            self._assert_groups_not_active(connection, (normalized_id,))
+            captures_deleted = self._delete_group_members(
+                connection, (normalized_id,)
+            )
+            connection.execute(
+                "DELETE FROM experiment_groups WHERE group_id=?", (normalized_id,)
+            )
+        return self._deletion_result(captures=captures_deleted, groups=1)
+
+    def delete_capture(self, capture_id: bytes) -> dict[str, object]:
+        if not isinstance(capture_id, bytes) or len(capture_id) != 16:
+            raise ValueError("capture_id must encode exactly 16 bytes")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """
+                SELECT row_id, device_id, boot_id, session_id, wire_frame_blob
+                FROM captures WHERE capture_id=?
+                """,
+                (capture_id,),
+            ).fetchmany(2)
+            if not rows:
+                raise KeyError(capture_id.hex())
+            if len(rows) != 1:
+                raise KeyError(f"capture_id {capture_id.hex()} was not found uniquely")
+            row = rows[0]
+            active = connection.execute(
+                "SELECT state FROM acquisition_sessions WHERE session_id=?",
+                (str(row[3]),),
+            ).fetchone()
+            if active is not None and str(active[0]) in {"RUNNING", "STOPPING"}:
+                raise DeletionConflictError("capture belongs to an active run")
+            self._record_deleted_identity(
+                connection,
+                device_id=bytes(row[1]),
+                boot_id=bytes(row[2]),
+                capture_id=capture_id,
+                wire_frame=bytes(row[4]),
+            )
+            connection.execute(
+                "DELETE FROM capture_events WHERE capture_row_id=?", (int(row[0]),)
+            )
+            connection.execute("DELETE FROM captures WHERE row_id=?", (int(row[0]),))
+            # In a partially completed SAVE_LAST run the same latest frame must
+            # not survive independently of the archived row being deleted.
+            connection.execute(
+                "DELETE FROM session_latest_captures WHERE inner_frame_blob=?",
+                (bytes(row[4]),),
+            )
+        return self._deletion_result(captures=1, groups=0)
 
     def grouping_metadata(self, group_id: str | None) -> dict[str, object]:
         if group_id is None:
@@ -731,16 +1062,21 @@ class CaptureStore:
         except ValueError as error:
             raise ValueError("save_policy is invalid") from error
         with self._connect() as connection:
+            # Group existence and replay context publication must be one
+            # serialized write against a concurrent group deletion.
+            connection.execute("BEGIN IMMEDIATE")
             normalized_group_id = self._validate_group_target(connection, group_id)
             connection.execute(
                 """
                 INSERT INTO delivery_policy_contexts (
-                    device_id, boot_id, session_id, save_policy, group_id
-                ) VALUES (?, ?, ?, ?, ?)
+                    device_id, boot_id, session_id, save_policy, group_id,
+                    suppress_archive
+                ) VALUES (?, ?, ?, ?, ?, 0)
                 ON CONFLICT(device_id, boot_id) DO UPDATE SET
                     session_id=excluded.session_id,
                     save_policy=excluded.save_policy,
-                    group_id=excluded.group_id
+                    group_id=excluded.group_id,
+                    suppress_archive=0
                 """,
                 (device_id, boot_id, normalized_session, policy.value, normalized_group_id),
             )
@@ -780,15 +1116,61 @@ class CaptureStore:
                 (device_id, boot_id, normalized_session),
             )
 
+    def _deleted_delivery_result(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        capture,
+        inner_crc: int,
+        inner_sha: bytes,
+        receipt: CaptureCommittedRequest,
+    ) -> CoreCommitResult | None:
+        deleted = connection.execute(
+            """
+            SELECT inner_frame_crc32, inner_frame_sha256
+            FROM deleted_capture_tombstones
+            WHERE device_id=? AND boot_id=? AND capture_id=?
+            """,
+            (capture.device_id, capture.boot_id, capture.capture_id),
+        ).fetchone()
+        if deleted is None:
+            return None
+        if int(deleted[0]) != inner_crc or bytes(deleted[1]) != inner_sha:
+            raise StorageConflictError(
+                "capture identity already exists with a different frame"
+            )
+        return CoreCommitResult(
+            receipt, False, CaptureResolution.DISCARDED_BY_POLICY
+        )
+
     def commit_replayed_delivery(self, delivery: BridgeCaptureDelivery) -> CoreCommitResult:
         """Resolve a bridge-spooled frame using its pre-registered host policy."""
 
         encode_bridge_capture_delivery(delivery)
-        capture = decode_capture_data(decode_frame(delivery.inner_frame).payload)
+        wire_frame = delivery.inner_frame
+        capture = decode_capture_data(decode_frame(wire_frame).payload)
+        inner_crc = crc32_iso_hdlc(wire_frame)
+        inner_sha = hashlib.sha256(wire_frame).digest()
+        receipt = self._receipt(
+            delivery,
+            device_id=capture.device_id,
+            boot_id=capture.boot_id,
+            capture_id=capture.capture_id,
+            inner_frame_crc32=inner_crc,
+        )
         with self._connect() as connection:
             # Reserve the writer before reading session state. Finalization and
             # the replay decision therefore cannot cross between transactions.
             connection.execute("BEGIN IMMEDIATE")
+            deleted = self._deleted_delivery_result(
+                connection,
+                capture=capture,
+                inner_crc=inner_crc,
+                inner_sha=inner_sha,
+                receipt=receipt,
+            )
+            if deleted is not None:
+                return deleted
             existing = connection.execute(
                 """
                 SELECT 1 FROM capture_resolution_tombstones
@@ -798,7 +1180,8 @@ class CaptureStore:
             ).fetchone()
             context = connection.execute(
                 """
-                SELECT session_id, save_policy, group_id FROM delivery_policy_contexts
+                SELECT session_id, save_policy, group_id, suppress_archive
+                FROM delivery_policy_contexts
                 WHERE device_id=? AND boot_id=?
                 """,
                 (capture.device_id, capture.boot_id),
@@ -824,6 +1207,13 @@ class CaptureStore:
                     "bridge spool must remain pending"
                 )
             policy = SavePolicy(str(context[1]))
+            if bool(context[3]):
+                return self._commit_suppressed_replay(
+                    delivery,
+                    capture=capture,
+                    receipt=receipt,
+                    _connection=connection,
+                )
             if terminal is not None and str(terminal[0]) not in {"RUNNING", "STOPPING"}:
                 return self._commit_terminal_replay(
                     delivery,
@@ -841,6 +1231,44 @@ class CaptureStore:
                 group_id=None if context[2] is None else str(context[2]),
                 _connection=connection,
             )
+
+    def _commit_suppressed_replay(
+        self,
+        delivery: BridgeCaptureDelivery,
+        *,
+        capture,
+        receipt: CaptureCommittedRequest,
+        _connection: sqlite3.Connection,
+    ) -> CoreCommitResult:
+        """Absorb a late frame after its current group has been deleted.
+
+        The current database context retains the original run and policy, but
+        deletion disables archiving until a later task installs fresh context.
+        A permanent identity marker is required here because this frame was
+        pending at deletion time and has no archived row to mark.
+        """
+
+        self._record_deleted_identity(
+            _connection,
+            device_id=capture.device_id,
+            boot_id=capture.boot_id,
+            capture_id=capture.capture_id,
+            wire_frame=delivery.inner_frame,
+        )
+        _connection.execute(
+            """
+            DELETE FROM configuration_contexts
+            WHERE profile_sha256=? AND device_config_crc32=? AND request_id=?
+            """,
+            (
+                capture.profile_sha256,
+                capture.device_config_crc32,
+                capture.request_id,
+            ),
+        )
+        return CoreCommitResult(
+            receipt, True, CaptureResolution.DISCARDED_BY_POLICY
+        )
 
     def _commit_terminal_replay(
         self,
@@ -1215,6 +1643,15 @@ class CaptureStore:
         with connection_scope as connection:
             if _connection is None:
                 connection.execute("BEGIN IMMEDIATE")
+            deleted = self._deleted_delivery_result(
+                connection,
+                capture=capture,
+                inner_crc=inner_crc,
+                inner_sha=inner_sha,
+                receipt=receipt,
+            )
+            if deleted is not None:
+                return deleted
             normalized_group_id = self._validate_group_target(connection, group_id)
             existing = connection.execute(
                 """
@@ -1731,7 +2168,7 @@ class CaptureStore:
                    capture.actual_config_json, capture.run_plan_json,
                    capture.adc_clipping, capture.row_id, capture.group_id,
                    group_row.experiment_id, group_row.name, experiment.name,
-                   group_row.cell_id
+                   group_row.cell_id, capture.session_id
             FROM captures AS capture
             LEFT JOIN experiment_groups AS group_row
               ON group_row.group_id=capture.group_id
@@ -1804,6 +2241,7 @@ class CaptureStore:
             experiment_name=None if row[26] is None else str(row[26]),
             cell_id=None if row[27] is None else str(row[27]),
             events=events,
+            session_id=str(row[28]) or None,
         )
 
     def get_capture(self, capture_id: bytes) -> CaptureRecord:

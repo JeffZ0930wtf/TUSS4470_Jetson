@@ -4,7 +4,15 @@
 
 本文档说明 V1 超声采集子模块在 Jetson 宿主机和容器内的设备、网络与持久目录边界，解决“哪些配置属于宿主机、哪些路径属于容器”的问题。它适用于 V1 的部署、启动、停止、网页候选版切换与回退；协议与安全边界分别以 `docs/protocol.md` 和 V1 已知限制为准。完整真实证据不放入 Git。
 
-## V1.1.2 网页补丁
+## V1.1.3 删除补丁
+
+本版增加网页、REST 和 CLI 删除操作，以及阻止已删记录被旧帧重放恢复的 SQLite
+兼容性更新。部署前结束采集任务，核对 Bridge 待交付为 0，停止 Core 和 Bridge，
+并一起备份现有 SQLite 和 spool 目录。随后按下文的默认启动流程部署正式镜像。
+仅网页变更的单容器切换流程适用于 V1.1.2。回退时保留当前数据副本，并使用与
+旧版匹配的升级前备份。操作和验证范围见 [V1.1.3 说明](../release/v1.1.3-release-notes.md)。
+
+## V1.1.2 网页补丁（历史）
 
 V1.1.2 增加实验／分组弹窗，以及「已保存记录」按实验再按分组的两级筛选。它沿用
 V1.1.1 的静态资源哈希校验，不改 REST、数据结构、采集协议或固件。正式镜像、已验证
@@ -89,7 +97,7 @@ docker compose -f deploy/compose.jetson.yaml up -d --force-recreate bridge
 
 ## Jetson 本机一键启动
 
-启动脚本当前默认选择 `tuss4470-acquisition-core:1.1.2`。启动脚本
+启动脚本当前默认选择 `tuss4470-acquisition-core:1.1.3`。启动脚本
 执行 `up -d --no-build`，不会自动构建，镜像须已存在于 Jetson；更改默认值不会
 替换已有容器，实际镜像以 `docker inspect` 为准。重新执行默认启动器会按正式镜像配置启动，
 可能将试用中的 Core 切到正式版。
@@ -118,7 +126,7 @@ docker compose -f deploy/compose.jetson.yaml up -d --force-recreate bridge
 需要手动启动时仍可执行：
 
 ```sh
-export USAC_CORE_IMAGE=tuss4470-acquisition-core:1.1.2
+export USAC_CORE_IMAGE=tuss4470-acquisition-core:1.1.3
 export USAC_SERIAL_DEVICE=/dev/serial/by-id/usb-Texas_Instruments_MSP430-USB_Example_<本板32位小写十六进制序列号>-if00
 docker compose -f deploy/compose.jetson.yaml up -d --no-build
 ```

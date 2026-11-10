@@ -139,12 +139,22 @@ device/configuration gates. The full rules are in the
 | `GET /captures` | Existing ascending cursor pagination, plus optional `experiment_id`, `group_id`, or exclusive `ungrouped=true` |
 | `POST /captures/group-assignment` | `{capture_ids, group_id}`; 1–500 distinct archived IDs, nullable group, atomic, returns `{assigned_count}` |
 | `GET /groups/{id}/export.zip` | Single SQLite snapshot of archived members, streamed through a temporary ZIP |
+| `DELETE /experiments/{id}?confirm=true` | Permanently delete the experiment, its groups, and their currently assigned saved captures |
+| `DELETE /groups/{id}?confirm=true` | Permanently delete the group and its currently assigned saved captures |
+| `DELETE /captures/{id}?confirm=true` | Permanently delete one saved capture |
 
 Generated experiment/group IDs are lowercase UUID4 hex (32 characters). Names
 are trimmed, required, and at most 120 characters; optional `cell_id` is at most
-120 characters and notes at most 2000. Duplicate names are allowed. No entity
-delete or group move is supported. Missing IDs return 404, invalid requests 422,
+120 characters and notes at most 2000. Duplicate names are allowed. A group
+keeps its original experiment. Missing IDs return 404, invalid requests 422,
 and unavailable storage 503.
+
+Deletion is atomic and requires explicit `confirm=true`. A successful response
+is `200` with `deleted: true`, `captures_deleted`, and `groups_deleted`. An
+affected active acquisition returns `409`. Cascades follow current assignment
+at the time of deletion. Unrelated and ungrouped captures are preserved.
+Capture detail, raw samples, history, and new exports no longer expose deleted
+records. A repeated deletion of the same ID returns `404`.
 
 `POST /captures`, `POST /periodic/start`, and `POST /sweeps` accept optional
 nullable `group_id`, frozen at task start. Omission preserves legacy Ungrouped
@@ -152,7 +162,9 @@ behavior. History, frame details, and session responses include the same nested
 `grouping_metadata` with `group_id`, `experiment_id`, `group_name`,
 `experiment_name`, and `cell_id`; all five are null for ungrouped data. Names
 resolve from current metadata. Frame assignment may later be edited, but session
-summaries retain their original task binding; replay must not undo manual edits.
+summaries retain their original task binding while the group exists. Run counts
+describe acquisition at the time of the run. Replay must not undo manual edits
+or recreate a deleted capture.
 
 Group ZIPs contain `manifest.json` plus `.usac`, `.u16le`, and `.json` per
 archived capture. The binary bytes are identical to stored frames/samples;
