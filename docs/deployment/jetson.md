@@ -9,8 +9,13 @@
 本版增加网页、REST 和 CLI 删除操作，以及阻止已删记录被旧帧重放恢复的 SQLite
 兼容性更新。部署前结束采集任务，核对 Bridge 待交付为 0，停止 Core 和 Bridge，
 并一起备份现有 SQLite 和 spool 目录。随后按下文的默认启动流程部署正式镜像。
-仅网页变更的单容器切换流程适用于 V1.1.2。回退时保留当前数据副本，并使用与
+回退此数据库变更时保留当前数据副本，并使用与
 旧版匹配的升级前备份。操作和验证范围见 [V1.1.3 说明](../release/v1.1.3-release-notes.md)。
+
+2026-11-13，现场 Core 切换到网页编号镜像
+`tuss4470-acquisition-core:1.1.3-capture-number-a903aee`，构建提交为 `a903aee`。
+Bridge 运行 `tuss4470-acquisition-core:1.1.3`。切换前后设备均为 `NORMAL / IDLE`，
+SQLite 与 Bridge spool 内容校验一致，历史列表可显示 15 条已有记录的库内编号。
 
 ## V1.1.2 网页补丁（历史）
 
@@ -148,9 +153,8 @@ docker compose -f deploy/compose.jetson.yaml down
 
 ## 仅网页变更：切换与回退
 
-本流程适用于 V1.1.2 这类仅改网页交互的兼容升级。若后端、数据库结构、Bridge 或
-固件有变化，不沿用这个简化流程。V1.1.2 试用过的候选镜像和 V1.1.1 正式镜像在本机
-独立保留；版本详情见 [V1.1.2 发布说明](../release/v1.1.2-release-notes.md)。
+本流程适用于仅改网页交互的兼容升级，例如 V1.1.3 的网页编号。涉及后端、数据库结构、
+Bridge 或固件时，按相应版本的完整部署流程执行。下列命令使用现场已构建的镜像。
 
 1. **切换前**：结束所有采集任务，确认设备 `NORMAL / IDLE`，无运行计划和待交付帧；
    按「启动前提」人工确认外部 VPWR 和 S3 复位，并为正式 SQLite 与 Bridge spool
@@ -160,13 +164,13 @@ docker compose -f deploy/compose.jetson.yaml down
    数据目录，先核对现有挂载并把命令中的 `USAC_CORE_DATA_DIR` 改为原值。
 
    ```sh
-   # 切到正式 V1.1.2
-   USAC_CORE_IMAGE=tuss4470-acquisition-core:1.1.2 \
+   # 切到网页编号镜像
+   USAC_CORE_IMAGE=tuss4470-acquisition-core:1.1.3-capture-number-a903aee \
      USAC_CORE_DATA_DIR=/var/lib/tuss4470/core \
      docker compose -p deploy -f deploy/compose.jetson.yaml up -d --no-deps --no-build core
 
-   # 回到旧版正式 V1.1.1
-   USAC_CORE_IMAGE=tuss4470-acquisition-core:1.1.1 \
+   # 回到正式 V1.1.3 Core
+   USAC_CORE_IMAGE=tuss4470-acquisition-core:1.1.3 \
      USAC_CORE_DATA_DIR=/var/lib/tuss4470/core \
      docker compose -p deploy -f deploy/compose.jetson.yaml up -d --no-deps --no-build core
    ```
