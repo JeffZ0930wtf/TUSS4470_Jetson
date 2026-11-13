@@ -317,7 +317,9 @@ function renderDeletionConfirmation() {
   const deletion = state.deletion;
   if (!deletion) return;
   $("#delete-confirmation-title").textContent = t(`deletion.title.${deletion.kind}`);
-  $("#delete-confirmation-target").textContent = deletion.name || deletion.id;
+  const target = $("#delete-confirmation-target");
+  target.textContent = deletion.name || deletion.id;
+  target.title = deletion.kind === "capture" ? deletion.id : "";
   $("#delete-confirmation-impact").textContent = t(`deletion.impact.${deletion.kind}`);
   $("#delete-confirmation-confirm").textContent = t(deletion.saving ? "deletion.saving" : "deletion.confirm");
   $("#delete-confirmation-confirm").disabled = deletion.saving;
@@ -327,7 +329,9 @@ function renderDeletionConfirmation() {
 function renderRecordEditor() {
   if (!state.recordEditor) return;
   $("#record-dialog-title").textContent = t("record.title");
-  $("#record-dialog-target").textContent = state.recordEditor.id;
+  const target = $("#record-dialog-target");
+  target.textContent = state.recordEditor.displayNumber;
+  target.title = state.recordEditor.id;
 }
 
 function openDeletionConfirmation(kind, id, name = "", experimentId = null) {
@@ -344,7 +348,14 @@ function openDeletionConfirmation(kind, id, name = "", experimentId = null) {
 function openRecordEditor(item) {
   const dialog = $("#record-dialog");
   if (dialog.open) return;
-  state.recordEditor = { id: item.capture_id, experimentId: item.grouping_metadata?.experiment_id ?? null };
+  const displayNumber = formatCaptureNumber(item);
+  const grouping = historyGroupingText(item);
+  state.recordEditor = {
+    id: item.capture_id,
+    displayNumber,
+    displayName: displayNumber === item.capture_id ? displayNumber : `${displayNumber} · ${grouping}`,
+    experimentId: item.grouping_metadata?.experiment_id ?? null,
+  };
   renderRecordEditor();
   dialog.showModal();
   $("#record-delete").focus();
@@ -1272,6 +1283,12 @@ function updateMode() {
   $("#capture-start").textContent = t({ SINGLE: "capture.start.single", PERIODIC: "capture.start.periodic", SWEEP: "capture.start.sweep" }[mode]);
 }
 
+function formatCaptureNumber(item) {
+  return Number.isSafeInteger(item.row_id) && item.row_id > 0
+    ? `CAP-${String(item.row_id).padStart(6, "0")}`
+    : item.capture_id;
+}
+
 function historyGroupingText(item) {
   const metadata = item.grouping_metadata || {};
   if (!metadata.group_id) return t("group.ungrouped");
@@ -1337,9 +1354,11 @@ function renderHistory() {
     return;
   }
   state.historyItems.forEach((item) => {
+    const captureNumber = formatCaptureNumber(item);
+    const historyLabel = captureNumber === item.capture_id ? item.capture_id.slice(0, 8) : captureNumber;
     const row = document.createElement("div"); row.className = "history-row";
     const meta = document.createElement("div"); meta.className = "history-meta";
-    const name = document.createElement("strong"); name.textContent = item.capture_id.slice(0, 8);
+    const name = document.createElement("strong"); name.textContent = historyLabel; name.title = item.capture_id;
     const detail = document.createElement("small"); detail.textContent = t("history.detail", { sequence: item.capture_sequence, count: item.sample_count });
     const grouping = document.createElement("small"); grouping.textContent = historyGroupingText(item);
     meta.append(name, detail, grouping);
@@ -1357,7 +1376,7 @@ function renderHistory() {
     const selectText = document.createElement("span"); selectText.textContent = t("history.overlay"); selectLabel.append(select, selectText);
     const view = document.createElement("button"); view.className = "quiet"; view.textContent = t("history.view");
     view.addEventListener("click", () => viewHistoricalCapture(item).catch((error) => toast(error.message)));
-    const download = document.createElement("a"); download.textContent = t("history.download"); download.href = `/api/v1/captures/${item.capture_id}/samples`; download.download = `${item.capture_id}.u16le`;
+    const download = document.createElement("a"); download.textContent = t("history.download"); download.href = `/api/v1/captures/${item.capture_id}/samples`; download.download = `${captureNumber}.u16le`;
     const edit = document.createElement("button"); edit.type = "button"; edit.className = "quiet";
     edit.textContent = t("history.edit");
     edit.addEventListener("click", () => openRecordEditor(item));
@@ -1565,7 +1584,7 @@ function bindActions() {
   const recordDialog = $("#record-dialog");
   $("#record-delete").addEventListener("click", () => {
     const record = state.recordEditor;
-    if (record) openDeletionConfirmation("capture", record.id, record.id, record.experimentId);
+    if (record) openDeletionConfirmation("capture", record.id, record.displayName, record.experimentId);
   });
   $("#record-cancel").addEventListener("click", () => recordDialog.close());
   recordDialog.addEventListener("close", () => {

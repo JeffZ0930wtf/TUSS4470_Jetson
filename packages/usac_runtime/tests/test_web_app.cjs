@@ -137,6 +137,66 @@ async function checkHistoryUsesFreshGroupingMetadata() {
     "New experiment · New group", "a refreshed row uses fresh API metadata, including cleared cell IDs");
 }
 
+async function checkReadableCaptureNumbers() {
+  const harness = makeHarness();
+  harness.run(`
+    state.historyItems = [
+      {row_id:128, capture_id:"capture-uuid-128", capture_sequence:3, sample_count:2,
+       grouping_metadata:{experiment_id:"exp-a", group_id:"group-a", experiment_name:"Tank A", group_name:"Run 1"}},
+      {capture_id:"legacy-capture-id", capture_sequence:4, sample_count:8},
+    ];
+    bindActions(); renderHistory();
+  `);
+  const rows = harness.node("#capture-history").children;
+  assert.equal(rows[0].children[0].children[0].textContent, "CAP-000128");
+  assert.equal(rows[0].children[0].children[0].title, "capture-uuid-128", "the raw ID remains available as a title");
+  assert.equal(rows[0].children[0].children[2].textContent, "Tank A · Run 1");
+  assert.equal(rows[1].children[0].children[0].textContent, "legacy-c", "older summaries keep their previous abbreviated display");
+
+  const format = (rowId, captureId) => harness.run(`formatCaptureNumber({row_id:${JSON.stringify(rowId)}, capture_id:${JSON.stringify(captureId)}})`);
+  assert.equal(format(128, "capture-128"), "CAP-000128");
+  assert.equal(format(7, "capture-7"), "CAP-000007");
+  assert.equal(format(1000000, "capture-large"), "CAP-1000000", "large IDs grow without truncation");
+  for (const [rowId, captureId] of [[undefined, "legacy-id"], [0, "zero-id"], [-1, "negative-id"], [1.5, "fraction-id"], ["128", "string-id"], [Number.MAX_SAFE_INTEGER + 1, "unsafe-id"]]) {
+    assert.equal(format(rowId, captureId), captureId, `invalid or missing row_id falls back to ${captureId}`);
+  }
+
+  const actions = rows[0].children[1].children;
+  assert.equal(actions[3].href, "/api/v1/captures/capture-uuid-128/samples");
+  assert.equal(actions[3].download, "CAP-000128.u16le");
+  assert.equal(rows[1].children[1].children[3].download, "legacy-capture-id.u16le", "older archive rows keep the raw download name");
+  actions[0].children[0].checked = true;
+  actions[0].children[0].listeners.change();
+  actions[1].children[0].checked = true;
+  harness.responses.push({bytes:[1, 0, 2, 0]});
+  await actions[1].children[0].listeners.change();
+  assert.deepEqual(JSON.parse(harness.run("JSON.stringify([[...state.batchSelectedCaptureIds], [...state.selectedCaptureIds]])")),
+    [["capture-uuid-128"], ["capture-uuid-128"]], "batch and waveform selections continue to use capture_id");
+  assert.equal(harness.requests[0].path, "/api/v1/captures/capture-uuid-128/samples", "waveform selection fetches by capture_id");
+
+  actions[4].listeners.click();
+  assert.equal(harness.node("#record-dialog-target").textContent, "CAP-000128");
+  assert.equal(harness.node("#record-dialog-target").title, "capture-uuid-128");
+  harness.node("#record-delete").listeners.click();
+  assert.equal(harness.node("#delete-confirmation-target").textContent, "CAP-000128 · Tank A · Run 1");
+  assert.equal(harness.node("#delete-confirmation-target").title, "capture-uuid-128");
+  harness.responses.push({ok:false, status:409, payload:{detail:"active run"}});
+  await harness.node("#delete-confirmation-confirm").listeners.click();
+  assert.equal(harness.requests[1].path, "/api/v1/captures/capture-uuid-128?confirm=true", "delete identity remains the opaque capture_id");
+
+  const moved = makeHarness();
+  moved.run(`
+    state.historyItems = [{row_id:128, capture_id:"capture-uuid-128", capture_sequence:3, sample_count:16,
+      grouping_metadata:{experiment_id:"exp-a", group_id:"group-a", experiment_name:"Tank A", group_name:"Run 1"}}];
+  `);
+  moved.responses.push({payload:{items:[{row_id:128, capture_id:"capture-uuid-128", capture_sequence:3, sample_count:16,
+    grouping_metadata:{experiment_id:"exp-b", group_id:"group-b", experiment_name:"Tank B", group_name:"Run 2"}}], next_cursor:null}});
+  await moved.run("loadHistory(true)");
+  assert.equal(moved.node("#capture-history").children[0].children[0].children[0].textContent, "CAP-000128");
+  assert.equal(moved.node("#capture-history").children[0].children[0].children[2].textContent, "Tank B · Run 2",
+    "the public number stays stable when refreshed grouping metadata changes");
+}
+
 async function checkGroupingDialog() {
   const harness = makeHarness();
   const experiment = {experiment_id: "exp-a", name: "Tank A", notes: "Original experiment note"};
@@ -868,6 +928,7 @@ async function checkDeletedGroupFencesExperimentCatalogChildReads() {
 }
 
 async function main() {
+  await checkReadableCaptureNumbers();
   await checkHistoryUsesFreshGroupingMetadata();
   await checkExperimentHistoryFilters();
   await checkGroupingDialog();

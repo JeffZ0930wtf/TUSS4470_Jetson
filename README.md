@@ -190,6 +190,11 @@ launcher configuration, and manual Compose commands.
    choose a group to narrow the list. History filters do not change the next capture's
    group. The separate batch checkboxes assign up to 500 archived records to a target
    group or back to Ungrouped; they do not select waveform overlays.
+
+   Each archived capture displays a number such as `CAP-000128` alongside its
+   current experiment and group. The number follows the record when it moves
+   between groups. Deleting a record leaves a gap. The history page downloads
+   individual samples as `CAP-000128.u16le`.
 4. Download a group's ZIP from the acquisition panel, or export offline:
 
    ```sh
